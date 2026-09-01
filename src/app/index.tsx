@@ -1,149 +1,165 @@
-import { Bell, ChevronRight, Clock3, Flame, LockKeyhole, MoreHorizontal, Smartphone } from 'lucide-react-native';
-import { useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { hasProtectionPassword } from '@/features/protection/credential';
+import {
+  getZenGuardStatus,
+  openAccessibilitySettings,
+  openYouTube,
+  setNativeProtectionEnabled,
+  type ZenGuardStatus,
+} from '@/features/protection/native';
+import { AlertTriangle, CheckCircle2, Eye, LockKeyhole, Play, Settings2, ShieldCheck } from 'lucide-react-native';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-const weeklyUsage = [
-  { day: 'M', value: 36 },
-  { day: 'T', value: 52 },
-  { day: 'W', value: 45 },
-  { day: 'T', value: 68 },
-  { day: 'F', value: 40 },
-  { day: 'S', value: 26 },
-  { day: 'S', value: 18 },
-];
-
-const distractions = [
-  { name: 'Instagram', detail: '34 min · 12 pickups', color: '#D88568', initial: 'I' },
-  { name: 'YouTube', detail: '26 min · 5 pickups', color: '#D65F58', initial: 'Y' },
-  { name: 'Safari', detail: '18 min · 9 pickups', color: '#5D8FB8', initial: 'S' },
-];
-
 export default function HomeScreen() {
-  const [focusActive, setFocusActive] = useState(false);
+  const [status, setStatus] = useState<ZenGuardStatus | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+
+  const refresh = useCallback(async () => {
+    setError('');
+    try {
+      if (!(await hasProtectionPassword())) {
+        router.replace('/setup');
+        return;
+      }
+      setStatus(await getZenGuardStatus());
+    } catch {
+      setError('Zen Mode could not read the Android protection service.');
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
+
+  const pullToRefresh = async () => {
+    setRefreshing(true);
+    await refresh();
+    setRefreshing(false);
+  };
+
+  const enableProtection = async () => {
+    await setNativeProtectionEnabled(true);
+    await refresh();
+  };
+
+  const serviceHealthy = status?.available && status.serviceEnabled;
+  const isProtected = serviceHealthy && status?.protectionEnabled;
 
   return (
     <SafeAreaView className="flex-1 bg-cream" edges={['top']}>
       <ScrollView
-        className="flex-1"
-        contentContainerClassName="mx-auto w-full max-w-xl px-5 pb-12"
-        showsVerticalScrollIndicator={false}>
-        <View className="flex-row items-center justify-between pb-6 pt-4">
-          <View>
-            <Text className="text-sm font-medium tracking-wide text-moss">TUESDAY, SEPTEMBER 1</Text>
-            <Text className="mt-1 text-3xl font-semibold tracking-tight text-ink">Good morning, Max.</Text>
+        contentContainerClassName="mx-auto w-full max-w-xl px-5 pb-12 pt-5"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pullToRefresh} tintColor="#436753" />}>
+        <View className="flex-row items-start justify-between">
+          <View className="flex-1 pr-5">
+            <Text className="text-sm font-medium tracking-wide text-moss">ZEN MODE</Text>
+            <Text className="mt-1 text-3xl font-semibold tracking-tight text-ink">Your attention guard</Text>
           </View>
-          <Pressable
-            accessibilityLabel="Notifications"
-            className="h-11 w-11 items-center justify-center rounded-full border border-mist bg-paper active:opacity-70">
-            <Bell color="#436753" size={20} strokeWidth={1.8} />
-            <View className="absolute right-3 top-3 h-2 w-2 rounded-full border border-paper bg-clay" />
-          </Pressable>
+          <View className={`h-12 w-12 items-center justify-center rounded-2xl ${isProtected ? 'bg-moss' : 'bg-clay'}`}>
+            {isProtected ? <ShieldCheck color="#FCFBF7" size={24} /> : <AlertTriangle color="#FCFBF7" size={23} />}
+          </View>
         </View>
 
-        <View className="overflow-hidden rounded-[30px] bg-ink px-6 py-6">
-          <View className="flex-row items-start justify-between">
-            <View>
-              <Text className="text-sm font-medium text-sage">TODAY’S SCREEN TIME</Text>
-              <View className="mt-2 flex-row items-end">
-                <Text className="text-5xl font-semibold tracking-tighter text-paper">1h 42m</Text>
-                <Text className="mb-1.5 ml-2 text-sm text-sage">of 2h 30m</Text>
+        <View className={`mt-7 rounded-[30px] p-6 ${isProtected ? 'bg-ink' : 'bg-paper'}`}>
+          <Text className={`text-sm font-semibold ${isProtected ? 'text-sage' : 'text-clay'}`}>
+            {isProtected ? (status?.observationMode ? 'OBSERVING YOUTUBE' : 'PROTECTION ACTIVE') : 'ACTION NEEDED'}
+          </Text>
+          <Text className={`mt-2 text-2xl font-semibold tracking-tight ${isProtected ? 'text-paper' : 'text-ink'}`}>
+            {!status?.available
+              ? 'Android build required'
+              : !status.serviceEnabled
+                ? 'Enable accessibility access'
+                : !status.protectionEnabled
+                  ? 'Protection is paused'
+                  : status.observationMode
+                    ? status.lastDetectionAt
+                      ? 'Shorts signal captured'
+                      : 'Calibrate Shorts detection'
+                    : 'YouTube Shorts are blocked'}
+          </Text>
+          <Text className={`mt-2 leading-6 ${isProtected ? 'text-mist' : 'text-moss'}`}>
+            {!status?.available
+              ? 'Install the Android development build to use native protection.'
+              : !status.serviceEnabled
+                ? 'Android controls this permission. Zen Mode will recheck it when you return.'
+                : !status.protectionEnabled
+                  ? 'Re-enabling protection does not require your password.'
+                  : status.observationMode
+                    ? status.lastDetectionAt
+                      ? 'The phone recognized a strong viewer signal. Activate enforcement when ready.'
+                      : 'Open Shorts once. Zen Mode records only a detection counter and timestamp.'
+                    : 'A confirmed Shorts viewer triggers one Back action, with a bounded Home fallback.'}
+          </Text>
+
+          {status?.available && !status.serviceEnabled ? (
+            <Pressable className="mt-5 items-center rounded-2xl bg-ink py-3.5 active:opacity-80" onPress={openAccessibilitySettings}>
+              <Text className="font-semibold text-paper">Open Android settings</Text>
+            </Pressable>
+          ) : null}
+          {status?.available && status.serviceEnabled && !status.protectionEnabled ? (
+            <Pressable className="mt-5 items-center rounded-2xl bg-ink py-3.5 active:opacity-80" onPress={enableProtection}>
+              <Text className="font-semibold text-paper">Re-enable protection</Text>
+            </Pressable>
+          ) : null}
+          {isProtected && status?.observationMode && status.lastDetectionAt ? (
+            <Pressable className="mt-5 items-center rounded-2xl bg-paper py-3.5 active:opacity-80" onPress={() => router.push('/unlock?intent=enforce')}>
+              <Text className="font-semibold text-ink">Activate with password</Text>
+            </Pressable>
+          ) : null}
+        </View>
+
+        {isProtected && status?.observationMode ? (
+          <View className="mt-5 rounded-3xl border border-mist bg-paper p-5">
+            <View className="flex-row items-center">
+              <Eye color="#436753" size={20} />
+              <Text className="ml-3 text-base font-semibold text-ink">Observation mode</Text>
+            </View>
+            <View className="mt-5 flex-row">
+              <View className="flex-1">
+                <Text className="text-xs font-medium text-sage">YOUTUBE EVENTS</Text>
+                <Text className="mt-1 text-2xl font-semibold text-ink">{status.lastEventAt ? 'Seen' : 'None'}</Text>
+              </View>
+              <View className="flex-1 border-l border-mist pl-5">
+                <Text className="text-xs font-medium text-sage">SHORTS SIGNALS</Text>
+                <Text className="mt-1 text-2xl font-semibold text-ink">{status.detectionCount}</Text>
               </View>
             </View>
-            <View className="h-16 w-16 items-center justify-center rounded-full border-[6px] border-moss">
-              <Text className="text-sm font-semibold text-paper">68%</Text>
-            </View>
+            <Text className="mt-4 text-xs leading-5 text-moss">No page text, video titles, searches, or account data are stored.</Text>
           </View>
+        ) : null}
 
-          <View className="my-5 h-px bg-moss/60" />
-          <View className="flex-row">
-            <View className="flex-1 flex-row items-center">
-              <Smartphone color="#8FA997" size={18} strokeWidth={1.8} />
-              <View className="ml-3">
-                <Text className="text-xs text-sage">PICKUPS</Text>
-                <Text className="mt-0.5 text-lg font-semibold text-paper">38</Text>
-              </View>
-            </View>
-            <View className="w-px bg-moss/60" />
-            <View className="flex-1 flex-row items-center pl-5">
-              <Clock3 color="#8FA997" size={18} strokeWidth={1.8} />
-              <View className="ml-3">
-                <Text className="text-xs text-sage">FIRST PICKUP</Text>
-                <Text className="mt-0.5 text-lg font-semibold text-paper">8:14</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ selected: focusActive }}
-          onPress={() => setFocusActive((active) => !active)}
-          className={`mt-4 flex-row items-center rounded-2xl px-5 py-4 active:opacity-80 ${focusActive ? 'bg-moss' : 'border border-mist bg-paper'}`}>
-          <View className={`h-11 w-11 items-center justify-center rounded-full ${focusActive ? 'bg-paper/15' : 'bg-mist'}`}>
-            <LockKeyhole color={focusActive ? '#FCFBF7' : '#436753'} size={20} strokeWidth={1.8} />
-          </View>
-          <View className="ml-4 flex-1">
-            <Text className={`text-base font-semibold ${focusActive ? 'text-paper' : 'text-ink'}`}>
-              {focusActive ? 'Focus mode is on' : 'Start focus mode'}
-            </Text>
-            <Text className={`mt-0.5 text-sm ${focusActive ? 'text-mist' : 'text-moss'}`}>
-              {focusActive ? 'Tap to end your session' : 'Block distracting apps for 45 min'}
-            </Text>
-          </View>
-          <ChevronRight color={focusActive ? '#FCFBF7' : '#8FA997'} size={20} />
-        </Pressable>
-
-        <View className="mt-8 flex-row items-end justify-between">
-          <View>
-            <Text className="text-xl font-semibold tracking-tight text-ink">This week</Text>
-            <Text className="mt-1 text-sm text-moss">Down 18% from last week</Text>
-          </View>
-          <View className="flex-row items-center rounded-full bg-mist px-3 py-1.5">
-            <Flame color="#436753" size={14} />
-            <Text className="ml-1.5 text-xs font-semibold text-moss">4 day streak</Text>
-          </View>
-        </View>
-
-        <View className="mt-4 rounded-3xl border border-mist bg-paper px-5 pb-4 pt-5">
-          <View className="h-32 flex-row items-end justify-between">
-            {weeklyUsage.map((item, index) => (
-              <View className="h-full flex-1 items-center justify-end" key={`${item.day}-${index}`}>
-                <View
-                  className={`w-5 rounded-full ${index === 3 ? 'bg-clay' : 'bg-sage'}`}
-                  style={{ height: item.value }}
-                />
-                <Text className={`mt-3 text-xs ${index === 3 ? 'font-bold text-ink' : 'text-sage'}`}>{item.day}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <View className="mt-8 flex-row items-center justify-between">
-          <View>
-            <Text className="text-xl font-semibold tracking-tight text-ink">Most distracting</Text>
-            <Text className="mt-1 text-sm text-moss">Where your attention went today</Text>
-          </View>
-          <Pressable accessibilityLabel="More distraction options" className="p-2 active:opacity-60">
-            <MoreHorizontal color="#436753" size={22} />
-          </Pressable>
-        </View>
-
+        <Text className="mt-8 text-xl font-semibold tracking-tight text-ink">Controls</Text>
         <View className="mt-4 overflow-hidden rounded-3xl border border-mist bg-paper px-5">
-          {distractions.map((app, index) => (
-            <View className={`flex-row items-center py-4 ${index ? 'border-t border-mist' : ''}`} key={app.name}>
-              <View className="h-11 w-11 items-center justify-center rounded-2xl" style={{ backgroundColor: app.color }}>
-                <Text className="text-base font-bold text-white">{app.initial}</Text>
-              </View>
-              <View className="ml-4 flex-1">
-                <Text className="text-base font-semibold text-ink">{app.name}</Text>
-                <Text className="mt-0.5 text-sm text-moss">{app.detail}</Text>
-              </View>
-              <ChevronRight color="#8FA997" size={18} />
-            </View>
-          ))}
+          <ControlRow icon={<Play color="#436753" size={20} />} label="Open YouTube" detail="Use your normal signed-in app" onPress={openYouTube} />
+          <ControlRow icon={<Settings2 color="#436753" size={20} />} label="Accessibility settings" detail="Review the Android permission" onPress={openAccessibilitySettings} />
+          {status?.protectionEnabled ? (
+            <ControlRow icon={<LockKeyhole color="#D88568" size={20} />} label="Disable protection" detail="Requires your password" onPress={() => router.push('/unlock?intent=disable')} />
+          ) : null}
         </View>
+
+        <View className="mt-5 flex-row rounded-2xl bg-mist px-4 py-3.5">
+          <CheckCircle2 color="#436753" size={18} />
+          <Text className="ml-3 flex-1 text-sm leading-5 text-moss">Only the YouTube package is in scope. Other apps are ignored.</Text>
+        </View>
+        {error ? <Text className="mt-4 text-sm font-medium text-clay">{error}</Text> : null}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function ControlRow({ icon, label, detail, onPress }: { icon: React.ReactNode; label: string; detail: string; onPress: () => void }) {
+  return (
+    <Pressable className="flex-row items-center border-b border-mist py-4 last:border-b-0 active:opacity-70" onPress={onPress}>
+      <View className="h-10 w-10 items-center justify-center rounded-2xl bg-mist">{icon}</View>
+      <View className="ml-4 flex-1">
+        <Text className="font-semibold text-ink">{label}</Text>
+        <Text className="mt-0.5 text-sm text-moss">{detail}</Text>
+      </View>
+    </Pressable>
   );
 }

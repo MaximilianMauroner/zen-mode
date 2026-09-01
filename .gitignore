@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# Local agent research and planning artifacts
+/.agents/artifacts/

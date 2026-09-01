@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="zen_guard_accessibility_service_label">Zen Mode protection</string>
-  <string name="zen_guard_accessibility_service_description">Detects YouTube Shorts on this device and exits the endless feed. Screen contents are processed locally and are never stored or sent anywhere.</string>
+  <string name="zen_guard_accessibility_service_description">Detects guarded YouTube and Instagram feeds on this device. Screen contents are processed locally and are never stored or sent anywhere.</string>
   <string name="zen_guard_shorts_blocked">Shorts blocked by Zen Mode</string>
+  <string name="zen_guard_instagram_reels_blocked">One Reel is enough.</string>
+  <string name="zen_guard_instagram_home_limit">Your five minutes are up.</string>
+  <string name="zen_guard_instagram_explore_blocked">Explore is blocked.</string>
+  <string name="zen_guard_instagram_block_detail">Choose the intentional way out.</string>
+  <string name="zen_guard_return_to_dm">Return to DM</string>
+  <string name="zen_guard_leave_reels">Leave Reels</string>
+  <string name="zen_guard_leave_instagram">Leave Instagram</string>
+  <string name="zen_guard_continue_doomscrolling">Continue doomscrolling for %1$d minutes</string>
+  <string name="zen_guard_continue_countdown">Continue in %1$d seconds</string>
 </resources>

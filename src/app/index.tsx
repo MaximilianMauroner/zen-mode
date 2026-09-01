@@ -2,11 +2,12 @@ import { hasProtectionPassword } from '@/features/protection/credential';
 import {
   getZenGuardStatus,
   openAccessibilitySettings,
+  openInstagram,
   openYouTube,
   setNativeProtectionEnabled,
   type ZenGuardStatus,
 } from '@/features/protection/native';
-import { AlertTriangle, CheckCircle2, Eye, LockKeyhole, Play, Settings2, ShieldCheck } from 'lucide-react-native';
+import { AlertTriangle, Camera, CheckCircle2, Eye, LockKeyhole, Play, Settings2, ShieldCheck } from 'lucide-react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
@@ -136,6 +137,8 @@ export default function HomeScreen() {
         <Text className="mt-8 text-xl font-semibold tracking-tight text-ink">Controls</Text>
         <View className="mt-4 overflow-hidden rounded-3xl border border-mist bg-paper px-5">
           <ControlRow icon={<Play color="#436753" size={20} />} label="Open YouTube" detail="Use your normal signed-in app" onPress={openYouTube} />
+          <ControlRow icon={<Camera color="#436753" size={20} />} label="Instagram guard" detail="Reels, Home feed, and Explore settings" onPress={() => router.push('/instagram')} />
+          <ControlRow icon={<Camera color="#436753" size={20} />} label="Open Instagram" detail="Use your messages and intentional content" onPress={openInstagram} />
           <ControlRow icon={<Settings2 color="#436753" size={20} />} label="Accessibility settings" detail="Review the Android permission" onPress={openAccessibilitySettings} />
           {status?.protectionEnabled ? (
             <ControlRow icon={<LockKeyhole color="#D88568" size={20} />} label="Disable protection" detail="Requires your password" onPress={() => router.push('/unlock?intent=disable')} />
@@ -144,7 +147,7 @@ export default function HomeScreen() {
 
         <View className="mt-5 flex-row rounded-2xl bg-mist px-4 py-3.5">
           <CheckCircle2 color="#436753" size={18} />
-          <Text className="ml-3 flex-1 text-sm leading-5 text-moss">Only the YouTube package is in scope. Other apps are ignored.</Text>
+          <Text className="ml-3 flex-1 text-sm leading-5 text-moss">Only the YouTube and Instagram packages are in scope. Other apps are ignored.</Text>
         </View>
         {error ? <Text className="mt-4 text-sm font-medium text-clay">{error}</Text> : null}
       </ScrollView>

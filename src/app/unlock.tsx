@@ -1,16 +1,31 @@
 import { verifyProtectionPassword } from '@/features/protection/credential';
-import { getZenGuardStatus, setNativeProtectionEnabled, setObservationMode } from '@/features/protection/native';
+import {
+  getZenGuardStatus,
+  setInstagramObservationMode,
+  setInstagramSettings,
+  setNativeProtectionEnabled,
+  setObservationMode,
+} from '@/features/protection/native';
 import { ArrowLeft, LockKeyhole } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-type UnlockIntent = 'disable' | 'enforce';
+type UnlockIntent = 'disable' | 'enforce' | 'instagram-enforce' | 'instagram-settings';
 
 export default function UnlockScreen() {
-  const { intent: requestedIntent } = useLocalSearchParams<{ intent?: string }>();
-  const intent: UnlockIntent = requestedIntent === 'enforce' ? 'enforce' : 'disable';
+  const params = useLocalSearchParams<{
+    intent?: string;
+    waitSeconds?: string;
+    reelsMinutes?: string;
+    homeMinutes?: string;
+    exploreBlocked?: string;
+  }>();
+  const intent: UnlockIntent =
+    params.intent === 'enforce' || params.intent === 'instagram-enforce' || params.intent === 'instagram-settings'
+      ? params.intent
+      : 'disable';
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [checking, setChecking] = useState(false);
@@ -31,10 +46,24 @@ export default function UnlockScreen() {
           return;
         }
         await setObservationMode(false);
+      } else if (intent === 'instagram-enforce') {
+        const status = await getZenGuardStatus();
+        if ((status.instagramSignalMask & 3) !== 3) {
+          setError('Observe Direct Messages and a DM Reel before enabling Instagram enforcement.');
+          return;
+        }
+        await setInstagramObservationMode(false);
+      } else if (intent === 'instagram-settings') {
+        await setInstagramSettings(
+          Number(params.waitSeconds),
+          Number(params.reelsMinutes),
+          Number(params.homeMinutes),
+          params.exploreBlocked === 'true',
+        );
       } else {
         await setNativeProtectionEnabled(false);
       }
-      router.replace('/');
+      router.replace(intent.startsWith('instagram-') ? '/instagram' : '/');
     } catch {
       setError('Protection could not be changed. Try again.');
     } finally {
@@ -53,7 +82,11 @@ export default function UnlockScreen() {
             <LockKeyhole color="#FCFBF7" size={23} />
           </View>
           <Text className="mt-6 text-3xl font-semibold tracking-tight text-ink">
-            {intent === 'enforce' ? 'Activate enforcement' : 'Disable protection'}
+            {intent === 'enforce' || intent === 'instagram-enforce'
+              ? 'Activate enforcement'
+              : intent === 'instagram-settings'
+                ? 'Change Instagram limit'
+                : 'Disable protection'}
           </Text>
           <Text className="mt-2 text-base leading-6 text-moss">
             Enter the password you created during setup. An incorrect password leaves protection unchanged.

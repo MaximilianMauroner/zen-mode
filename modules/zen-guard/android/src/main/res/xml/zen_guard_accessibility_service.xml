@@ -7,5 +7,5 @@
   android:description="@string/zen_guard_accessibility_service_description"
   android:isAccessibilityTool="false"
   android:notificationTimeout="100"
-  android:packageNames="com.google.android.youtube"
+  android:packageNames="com.google.android.youtube,com.instagram.android"
   android:settingsActivity="com.maxmauroner.zenmode.MainActivity" />

@@ -1,5 +1,5 @@
 import { createProtectionPassword, hasProtectionPassword } from '@/features/protection/credential';
-import { openAccessibilitySettings, setNativeProtectionEnabled, setObservationMode } from '@/features/protection/native';
+import { openAccessibilitySettings, setInstagramObservationMode, setNativeProtectionEnabled, setObservationMode } from '@/features/protection/native';
 import { Check, Eye, LockKeyhole, ShieldCheck } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -29,6 +29,7 @@ export default function SetupScreen() {
       await createProtectionPassword(password);
       await setNativeProtectionEnabled(true);
       await setObservationMode(true);
+      await setInstagramObservationMode(true);
       await openAccessibilitySettings();
       router.replace('/');
     } catch (setupError) {
@@ -47,7 +48,7 @@ export default function SetupScreen() {
           </View>
           <Text className="mt-6 text-3xl font-semibold tracking-tight text-ink">Set up protection</Text>
           <Text className="mt-2 text-base leading-6 text-moss">
-            Zen Mode watches only the YouTube app for the Shorts viewer. Search, subscriptions, and ordinary videos stay untouched.
+            Zen Mode watches YouTube for Shorts and Instagram for Reels, Home-feed limits, and Explore. Messages and intentional content stay available.
           </Text>
 
           <View className="mt-7 rounded-3xl border border-clay/40 bg-paper p-5">
@@ -56,7 +57,7 @@ export default function SetupScreen() {
               <Text className="ml-3 text-base font-semibold text-ink">Accessibility access disclosure</Text>
             </View>
             <Text className="mt-4 leading-6 text-moss">
-              To detect YouTube Shorts, Zen Mode reads the visible accessibility structure of the YouTube app. It uses that information only on this device to recognize and leave the Shorts viewer.
+              To detect YouTube Shorts and Instagram feed surfaces, Zen Mode reads the visible accessibility structure of those two apps. It uses that information only on this device to recognize guarded screens.
             </Text>
             <Text className="mt-3 leading-6 text-moss">
               Zen Mode does not read other apps, collect typed text, store page contents, send screen contents, or use this access for analytics.

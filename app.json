@@ -1,12 +1,13 @@
 {
   "expo": {
-    "name": "zen-mode",
+    "name": "Zen Mode",
     "slug": "zen-mode",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "zenmode",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F6F4EC",
     "ios": {
       "icon": "./assets/expo.icon"
     },
@@ -28,7 +29,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#F6F4EC",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }

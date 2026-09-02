@@ -6,8 +6,8 @@ import { StatusBar } from 'expo-status-bar';
 export default function RootLayout() {
   return (
     <>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#F6F4EC' } }} />
+      <StatusBar style="light" />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0D1210' } }} />
     </>
   );
 }

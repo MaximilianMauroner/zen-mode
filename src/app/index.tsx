@@ -1,168 +1,334 @@
-import { hasProtectionPassword } from '@/features/protection/credential';
+import { hasCompletedSetup, isPasswordProtectionEnabled } from '@/features/protection/credential';
 import {
   getZenGuardStatus,
   openAccessibilitySettings,
   openInstagram,
   openYouTube,
   setNativeProtectionEnabled,
+  setObservationMode,
   type ZenGuardStatus,
 } from '@/features/protection/native';
-import { AlertTriangle, Camera, CheckCircle2, Eye, LockKeyhole, Play, Settings2, ShieldCheck } from 'lucide-react-native';
+import { CheckCircle2, ShieldCheck } from 'lucide-react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+type ReadState = 'loading' | 'ready' | 'error';
 
 export default function HomeScreen() {
   const [status, setStatus] = useState<ZenGuardStatus | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [readState, setReadState] = useState<ReadState>('loading');
+  const [busy, setBusy] = useState(false);
+  const [passwordProtectionEnabled, setPasswordProtectionEnabled] = useState<boolean | null>(null);
+  const busyRef = useRef(false);
+  const refreshInFlightRef = useRef(false);
 
   const refresh = useCallback(async () => {
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
     setError('');
+    setReadState('loading');
+    setStatus(null);
+    setPasswordProtectionEnabled(null);
     try {
-      if (!(await hasProtectionPassword())) {
+      if (!(await hasCompletedSetup())) {
         router.replace('/setup');
         return;
       }
-      setStatus(await getZenGuardStatus());
+      const [nextStatus, passwordEnabled] = await Promise.all([getZenGuardStatus(), isPasswordProtectionEnabled()]);
+      setStatus(nextStatus);
+      setPasswordProtectionEnabled(passwordEnabled);
+      setReadState('ready');
     } catch {
+      setStatus(null);
+      setPasswordProtectionEnabled(null);
+      setReadState('error');
       setError('Zen Mode could not read the Android protection service.');
+    } finally {
+      refreshInFlightRef.current = false;
     }
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      refresh();
+      void refresh();
     }, [refresh]),
   );
 
   const pullToRefresh = async () => {
+    if (refreshInFlightRef.current || busyRef.current) return;
     setRefreshing(true);
-    await refresh();
-    setRefreshing(false);
+    try {
+      await refresh();
+    } catch {
+      setReadState('error');
+      setError('Zen Mode could not read the Android protection service.');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
-  const enableProtection = async () => {
-    await setNativeProtectionEnabled(true);
-    await refresh();
+  const runAction = useCallback((task: () => Promise<void>, fallbackMessage: string) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError('');
+    void (async () => {
+      try {
+        await task();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : fallbackMessage);
+      } finally {
+        busyRef.current = false;
+        setBusy(false);
+      }
+    })();
+  }, []);
+
+  const enableProtection = () => {
+    if (!statusLoaded) return setError('Protection status is not available yet.');
+    runAction(async () => {
+      await setNativeProtectionEnabled(true);
+      await refresh();
+    }, 'Protection could not be re-enabled.');
   };
 
-  const serviceHealthy = status?.available && status.serviceEnabled;
-  const isProtected = serviceHealthy && status?.protectionEnabled;
+  const activateYouTubeEnforcement = () => {
+    if (!statusLoaded) return setError('Protection status is not available yet.');
+    runAction(async () => {
+      if (passwordProtectionEnabled === true) {
+        router.push('/unlock?intent=enforce');
+        return;
+      }
+      await setObservationMode(false);
+      await refresh();
+    }, 'YouTube enforcement could not be activated.');
+  };
+
+  const disableProtection = () => {
+    if (!statusLoaded) return setError('Protection status is not available yet.');
+    runAction(async () => {
+      if (passwordProtectionEnabled === true) {
+        router.push('/unlock?intent=disable');
+        return;
+      }
+      await setNativeProtectionEnabled(false);
+      await refresh();
+    }, 'Protection could not be disabled.');
+  };
+
+  const openYouTubeApp = () => runAction(() => openYouTube(), 'YouTube could not be opened.');
+  const openInstagramApp = () => runAction(() => openInstagram(), 'Instagram could not be opened.');
+  const openSettings = () => runAction(() => openAccessibilitySettings(), 'Android settings could not be opened.');
+  const openInstagramControls = () => runAction(async () => router.push('/instagram'), 'Instagram settings could not be opened.');
+  const openPasswordControls = () => runAction(async () => router.push('/password-protection'), 'Password settings could not be opened.');
+
+  const currentStatus = readState === 'ready' ? status : null;
+  const statusLoaded = currentStatus !== null && passwordProtectionEnabled !== null;
+  const serviceHealthy = currentStatus !== null && currentStatus.available && currentStatus.serviceEnabled;
+  const isProtected = serviceHealthy && currentStatus !== null && currentStatus.protectionEnabled;
+  const instagramSignalsSeen = currentStatus
+    ? Number((currentStatus.instagramSignalMask & 1) !== 0) + Number((currentStatus.instagramSignalMask & 2) !== 0)
+    : 0;
+  const guardProgress = currentStatus === null ? 0 : isProtected && !currentStatus.observationMode ? 100 : Math.round((instagramSignalsSeen / 2) * 100);
+  const protectionLabel =
+    currentStatus === null
+      ? readState === 'loading'
+        ? 'CHECKING'
+        : 'UNAVAILABLE'
+      : !currentStatus.available
+        ? 'BUILD NEEDED'
+        : !currentStatus.serviceEnabled
+          ? 'OFFLINE'
+          : !currentStatus.protectionEnabled
+            ? 'PAUSED'
+            : currentStatus.observationMode
+              ? 'OBSERVING'
+              : 'ACTIVE';
+  const youtubeLabel =
+    currentStatus === null
+      ? 'CHECKING'
+      : !currentStatus.available || !currentStatus.serviceEnabled
+        ? 'OFF'
+        : !currentStatus.protectionEnabled
+          ? 'PAUSED'
+          : currentStatus.observationMode
+            ? 'WATCHING'
+            : 'BLOCKED';
+  const instagramLabel =
+    currentStatus === null
+      ? 'CHECKING'
+      : !currentStatus.available || !currentStatus.serviceEnabled || !currentStatus.protectionEnabled
+        ? 'OFF'
+        : currentStatus.instagramObservationMode
+          ? 'OBSERVING'
+          : 'GUARDED';
+  const statusTitle =
+    currentStatus === null
+      ? readState === 'loading'
+        ? 'Reading your guard'
+        : 'Protection status unavailable'
+      : !currentStatus.available
+        ? 'Android build required'
+        : !currentStatus.serviceEnabled
+          ? 'Enable accessibility access'
+          : !currentStatus.protectionEnabled
+            ? 'Protection is paused'
+            : currentStatus.observationMode
+              ? currentStatus.lastDetectionAt
+                ? 'Signals are ready'
+                : 'Finish the first check'
+              : 'A little more room to think';
+  const statusDescription =
+    currentStatus === null
+      ? readState === 'loading'
+        ? 'Checking the Android service and your password settings.'
+        : 'Zen Mode cannot safely show or change protection until those settings can be read.'
+      : !currentStatus.available
+        ? 'Install the Android development build to use native protection.'
+        : !currentStatus.serviceEnabled
+          ? 'Android controls this permission. Zen Mode will recheck it when you return.'
+          : !currentStatus.protectionEnabled
+            ? 'Re-enabling protection does not require your password.'
+            : currentStatus.observationMode
+              ? currentStatus.lastDetectionAt
+                ? 'YouTube and Instagram are ready. Start enforcement when you want.'
+                : 'Open Shorts once, then visit Direct Messages and one DM Reel.'
+              : 'Shorts are blocked. Instagram rules are active.';
 
   return (
-    <SafeAreaView className="flex-1 bg-cream" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-night" edges={['top']}>
       <ScrollView
-        contentContainerClassName="mx-auto w-full max-w-xl px-5 pb-12 pt-5"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={pullToRefresh} tintColor="#436753" />}>
-        <View className="flex-row items-start justify-between">
-          <View className="flex-1 pr-5">
-            <Text className="text-sm font-medium tracking-wide text-moss">ZEN MODE</Text>
-            <Text className="mt-1 text-3xl font-semibold tracking-tight text-ink">Your attention guard</Text>
+        contentContainerClassName="mx-auto w-full max-w-xl px-4 pb-12 pt-4"
+        refreshControl={<RefreshControl refreshing={refreshing || readState === 'loading'} onRefresh={pullToRefresh} tintColor="#A7E782" />}>
+        <View className="flex-row items-center justify-between">
+          <View className="flex-row items-center">
+            <ShieldCheck color="#A7E782" size={18} />
+            <Text className="ml-2 text-sm font-bold tracking-widest text-accent">ZEN MODE</Text>
           </View>
-          <View className={`h-12 w-12 items-center justify-center rounded-2xl ${isProtected ? 'bg-moss' : 'bg-clay'}`}>
-            {isProtected ? <ShieldCheck color="#FCFBF7" size={24} /> : <AlertTriangle color="#FCFBF7" size={23} />}
+          <StatusPill label={currentStatus === null ? protectionLabel : protectionLabel === 'ACTIVE' ? 'ON' : protectionLabel} tone={isProtected ? 'accent' : currentStatus === null ? 'neutral' : 'danger'} />
+        </View>
+
+        <Text className="mt-9 text-xs font-bold tracking-widest text-muted">TODAY&apos;S GUARD</Text>
+        <Text className="mt-3 text-4xl font-semibold leading-tight tracking-tight text-copy">
+          {currentStatus !== null && isProtected ? (
+            <>
+              A little more{ '\n' }
+              <Text className="text-accent">room to think.</Text>
+            </>
+          ) : (
+            statusTitle
+          )}
+        </Text>
+        <Text className="mt-3 max-w-md text-base leading-6 text-muted">{statusDescription}</Text>
+
+        <View className="mt-6 rounded-3xl border border-line bg-panel p-4">
+          <View className="flex-row items-center justify-between">
+            <Text className="text-xs font-bold tracking-widest text-muted">PROTECTION</Text>
+            <StatusPill label={protectionLabel} tone={isProtected ? 'accent' : 'danger'} />
           </View>
-        </View>
-
-        <View className={`mt-7 rounded-[30px] p-6 ${isProtected ? 'bg-ink' : 'bg-paper'}`}>
-          <Text className={`text-sm font-semibold ${isProtected ? 'text-sage' : 'text-clay'}`}>
-            {isProtected ? (status?.observationMode ? 'OBSERVING YOUTUBE' : 'PROTECTION ACTIVE') : 'ACTION NEEDED'}
+          <Text className="mt-4 text-4xl font-bold tracking-tight text-accent" style={{ fontVariant: ['tabular-nums'] }}>
+            {currentStatus === null ? '...' : currentStatus.detectionCount}
           </Text>
-          <Text className={`mt-2 text-2xl font-semibold tracking-tight ${isProtected ? 'text-paper' : 'text-ink'}`}>
-            {!status?.available
-              ? 'Android build required'
-              : !status.serviceEnabled
-                ? 'Enable accessibility access'
-                : !status.protectionEnabled
-                  ? 'Protection is paused'
-                  : status.observationMode
-                    ? status.lastDetectionAt
-                      ? 'Shorts signal captured'
-                      : 'Calibrate Shorts detection'
-                    : 'YouTube Shorts are blocked'}
-          </Text>
-          <Text className={`mt-2 leading-6 ${isProtected ? 'text-mist' : 'text-moss'}`}>
-            {!status?.available
-              ? 'Install the Android development build to use native protection.'
-              : !status.serviceEnabled
-                ? 'Android controls this permission. Zen Mode will recheck it when you return.'
-                : !status.protectionEnabled
-                  ? 'Re-enabling protection does not require your password.'
-                  : status.observationMode
-                    ? status.lastDetectionAt
-                      ? 'The phone recognized a strong viewer signal. Activate enforcement when ready.'
-                      : 'Open Shorts once. Zen Mode records only a detection counter and timestamp.'
-                    : 'A confirmed Shorts viewer triggers one Back action, with a bounded Home fallback.'}
-          </Text>
-
-          {status?.available && !status.serviceEnabled ? (
-            <Pressable className="mt-5 items-center rounded-2xl bg-ink py-3.5 active:opacity-80" onPress={openAccessibilitySettings}>
-              <Text className="font-semibold text-paper">Open Android settings</Text>
-            </Pressable>
-          ) : null}
-          {status?.available && status.serviceEnabled && !status.protectionEnabled ? (
-            <Pressable className="mt-5 items-center rounded-2xl bg-ink py-3.5 active:opacity-80" onPress={enableProtection}>
-              <Text className="font-semibold text-paper">Re-enable protection</Text>
-            </Pressable>
-          ) : null}
-          {isProtected && status?.observationMode && status.lastDetectionAt ? (
-            <Pressable className="mt-5 items-center rounded-2xl bg-paper py-3.5 active:opacity-80" onPress={() => router.push('/unlock?intent=enforce')}>
-              <Text className="font-semibold text-ink">Activate with password</Text>
-            </Pressable>
-          ) : null}
-        </View>
-
-        {isProtected && status?.observationMode ? (
-          <View className="mt-5 rounded-3xl border border-mist bg-paper p-5">
-            <View className="flex-row items-center">
-              <Eye color="#436753" size={20} />
-              <Text className="ml-3 text-base font-semibold text-ink">Observation mode</Text>
-            </View>
-            <View className="mt-5 flex-row">
-              <View className="flex-1">
-                <Text className="text-xs font-medium text-sage">YOUTUBE EVENTS</Text>
-                <Text className="mt-1 text-2xl font-semibold text-ink">{status.lastEventAt ? 'Seen' : 'None'}</Text>
-              </View>
-              <View className="flex-1 border-l border-mist pl-5">
-                <Text className="text-xs font-medium text-sage">SHORTS SIGNALS</Text>
-                <Text className="mt-1 text-2xl font-semibold text-ink">{status.detectionCount}</Text>
-              </View>
-            </View>
-            <Text className="mt-4 text-xs leading-5 text-moss">No page text, video titles, searches, or account data are stored.</Text>
+          <Text className="mt-1 text-sm text-muted">Shorts signals recorded</Text>
+          <View className="mt-4 h-1.5 overflow-hidden rounded-full bg-track">
+            <View className="h-full rounded-full bg-accent" style={{ width: `${guardProgress}%` }} />
           </View>
-        ) : null}
+          <View className="mt-4 flex-row">
+            <QuietStat label="IG SIGNALS" value={currentStatus === null ? '...' : `${instagramSignalsSeen}/2`} />
+            <QuietStat label="PASSWORD" value={passwordProtectionEnabled === null ? '...' : passwordProtectionEnabled ? 'ON' : 'OFF'} />
+          </View>
 
-        <Text className="mt-8 text-xl font-semibold tracking-tight text-ink">Controls</Text>
-        <View className="mt-4 overflow-hidden rounded-3xl border border-mist bg-paper px-5">
-          <ControlRow icon={<Play color="#436753" size={20} />} label="Open YouTube" detail="Use your normal signed-in app" onPress={openYouTube} />
-          <ControlRow icon={<Camera color="#436753" size={20} />} label="Instagram guard" detail="Reels, Home feed, and Explore settings" onPress={() => router.push('/instagram')} />
-          <ControlRow icon={<Camera color="#436753" size={20} />} label="Open Instagram" detail="Use your messages and intentional content" onPress={openInstagram} />
-          <ControlRow icon={<Settings2 color="#436753" size={20} />} label="Accessibility settings" detail="Review the Android permission" onPress={openAccessibilitySettings} />
-          {status?.protectionEnabled ? (
-            <ControlRow icon={<LockKeyhole color="#D88568" size={20} />} label="Disable protection" detail="Requires your password" onPress={() => router.push('/unlock?intent=disable')} />
+          {statusLoaded && currentStatus.available && !currentStatus.serviceEnabled ? (
+            <ActionButton title="Open Android settings" disabled={busy} onPress={openSettings} />
+          ) : null}
+          {statusLoaded && currentStatus.available && currentStatus.serviceEnabled && !currentStatus.protectionEnabled ? (
+            <ActionButton title={busy ? 'Updating' : 'Re-enable protection'} disabled={busy} onPress={enableProtection} />
+          ) : null}
+          {isProtected && currentStatus.observationMode && currentStatus.lastDetectionAt ? (
+            <ActionButton title={busy ? 'Updating' : 'Activate enforcement'} disabled={busy} onPress={activateYouTubeEnforcement} />
           ) : null}
         </View>
 
-        <View className="mt-5 flex-row rounded-2xl bg-mist px-4 py-3.5">
-          <CheckCircle2 color="#436753" size={18} />
-          <Text className="ml-3 flex-1 text-sm leading-5 text-moss">Only the YouTube and Instagram packages are in scope. Other apps are ignored.</Text>
+        <Text className="mt-8 text-xs font-bold tracking-widest text-muted">CONTROLS</Text>
+        <View className="mt-3 overflow-hidden rounded-3xl border border-line bg-panel px-4">
+          <ControlRow label="YouTube Shorts" detail="Shorts stay out of the loop" value={youtubeLabel} tone={youtubeLabel === 'BLOCKED' ? 'accent' : 'neutral'} disabled={!statusLoaded || busy} onPress={openYouTubeApp} />
+          <ControlRow label="Instagram guard" detail={currentStatus ? `${currentStatus.instagramWaitSeconds}s pause / ${currentStatus.instagramHomeMinutes}m Home` : 'Reading rules'} value={instagramLabel} tone={instagramLabel === 'GUARDED' ? 'accent' : 'neutral'} disabled={!statusLoaded || busy} onPress={openInstagramControls} />
+          <ControlRow label="Messages" detail="Always available" value="OPEN" tone="accent" />
+          <ControlRow
+            label="Password protection"
+            detail={passwordProtectionEnabled === null ? 'Reading setting' : passwordProtectionEnabled ? 'Guards weaker changes' : 'Changes stay open'}
+            value={passwordProtectionEnabled === null ? '...' : passwordProtectionEnabled ? 'ON' : 'OFF'}
+            disabled={!statusLoaded || busy}
+            onPress={openPasswordControls}
+          />
+          <ControlRow
+            label="Accessibility access"
+            detail="Android permission"
+            value={currentStatus === null ? '...' : currentStatus.serviceEnabled ? 'ON' : 'OFF'}
+            tone={currentStatus?.serviceEnabled ? 'accent' : 'danger'}
+            disabled={!statusLoaded || busy}
+            onPress={openSettings}
+          />
+          {currentStatus?.protectionEnabled ? (
+            <ControlRow label="Disable protection" detail={passwordProtectionEnabled === true ? 'Requires your password' : 'Password protection is off'} value="TURN OFF" tone="danger" disabled={!statusLoaded || busy} onPress={disableProtection} />
+          ) : null}
         </View>
-        {error ? <Text className="mt-4 text-sm font-medium text-clay">{error}</Text> : null}
+
+        <Pressable className="mt-4 items-center rounded-2xl bg-accent py-3.5 active:opacity-80" disabled={!statusLoaded || busy} onPress={openInstagramApp}>
+          <Text className="font-bold text-onAccent">{busy ? 'Working' : 'Open Instagram'}</Text>
+        </Pressable>
+        <View className="mt-4 flex-row rounded-2xl border border-line bg-panel2 px-4 py-3.5">
+          <CheckCircle2 color="#A7E782" size={18} />
+          <Text className="ml-3 flex-1 text-sm leading-5 text-muted">Only YouTube and Instagram are watched. Everything else stays out.</Text>
+        </View>
+        {error ? <Text className="mt-4 text-sm font-medium text-danger">{error}</Text> : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function ControlRow({ icon, label, detail, onPress }: { icon: React.ReactNode; label: string; detail: string; onPress: () => void }) {
+function StatusPill({ label, tone }: { label: string; tone: 'accent' | 'danger' | 'neutral' }) {
+  const className = tone === 'accent' ? 'border-accent bg-accent text-onAccent' : tone === 'danger' ? 'border-dangerLine bg-dangerBg text-danger' : 'border-line bg-panel2 text-muted';
+  return <Text className={`rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-widest ${className}`}>{label}</Text>;
+}
+
+function QuietStat({ label, value }: { label: string; value: string }) {
   return (
-    <Pressable className="flex-row items-center border-b border-mist py-4 last:border-b-0 active:opacity-70" onPress={onPress}>
-      <View className="h-10 w-10 items-center justify-center rounded-2xl bg-mist">{icon}</View>
-      <View className="ml-4 flex-1">
-        <Text className="font-semibold text-ink">{label}</Text>
-        <Text className="mt-0.5 text-sm text-moss">{detail}</Text>
-      </View>
+    <View className="flex-1 border-t border-line pt-2.5 first:border-t-0">
+      <Text className="text-[10px] font-bold tracking-widest text-muted">{label}</Text>
+      <Text className="mt-1 text-base font-bold text-copy">{value}</Text>
+    </View>
+  );
+}
+
+function ActionButton({ title, disabled, onPress }: { title: string; disabled?: boolean; onPress: () => void }) {
+  return (
+    <Pressable className={`mt-4 items-center rounded-2xl bg-accent py-3.5 ${disabled ? 'opacity-50' : 'active:opacity-80'}`} disabled={disabled} onPress={onPress}>
+      <Text className="font-bold text-onAccent">{title}</Text>
     </Pressable>
+  );
+}
+
+function ControlRow({ label, detail, value, tone = 'neutral', disabled, onPress }: { label: string; detail: string; value?: string; tone?: 'accent' | 'danger' | 'neutral'; disabled?: boolean; onPress?: () => void }) {
+  const content = (
+    <>
+      <View className="flex-1 pr-3">
+        <Text className="font-semibold text-copy">{label}</Text>
+        <Text className="mt-0.5 text-sm text-muted">{detail}</Text>
+      </View>
+      {value ? <StatusPill label={value} tone={tone} /> : null}
+    </>
+  );
+
+  return onPress ? (
+    <Pressable className={`flex-row items-center border-b border-line py-3.5 ${disabled ? 'opacity-50' : 'active:opacity-70'}`} disabled={disabled} onPress={onPress}>
+      {content}
+    </Pressable>
+  ) : (
+    <View className="flex-row items-center border-b border-line py-3.5">{content}</View>
   );
 }

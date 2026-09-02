@@ -1,4 +1,4 @@
-import { verifyProtectionPassword } from '@/features/protection/credential';
+import { disablePasswordProtection, isPasswordProtectionEnabled, verifyProtectionPassword } from '@/features/protection/credential';
 import {
   getZenGuardStatus,
   setInstagramObservationMode,
@@ -8,11 +8,11 @@ import {
 } from '@/features/protection/native';
 import { ArrowLeft, LockKeyhole } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-type UnlockIntent = 'disable' | 'enforce' | 'instagram-enforce' | 'instagram-settings';
+type UnlockIntent = 'disable' | 'enforce' | 'instagram-enforce' | 'instagram-settings' | 'password-disable';
 
 export default function UnlockScreen() {
   const params = useLocalSearchParams<{
@@ -23,88 +23,118 @@ export default function UnlockScreen() {
     exploreBlocked?: string;
   }>();
   const intent: UnlockIntent =
-    params.intent === 'enforce' || params.intent === 'instagram-enforce' || params.intent === 'instagram-settings'
+    params.intent === 'enforce' || params.intent === 'instagram-enforce' || params.intent === 'instagram-settings' || params.intent === 'password-disable'
       ? params.intent
       : 'disable';
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [checking, setChecking] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const checkingRef = useRef(false);
+  const leavingRef = useRef(false);
 
-  const confirm = async () => {
+  const confirm = () => {
+    if (checkingRef.current || leavingRef.current) return;
+    checkingRef.current = true;
     setChecking(true);
     setError('');
-    try {
-      if (!(await verifyProtectionPassword(password))) {
-        setError('That password is not correct. Protection was not changed.');
-        return;
-      }
+    void (async () => {
+      try {
+        if (!(await isPasswordProtectionEnabled())) {
+          setError('Password protection is not enabled. Protection was not changed.');
+          return;
+        }
+        if (!(await verifyProtectionPassword(password))) {
+          setError('That password is not correct. Protection was not changed.');
+          return;
+        }
 
-      if (intent === 'enforce') {
-        const status = await getZenGuardStatus();
-        if (!status.lastDetectionAt) {
-          setError('Open YouTube Shorts once in observation mode before enabling enforcement.');
-          return;
+        if (intent === 'enforce') {
+          const status = await getZenGuardStatus();
+          if (!status.lastDetectionAt) {
+            setError('Open YouTube Shorts once in observation mode before enabling enforcement.');
+            return;
+          }
+          await setObservationMode(false);
+        } else if (intent === 'instagram-enforce') {
+          const status = await getZenGuardStatus();
+          if ((status.instagramSignalMask & 3) !== 3) {
+            setError('Observe Direct Messages and a DM Reel before enabling Instagram enforcement.');
+            return;
+          }
+          await setInstagramObservationMode(false);
+        } else if (intent === 'instagram-settings') {
+          await setInstagramSettings(
+            Number(params.waitSeconds),
+            Number(params.reelsMinutes),
+            Number(params.homeMinutes),
+            params.exploreBlocked === 'true',
+          );
+        } else if (intent === 'password-disable') {
+          await disablePasswordProtection();
+        } else {
+          await setNativeProtectionEnabled(false);
         }
-        await setObservationMode(false);
-      } else if (intent === 'instagram-enforce') {
-        const status = await getZenGuardStatus();
-        if ((status.instagramSignalMask & 3) !== 3) {
-          setError('Observe Direct Messages and a DM Reel before enabling Instagram enforcement.');
-          return;
-        }
-        await setInstagramObservationMode(false);
-      } else if (intent === 'instagram-settings') {
-        await setInstagramSettings(
-          Number(params.waitSeconds),
-          Number(params.reelsMinutes),
-          Number(params.homeMinutes),
-          params.exploreBlocked === 'true',
-        );
-      } else {
-        await setNativeProtectionEnabled(false);
+        router.replace(intent.startsWith('instagram-') ? '/instagram' : intent === 'password-disable' ? '/password-protection' : '/');
+      } catch {
+        setError('Protection could not be changed. Try again.');
+      } finally {
+        checkingRef.current = false;
+        setChecking(false);
       }
-      router.replace(intent.startsWith('instagram-') ? '/instagram' : '/');
+    })();
+  };
+
+  const goBack = () => {
+    if (checkingRef.current || leavingRef.current) return;
+    leavingRef.current = true;
+    setLeaving(true);
+    try {
+      router.back();
     } catch {
-      setError('Protection could not be changed. Try again.');
-    } finally {
-      setChecking(false);
+      leavingRef.current = false;
+      setLeaving(false);
+      setError('Could not leave the unlock screen.');
     }
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-cream">
-      <KeyboardAvoidingView className="flex-1 px-5" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <SafeAreaView className="flex-1 bg-night">
+      <KeyboardAvoidingView className="flex-1 px-4" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View className="mx-auto w-full max-w-xl flex-1 justify-center pb-20">
-          <Pressable accessibilityLabel="Go back" className="mb-8 h-11 w-11 items-center justify-center rounded-full bg-paper" onPress={() => router.back()}>
-            <ArrowLeft color="#436753" size={20} />
+          <Pressable accessibilityLabel="Go back" className="mb-8 h-10 w-10 items-center justify-center rounded-xl border border-line bg-panel2" disabled={checking || leaving} onPress={goBack}>
+            <ArrowLeft color="#A7E782" size={19} />
           </Pressable>
-          <View className="h-12 w-12 items-center justify-center rounded-2xl bg-ink">
-            <LockKeyhole color="#FCFBF7" size={23} />
+          <View className="h-10 w-10 items-center justify-center rounded-xl border border-line bg-panel2">
+            <LockKeyhole color="#A7E782" size={21} />
           </View>
-          <Text className="mt-6 text-3xl font-semibold tracking-tight text-ink">
+          <Text className="mt-7 text-4xl font-semibold tracking-tight text-copy">
             {intent === 'enforce' || intent === 'instagram-enforce'
               ? 'Activate enforcement'
               : intent === 'instagram-settings'
                 ? 'Change Instagram limit'
-                : 'Disable protection'}
+                : intent === 'password-disable'
+                  ? 'Disable password protection'
+                  : 'Disable protection'}
           </Text>
-          <Text className="mt-2 text-base leading-6 text-moss">
-            Enter the password you created during setup. An incorrect password leaves protection unchanged.
+          <Text className="mt-3 text-base leading-6 text-muted">
+            Enter your protection password. If it is wrong, nothing changes.
           </Text>
           <TextInput
             accessibilityLabel="Protection password"
             autoFocus
-            className="mt-7 rounded-2xl border border-mist bg-paper px-4 py-4 text-base text-ink"
+            className="mt-7 rounded-2xl border border-line bg-panel px-4 py-4 text-base text-copy"
+            editable={!checking}
             onChangeText={setPassword}
             onSubmitEditing={confirm}
             placeholder="Password"
-            placeholderTextColor="#8FA997"
+            placeholderTextColor="#94A89A"
             secureTextEntry
             value={password}
           />
-          {error ? <Text className="mt-4 text-sm font-medium leading-5 text-clay">{error}</Text> : null}
-          <Pressable className="mt-5 items-center rounded-2xl bg-ink py-4 active:opacity-80" disabled={checking} onPress={confirm}>
-            <Text className="text-base font-semibold text-paper">{checking ? 'Checking…' : 'Confirm'}</Text>
+          {error ? <Text className="mt-4 text-sm font-medium leading-5 text-danger">{error}</Text> : null}
+          <Pressable className="mt-5 items-center rounded-2xl bg-accent py-3.5 active:opacity-80" disabled={checking || leaving} onPress={confirm}>
+            <Text className="text-base font-bold text-onAccent">{checking ? 'Checking…' : 'Confirm'}</Text>
           </Pressable>
         </View>
       </KeyboardAvoidingView>

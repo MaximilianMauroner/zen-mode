@@ -18,6 +18,20 @@ npm start
 
 Press `i` for iOS, `a` for Android, or `w` for web from the Expo terminal. You can also run a platform directly with `npm run ios`, `npm run android`, or `npm run web`.
 
+## Watch the connected phone
+
+With one authorized Android phone connected over USB or wireless ADB, run:
+
+```bash
+npm run phone:mirror
+```
+
+The command refuses to start without exactly one connected phone. It uses `scrcpy` when installed and falls back to Android `screenrecord` with `ffplay`. The mirror is local to the laptop and stops when the mirror closes or the phone disconnects. Install `scrcpy` for longer sessions:
+
+```bash
+brew install scrcpy
+```
+
 ## Verify
 
 ```bash

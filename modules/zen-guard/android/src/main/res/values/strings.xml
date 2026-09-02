@@ -3,13 +3,19 @@
   <string name="zen_guard_accessibility_service_label">Zen Mode protection</string>
   <string name="zen_guard_accessibility_service_description">Detects guarded YouTube and Instagram feeds on this device. Screen contents are processed locally and are never stored or sent anywhere.</string>
   <string name="zen_guard_shorts_blocked">Shorts blocked by Zen Mode</string>
-  <string name="zen_guard_instagram_reels_blocked">One Reel is enough.</string>
-  <string name="zen_guard_instagram_home_limit">Your five minutes are up.</string>
-  <string name="zen_guard_instagram_explore_blocked">Explore is blocked.</string>
-  <string name="zen_guard_instagram_block_detail">Choose the intentional way out.</string>
+  <string name="zen_guard_instagram_reels_blocked">Take a\nbreath.</string>
+  <string name="zen_guard_instagram_reels_entry_blocked">Reels can\nwait.</string>
+  <string name="zen_guard_instagram_home_limit">The feed can\nwait.</string>
+  <string name="zen_guard_instagram_explore_blocked">Explore can\nwait.</string>
+  <string name="zen_guard_instagram_home_detail">Your Home allowance is complete. Return to Zen Mode and choose what comes next.</string>
+  <string name="zen_guard_instagram_reels_detail">Wait here, or leave Instagram. Continue unlocks when the pause ends.</string>
+  <string name="zen_guard_instagram_reels_entry_detail">Reels are closed here. Return to Messages to choose what comes next.</string>
+  <string name="zen_guard_instagram_explore_detail">Explore is closed. Return to Messages to keep your route intentional.</string>
+  <string name="zen_guard_return_home">Return Home</string>
   <string name="zen_guard_return_to_dm">Return to DM</string>
   <string name="zen_guard_leave_reels">Leave Reels</string>
+  <string name="zen_guard_open_messages">Open Messages</string>
   <string name="zen_guard_leave_instagram">Leave Instagram</string>
-  <string name="zen_guard_continue_doomscrolling">Continue doomscrolling for %1$d minutes</string>
+  <string name="zen_guard_continue_doomscrolling">Continue for %1$d minutes</string>
   <string name="zen_guard_continue_countdown">Continue in %1$d seconds</string>
 </resources>

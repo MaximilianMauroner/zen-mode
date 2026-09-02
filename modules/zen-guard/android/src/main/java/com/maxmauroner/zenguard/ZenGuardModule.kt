@@ -3,6 +3,7 @@ package com.maxmauroner.zenguard
 import android.content.ComponentName
 import android.content.Intent
 import android.provider.Settings
+import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -52,11 +53,10 @@ class ZenGuardModule : Module() {
 
     AsyncFunction("openInstagram") {
       val context = requireNotNull(appContext.reactContext)
-      val intent = context.packageManager.getLaunchIntentForPackage(INSTAGRAM_PACKAGE)
-        ?: throw IllegalStateException("The Instagram app is not installed")
-      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-      context.startActivity(intent)
-    }
+      if (!InstagramIntentHelper.openInstagram(context)) {
+        throw IllegalStateException("The Instagram app is not installed or cannot be opened")
+      }
+    }.runOnQueue(Queues.MAIN)
 
     AsyncFunction("setProtectionEnabled") { enabled: Boolean ->
       val context = requireNotNull(appContext.reactContext)
@@ -97,6 +97,7 @@ class ZenGuardModule : Module() {
         instagramHomeMinutes = homeMinutes
         instagramExploreBlocked = exploreBlocked
       }
+      Unit
     }
   }
 
@@ -111,7 +112,6 @@ class ZenGuardModule : Module() {
 
   companion object {
     private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
-    private const val INSTAGRAM_PACKAGE = "com.instagram.android"
     private const val REQUIRED_INSTAGRAM_SIGNALS = 3
   }
 }

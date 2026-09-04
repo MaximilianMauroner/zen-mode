@@ -2,6 +2,7 @@ package com.maxmauroner.zenguard
 
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.provider.Settings
 import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
@@ -33,6 +34,102 @@ class ZenGuardModule : Module() {
         "instagramSignalMask" to preferences.instagramSignalMask,
         "instagramLastDetectionReason" to preferences.instagramLastDetectionReason,
       )
+    }
+
+    /** Launchable apps, so the limiter can offer a picker. Excludes Zen Mode itself. */
+    AsyncFunction("getInstalledApps") {
+      val context = requireNotNull(appContext.reactContext)
+      val packageManager = context.packageManager
+      val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+      packageManager.queryIntentActivities(launcher, 0)
+        .asSequence()
+        .map { it.activityInfo.packageName }
+        .distinct()
+        .filter { it != context.packageName }
+        .map { packageName ->
+          mapOf(
+            "packageName" to packageName,
+            "label" to labelFor(packageManager, packageName),
+          )
+        }
+        .sortedBy { (it["label"] as String).lowercase() }
+        .toList()
+    }
+
+    /** Each limited app with its daily budget and how much of today it has used. */
+    AsyncFunction("getAppLimits") {
+      val context = requireNotNull(appContext.reactContext)
+      val store = AppLimitStore(context)
+      val usage = store.usageToday(System.currentTimeMillis())
+      store.limits().map { (packageName, minutes) ->
+        mapOf(
+          "packageName" to packageName,
+          "label" to labelFor(context.packageManager, packageName),
+          "minutes" to minutes,
+          "usedMs" to (usage[packageName] ?: 0L).toDouble(),
+        )
+      }.sortedBy { (it["label"] as String).lowercase() }
+    }
+
+    AsyncFunction("setAppLimit") { packageName: String, minutes: Int ->
+      require(minutes in 1..480) { "A daily limit must be between 1 and 480 minutes" }
+      val context = requireNotNull(appContext.reactContext)
+      AppLimitStore(context).setLimit(packageName, minutes)
+    }
+
+    AsyncFunction("removeAppLimit") { packageName: String ->
+      val context = requireNotNull(appContext.reactContext)
+      AppLimitStore(context).removeLimit(packageName)
+    }
+
+    /** Each intent-gated app with its visit length and downtime. */
+    AsyncFunction("getIntentApps") {
+      val context = requireNotNull(appContext.reactContext)
+      val store = IntentAppStore(context)
+      store.intents().map { (packageName, rule) ->
+        mapOf(
+          "packageName" to packageName,
+          "label" to labelFor(context.packageManager, packageName),
+          "sessionMinutes" to rule.sessionMinutes,
+          "cooldownMinutes" to rule.cooldownMinutes,
+        )
+      }.sortedBy { (it["label"] as String).lowercase() }
+    }
+
+    AsyncFunction("setIntentApp") { packageName: String, sessionMinutes: Int, cooldownMinutes: Int ->
+      val context = requireNotNull(appContext.reactContext)
+      IntentAppStore(context).setIntent(packageName, sessionMinutes, cooldownMinutes)
+    }
+
+    AsyncFunction("removeIntentApp") { packageName: String ->
+      val context = requireNotNull(appContext.reactContext)
+      IntentAppStore(context).removeIntent(packageName)
+    }
+
+    /** Each rolling-limited app with its allowance, window, and spent time. */
+    AsyncFunction("getRollingLimits") {
+      val context = requireNotNull(appContext.reactContext)
+      val store = RollingLimitStore(context)
+      val nowMs = System.currentTimeMillis()
+      store.rules().map { (packageName, rule) ->
+        mapOf(
+          "packageName" to packageName,
+          "label" to labelFor(context.packageManager, packageName),
+          "allowanceMinutes" to rule.allowanceMinutes,
+          "windowMinutes" to rule.windowMinutes,
+          "usedMs" to store.usedMs(packageName, nowMs).toDouble(),
+        )
+      }.sortedBy { (it["label"] as String).lowercase() }
+    }
+
+    AsyncFunction("setRollingLimit") { packageName: String, allowanceMinutes: Int, windowMinutes: Int ->
+      val context = requireNotNull(appContext.reactContext)
+      RollingLimitStore(context).setRule(packageName, allowanceMinutes, windowMinutes)
+    }
+
+    AsyncFunction("removeRollingLimit") { packageName: String ->
+      val context = requireNotNull(appContext.reactContext)
+      RollingLimitStore(context).removeRule(packageName)
     }
 
     AsyncFunction("openAccessibilitySettings") {
@@ -99,6 +196,13 @@ class ZenGuardModule : Module() {
       }
       Unit
     }
+  }
+
+  /** Human-readable app name, falling back to the package when it cannot be resolved. */
+  private fun labelFor(packageManager: PackageManager, packageName: String): String = try {
+    packageManager.getApplicationLabel(packageManager.getApplicationInfo(packageName, 0)).toString()
+  } catch (_: PackageManager.NameNotFoundException) {
+    packageName
   }
 
   private fun isServiceEnabled(context: android.content.Context): Boolean {

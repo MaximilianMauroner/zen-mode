@@ -2,6 +2,11 @@
   <queries>
     <package android:name="com.google.android.youtube" />
     <package android:name="com.instagram.android" />
+    <!-- Lets the app limiter list launchable apps. Narrower than QUERY_ALL_PACKAGES. -->
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
   </queries>
   <application>
     <service

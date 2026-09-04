@@ -1,6 +1,6 @@
-import ZenGuardModule, { type ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
+import ZenGuardModule, { type AppLimit, type InstalledApp, type IntentApp, type RollingLimit, type ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
 
-export type { ZenGuardStatus };
+export type { AppLimit, InstalledApp, IntentApp, RollingLimit, ZenGuardStatus };
 
 export const getZenGuardStatus = () => ZenGuardModule.getStatus();
 export const openAccessibilitySettings = () => ZenGuardModule.openAccessibilitySettings();
@@ -15,3 +15,16 @@ export const setInstagramSettings = (
   homeMinutes: number,
   exploreBlocked: boolean,
 ) => ZenGuardModule.setInstagramSettings(waitSeconds, reelsMinutes, homeMinutes, exploreBlocked);
+
+export const getInstalledApps = () => ZenGuardModule.getInstalledApps();
+export const getAppLimits = () => ZenGuardModule.getAppLimits();
+export const setAppLimit = (packageName: string, minutes: number) => ZenGuardModule.setAppLimit(packageName, minutes);
+export const removeAppLimit = (packageName: string) => ZenGuardModule.removeAppLimit(packageName);
+export const getIntentApps = () => ZenGuardModule.getIntentApps();
+export const setIntentApp = (packageName: string, sessionMinutes: number, cooldownMinutes: number) =>
+  ZenGuardModule.setIntentApp(packageName, sessionMinutes, cooldownMinutes);
+export const removeIntentApp = (packageName: string) => ZenGuardModule.removeIntentApp(packageName);
+export const getRollingLimits = () => ZenGuardModule.getRollingLimits();
+export const setRollingLimit = (packageName: string, allowanceMinutes: number, windowMinutes: number) =>
+  ZenGuardModule.setRollingLimit(packageName, allowanceMinutes, windowMinutes);
+export const removeRollingLimit = (packageName: string) => ZenGuardModule.removeRollingLimit(packageName);

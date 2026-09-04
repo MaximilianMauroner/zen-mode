@@ -1,0 +1,18 @@
+{
+  "night": "#0D1210",
+  "panel": "#131A16",
+  "panel2": "#1A241E",
+  "line": "#26332B",
+  "line2": "#33453A",
+  "copy": "#EDF5EF",
+  "muted": "#8FA396",
+  "faint": "#67796D",
+  "accent": "#A7E782",
+  "accentBg": "#16261A",
+  "accentLine": "#3A5C34",
+  "onAccent": "#0B1609",
+  "danger": "#FF9A79",
+  "dangerBg": "#211511",
+  "dangerLine": "#5D3428",
+  "track": "#22302A"
+}

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The native mirror of src/theme/palette.json. The blocked screen and the Expo
+  dashboard have to look like one product, so these values are not free to
+  drift: PaletteParityTest fails the build when a name here disagrees with the
+  JSON, or when the JSON gains a token this file is missing.
+-->
+<resources>
+  <color name="zen_night">#0D1210</color>
+  <color name="zen_panel">#131A16</color>
+  <color name="zen_panel2">#1A241E</color>
+  <color name="zen_line">#26332B</color>
+  <color name="zen_line2">#33453A</color>
+  <color name="zen_copy">#EDF5EF</color>
+  <color name="zen_muted">#8FA396</color>
+  <color name="zen_faint">#67796D</color>
+  <color name="zen_accent">#A7E782</color>
+  <color name="zen_accent_bg">#16261A</color>
+  <color name="zen_accent_line">#3A5C34</color>
+  <color name="zen_on_accent">#0B1609</color>
+  <color name="zen_danger">#FF9A79</color>
+  <color name="zen_danger_bg">#211511</color>
+  <color name="zen_danger_line">#5D3428</color>
+  <color name="zen_track">#22302A</color>
+</resources>

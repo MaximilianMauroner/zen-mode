@@ -2,7 +2,11 @@
 <resources>
   <string name="zen_guard_accessibility_service_label">Zen Mode protection</string>
   <string name="zen_guard_accessibility_service_description">Detects guarded YouTube and Instagram feeds on this device. Screen contents are processed locally and are never stored or sent anywhere.</string>
+  <string name="zen_guard_app_limit_reached">Daily limit reached</string>
+  <string name="zen_guard_rolling_limit_reached">Limit reached, refills over time</string>
   <string name="zen_guard_shorts_blocked">Shorts blocked by Zen Mode</string>
+
+  <!-- Blocked screen, phase one: one line to read and nothing to work out. -->
   <string name="zen_guard_instagram_reels_blocked">Take a\nbreath.</string>
   <string name="zen_guard_instagram_reels_entry_blocked">Reels can\nwait.</string>
   <string name="zen_guard_instagram_home_limit">The feed can\nwait.</string>
@@ -11,11 +15,52 @@
   <string name="zen_guard_instagram_reels_detail">Wait here, or leave Instagram. Continue unlocks when the pause ends.</string>
   <string name="zen_guard_instagram_reels_entry_detail">Reels are closed here. Return to Messages to choose what comes next.</string>
   <string name="zen_guard_instagram_explore_detail">Explore is closed. Return to Messages to keep your route intentional.</string>
+  <string name="zen_guard_eyebrow_home_limit">DAILY ALLOWANCE COMPLETE</string>
+  <string name="zen_guard_eyebrow_explore">EXPLORE IS CLOSED</string>
+  <string name="zen_guard_eyebrow_reels_entry">REELS ARE CLOSED</string>
+  <string name="zen_guard_eyebrow_pause">TAKE A SMALL PAUSE</string>
+
+  <!-- Blocked screen, phase two: the numbers behind the block. -->
+  <string name="zen_guard_eyebrow_stats">WHERE YOU STAND TODAY</string>
+  <string name="zen_guard_stat_stopped">Stopped today</string>
+  <string name="zen_guard_stat_continued">Continued today</string>
+  <string name="zen_guard_stat_home_used">Home used</string>
+  <string name="zen_guard_stat_resets">Resets in</string>
+  <string name="zen_guard_stat_of_minutes"> / %1$dm</string>
+  <string name="zen_guard_stat_hours_minutes">%1$dh %2$dm</string>
+  <string name="zen_guard_stat_minutes">%1$dm</string>
+  <string name="zen_guard_pause_over_title">Still your\ncall.</string>
+  <string name="zen_guard_pause_over_detail">The pause is over. Nothing here changed while you waited.</string>
+  <string name="zen_guard_pause_over_detail_count">The pause is over. %1$d stops today already went the other way.</string>
+
+  <!-- Blocked screen chrome. -->
+  <string name="zen_guard_pause_label">PAUSE</string>
+  <string name="zen_guard_pause_done">DONE</string>
+  <string name="zen_guard_state_ready">READY</string>
+  <string name="zen_guard_state_pause">PAUSE</string>
+  <string name="zen_guard_state_closed">CLOSED</string>
+  <string name="zen_guard_state_minutes_used">%1$dm USED</string>
+  <string name="zen_guard_surface_home">INSTAGRAM / HOME</string>
+  <string name="zen_guard_surface_explore">INSTAGRAM / EXPLORE</string>
+  <string name="zen_guard_surface_reels">INSTAGRAM / REELS</string>
   <string name="zen_guard_return_home">Return Home</string>
   <string name="zen_guard_return_to_dm">Return to DM</string>
   <string name="zen_guard_leave_reels">Leave Reels</string>
   <string name="zen_guard_open_messages">Open Messages</string>
-  <string name="zen_guard_leave_instagram">Leave Instagram</string>
   <string name="zen_guard_continue_doomscrolling">Continue for %1$d minutes</string>
-  <string name="zen_guard_continue_countdown">Continue in %1$d seconds</string>
+  <string name="zen_guard_continue_in_seconds">Continue in %1$ds</string>
+  <string name="zen_guard_quiet_boundary">Zen Mode is holding this boundary</string>
+
+  <!-- Intent question: one timed visit per answer. -->
+  <string name="zen_guard_intent_eyebrow">CHECK IN FIRST</string>
+  <string name="zen_guard_intent_eyebrow_cooldown">BETWEEN VISITS</string>
+  <string name="zen_guard_intent_state_ask">%1$d MIN VISIT</string>
+  <string name="zen_guard_intent_title">Take %1$d\nminutes.</string>
+  <string name="zen_guard_intent_detail">%1$s stays open for %2$d minutes. The clock runs from Start, even if you step out. When it ends, %1$s rests.</string>
+  <string name="zen_guard_intent_start">Start %1$d min</string>
+  <string name="zen_guard_intent_leave">Not now</string>
+  <string name="zen_guard_intent_cooldown_title">Still\nresting.</string>
+  <string name="zen_guard_intent_cooldown_detail">%1$s opens again when the downtime ends. Until then, do the other thing.</string>
+  <string name="zen_guard_intent_cooldown_leave">Back home</string>
+  <string name="zen_guard_intent_time_up">Time is up</string>
 </resources>

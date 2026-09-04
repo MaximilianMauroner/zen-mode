@@ -3,11 +3,13 @@ import '@/global.css';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
+import { colors } from '@/theme/colors';
+
 export default function RootLayout() {
   return (
     <>
       <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0D1210' } }} />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.night } }} />
     </>
   );
 }

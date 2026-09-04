@@ -1,3 +1,7 @@
+import { Card, CardHeader, SectionLabel } from '@/components/ui/card';
+import { PrimaryButton, SecondaryButton } from '@/components/ui/button';
+import { ErrorNote, Screen, ScreenHeader, ScreenTitle } from '@/components/ui/screen';
+import { StatusPill } from '@/components/ui/pill';
 import {
   getZenGuardStatus,
   openInstagram,
@@ -5,12 +9,12 @@ import {
   setInstagramSettings,
   type ZenGuardStatus,
 } from '@/features/protection/native';
-import { isPasswordProtectionEnabled } from '@/features/protection/credential';
-import { ArrowLeft, Camera, Eye, LockKeyhole, ShieldCheck } from 'lucide-react-native';
+import { isChangeBlocked } from '@/features/protection/lock';
+import { colors } from '@/theme/colors';
+import { Eye, LockKeyhole, ShieldCheck } from 'lucide-react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Pressable, Text, View } from 'react-native';
 
 const WAIT_OPTIONS = [15, 30, 60, 120, 300];
 const REELS_OPTIONS = [1, 5, 10, 15];
@@ -37,7 +41,7 @@ export default function InstagramSettingsScreen() {
     } catch {
       setStatus(null);
       setReadState('error');
-      setError('Instagram protection settings could not be loaded.');
+      setError('Your Instagram limits could not be loaded.');
     } finally {
       refreshInFlightRef.current = false;
     }
@@ -68,7 +72,7 @@ export default function InstagramSettingsScreen() {
 
   const changeSettings = (next: Partial<Pick<ZenGuardStatus, 'instagramWaitSeconds' | 'instagramReelsMinutes' | 'instagramHomeMinutes' | 'instagramExploreBlocked'>>) => {
     if (!statusLoaded || !currentStatus) {
-      setError('Instagram protection settings are not available yet.');
+      setError('Your Instagram limits are not ready yet.');
       return;
     }
 
@@ -80,17 +84,9 @@ export default function InstagramSettingsScreen() {
       (!proposed.instagramExploreBlocked && currentStatus.instagramExploreBlocked);
 
     runAction(async () => {
-      if (weakensProtection && (await isPasswordProtectionEnabled())) {
-        router.push({
-          pathname: '/unlock',
-          params: {
-            intent: 'instagram-settings',
-            waitSeconds: proposed.instagramWaitSeconds,
-            reelsMinutes: proposed.instagramReelsMinutes,
-            homeMinutes: proposed.instagramHomeMinutes,
-            exploreBlocked: proposed.instagramExploreBlocked ? 'true' : 'false',
-          },
-        });
+      if (weakensProtection && (await isChangeBlocked())) {
+        setError('That loosens a limit while the lock is on. Ask to unlock, then wait a day.');
+        router.push('/lock');
         return;
       }
 
@@ -101,147 +97,139 @@ export default function InstagramSettingsScreen() {
         proposed.instagramExploreBlocked,
       );
       await refresh();
-    }, 'Instagram protection settings could not be changed.');
+    }, 'That limit could not be changed.');
   };
 
+  // Turning enforcement on only tightens the guard, so the lock never blocks it.
   const activateEnforcement = () => {
     if (!statusLoaded) {
-      setError('Instagram protection status is not available yet.');
+      setError('Your Instagram limits are not ready yet.');
       return;
     }
     runAction(async () => {
-      if (await isPasswordProtectionEnabled()) {
-        router.push('/unlock?intent=instagram-enforce');
-        return;
-      }
       await setInstagramObservationMode(false);
       await refresh();
-    }, 'Instagram enforcement could not be activated.');
+    }, 'Blocking could not be turned on.');
   };
 
   const openInstagramApp = () => runAction(() => openInstagram(), 'Instagram could not be opened.');
-  const goBack = () => runAction(async () => router.back(), 'Could not leave Instagram settings.');
+  const goBack = () => runAction(async () => router.back(), 'Could not go back.');
   const currentStatus = readState === 'ready' ? status : null;
   const statusLoaded = currentStatus !== null;
   const requiredSignalsSeen = currentStatus ? (currentStatus.instagramSignalMask & 3) === 3 : false;
   const signalsSeen = currentStatus
     ? Number((currentStatus.instagramSignalMask & 1) !== 0) + Number((currentStatus.instagramSignalMask & 2) !== 0)
     : 0;
-  const guardLabel = currentStatus === null ? (readState === 'loading' ? 'CHECKING' : 'UNAVAILABLE') : currentStatus.instagramObservationMode ? 'OBSERVING' : 'GUARDED';
+  const observing = currentStatus?.instagramObservationMode === true;
+  const guarded = statusLoaded && !observing;
+  const guardLabel = currentStatus === null ? (readState === 'loading' ? 'CHECKING' : 'UNAVAILABLE') : observing ? 'WATCHING' : 'LIMITED';
+  // Enforcement is the one accent action here; without it the shortcut takes the slot.
+  const canActivate = observing && requiredSignalsSeen;
 
   return (
-    <SafeAreaView className="flex-1 bg-night">
-      <ScrollView contentContainerClassName="mx-auto w-full max-w-xl px-4 pb-12 pt-4">
-        <Pressable accessibilityLabel="Go back" className="h-10 w-10 items-center justify-center rounded-xl border border-line bg-panel2" disabled={busy} onPress={goBack}>
-          <ArrowLeft color="#A7E782" size={19} />
-        </Pressable>
-        <View className="mt-7 flex-row items-center justify-between">
-          <View className="flex-row items-center">
-            <Camera color="#A7E782" size={18} />
-            <Text className="ml-2 text-sm font-bold tracking-widest text-accent">INSTAGRAM</Text>
-          </View>
-          <StatusPill label={guardLabel} tone={currentStatus?.instagramObservationMode ? 'neutral' : currentStatus ? 'accent' : 'neutral'} />
-        </View>
-        <Text className="mt-8 text-4xl font-semibold tracking-tight text-copy">Your rules.</Text>
-        <Text className="mt-2 text-base leading-6 text-muted">DM Reels stay. Infinite feeds do not.</Text>
+    <Screen>
+      <ScreenHeader
+        label="INSTAGRAM"
+        onBack={goBack}
+        backDisabled={busy}
+        pill={{ label: guardLabel, tone: guarded ? 'accent' : 'neutral', solid: guarded }}
+      />
 
-        <View className="mt-5 rounded-3xl border border-line bg-panel p-4">
-          <View className="flex-row items-center justify-between">
-            <View className="flex-row items-center">
-              {currentStatus?.instagramObservationMode ? <Eye color="#A7E782" size={17} /> : <ShieldCheck color="#A7E782" size={17} />}
-              <Text className="ml-2 text-xs font-bold tracking-widest text-muted">SIGNAL CHECK</Text>
-            </View>
-            <StatusPill label={currentStatus === null ? '...' : `${signalsSeen}/2`} tone={requiredSignalsSeen ? 'accent' : 'neutral'} />
-          </View>
-          <Text className="mt-3 text-sm leading-5 text-muted">
-            {currentStatus === null
-              ? readState === 'loading'
-                ? 'Reading Instagram protection settings.'
-                : 'Instagram protection status is unavailable.'
-              : currentStatus.instagramObservationMode
-                ? requiredSignalsSeen
-                  ? 'Both signals were seen. Enforcement can start.'
-                  : 'Open Direct Messages and one Reel from a DM. No content is stored.'
-                : 'Instagram enforcement is active. Messages stay available.'}
-          </Text>
-          {currentStatus?.instagramObservationMode && requiredSignalsSeen ? (
-            <Pressable className="mt-4 items-center rounded-2xl bg-accent py-3.5 active:opacity-80" disabled={busy} onPress={activateEnforcement}>
-              <Text className="font-bold text-onAccent">{busy ? 'Updating' : 'Activate enforcement'}</Text>
+      <ScreenTitle title="Your rules." description="DM Reels stay. Infinite feeds do not." />
+
+      <Card emphasis={guarded}>
+        <CardHeader
+          label="SETUP CHECK"
+          icon={observing ? <Eye color={colors.accent} size={15} /> : <ShieldCheck color={colors.accent} size={15} />}
+          pill={{ label: currentStatus === null ? '—' : `${signalsSeen}/2`, tone: requiredSignalsSeen ? 'accent' : 'neutral' }}
+        />
+        <Text className="mt-3 text-[13px] leading-[19px] text-muted">
+          {currentStatus === null
+            ? readState === 'loading'
+              ? 'Reading your Instagram limits.'
+              : 'Cannot read the Instagram limits.'
+            : observing
+              ? requiredSignalsSeen
+                ? 'Both screens found. Blocking can start.'
+                : 'Open Direct Messages, then one Reel from a DM. Nothing is stored.'
+              : 'Blocking is on. Messages still work.'}
+        </Text>
+        {canActivate ? <PrimaryButton className="mt-4" title={busy ? 'Working…' : 'Start blocking'} disabled={busy} onPress={activateEnforcement} /> : null}
+      </Card>
+
+      <View>
+        <SectionLabel className="mb-2.5">LIMITS</SectionLabel>
+        <View className="gap-2.5">
+          <SettingCard title="Pause before Reels" detail="Give yourself a moment before the feed opens." value={currentStatus ? `${currentStatus.instagramWaitSeconds}s` : '—'}>
+            <PresetRow values={WAIT_OPTIONS} selected={currentStatus?.instagramWaitSeconds} suffix="s" disabled={!statusLoaded || busy} onSelect={(value) => changeSettings({ instagramWaitSeconds: value })} />
+          </SettingCard>
+          <SettingCard title="Reels window" detail="How long Reels stay open after the pause." value={currentStatus ? `${currentStatus.instagramReelsMinutes}m` : '—'}>
+            <PresetRow values={REELS_OPTIONS} selected={currentStatus?.instagramReelsMinutes} suffix="m" disabled={!statusLoaded || busy} onSelect={(value) => changeSettings({ instagramReelsMinutes: value })} />
+          </SettingCard>
+          <SettingCard title="Home feed" detail="Counts only while Instagram is on screen." value={currentStatus ? `${currentStatus.instagramHomeMinutes}m` : '—'}>
+            <PresetRow values={HOME_OPTIONS} selected={currentStatus?.instagramHomeMinutes} suffix="m" disabled={!statusLoaded || busy} onSelect={(value) => changeSettings({ instagramHomeMinutes: value })} />
+          </SettingCard>
+          <SettingCard title="Explore" detail="The endless grid of suggestions." value={currentStatus === null ? '—' : currentStatus.instagramExploreBlocked ? 'CLOSED' : 'OPEN'}>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: currentStatus?.instagramExploreBlocked === true, disabled: !statusLoaded || busy }}
+              className={`mt-3.5 items-center rounded-2xl border py-3 ${currentStatus?.instagramExploreBlocked ? 'border-accentLine bg-accentBg' : 'border-dangerLine bg-dangerBg'} ${!statusLoaded || busy ? 'opacity-40' : 'active:opacity-70'}`}
+              disabled={!statusLoaded || busy}
+              onPress={() => changeSettings({ instagramExploreBlocked: !currentStatus?.instagramExploreBlocked })}>
+              <Text className={`text-[15px] font-semibold ${currentStatus?.instagramExploreBlocked ? 'text-accent' : 'text-danger'}`}>
+                {currentStatus === null ? 'Status unavailable' : currentStatus.instagramExploreBlocked ? 'Explore blocked' : 'Explore enabled'}
+              </Text>
             </Pressable>
-          ) : null}
+          </SettingCard>
         </View>
+      </View>
 
-        <SettingCard title="Pause before Reels" detail="Give yourself a moment before the feed opens." value={currentStatus?.instagramWaitSeconds ? `${currentStatus.instagramWaitSeconds}s` : '...'}>
-          <PresetRow values={WAIT_OPTIONS} selected={currentStatus?.instagramWaitSeconds} suffix="s" disabled={!statusLoaded || busy} onSelect={(value) => changeSettings({ instagramWaitSeconds: value })} />
-        </SettingCard>
-        <SettingCard title="Reels window" detail="Time granted after waiting." value={currentStatus?.instagramReelsMinutes ? `${currentStatus.instagramReelsMinutes}m` : '...'}>
-          <PresetRow values={REELS_OPTIONS} selected={currentStatus?.instagramReelsMinutes} suffix="m" disabled={!statusLoaded || busy} onSelect={(value) => changeSettings({ instagramReelsMinutes: value })} />
-        </SettingCard>
-        <SettingCard title="Home feed allowance" detail="Only counts while Instagram is in front." value={currentStatus?.instagramHomeMinutes ? `${currentStatus.instagramHomeMinutes}m` : '...'}>
-          <PresetRow values={HOME_OPTIONS} selected={currentStatus?.instagramHomeMinutes} suffix="m" disabled={!statusLoaded || busy} onSelect={(value) => changeSettings({ instagramHomeMinutes: value })} />
-        </SettingCard>
+      {canActivate ? (
+        <SecondaryButton title={busy ? 'Working…' : 'Open Instagram'} disabled={!statusLoaded || busy} onPress={openInstagramApp} />
+      ) : (
+        <PrimaryButton title={busy ? 'Working…' : 'Open Instagram'} disabled={!statusLoaded || busy} onPress={openInstagramApp} />
+      )}
 
-        <View className="mt-2 rounded-3xl border border-line bg-panel p-4">
-          <View className="flex-row items-start justify-between">
-            <View className="flex-1 pr-3">
-              <Text className="font-semibold text-copy">Explore</Text>
-              <Text className="mt-1 text-sm leading-5 text-muted">Keep the ambient path closed.</Text>
-            </View>
-            <Text className="text-sm font-bold text-accent">{currentStatus === null ? '...' : currentStatus.instagramExploreBlocked ? 'OFF' : 'OPEN'}</Text>
-          </View>
-          <Pressable
-            className={`mt-4 items-center rounded-2xl border py-3.5 ${currentStatus?.instagramExploreBlocked ? 'border-line bg-panel2' : 'border-dangerLine bg-dangerBg'} ${!statusLoaded || busy ? 'opacity-50' : 'active:opacity-80'}`}
-            disabled={!statusLoaded || busy}
-            onPress={() => changeSettings({ instagramExploreBlocked: !currentStatus?.instagramExploreBlocked })}>
-            <Text className={currentStatus?.instagramExploreBlocked ? 'font-bold text-copy' : 'font-bold text-danger'}>
-              {currentStatus === null ? 'Status unavailable' : currentStatus.instagramExploreBlocked ? 'Explore blocked' : 'Explore enabled'}
-            </Text>
-          </Pressable>
-        </View>
-
-        <Pressable className="mt-5 items-center rounded-2xl border border-line bg-panel2 py-3.5 active:opacity-80" disabled={!statusLoaded || busy} onPress={openInstagramApp}>
-          <Text className="font-bold text-copy">{busy ? 'Working' : 'Open Instagram'}</Text>
-        </Pressable>
-        <View className="mt-4 flex-row items-center rounded-2xl border border-line bg-panel2 px-4 py-3">
-          <LockKeyhole color="#A7E782" size={17} />
-          <Text className="ml-3 flex-1 text-xs leading-5 text-muted">Weaker settings ask for your password when protection is on.</Text>
-        </View>
-        {error ? <Text className="mt-4 text-sm font-medium text-danger">{error}</Text> : null}
-      </ScrollView>
-    </SafeAreaView>
+      <View className="flex-row items-center rounded-2xl border border-line bg-panel2 px-4 py-3">
+        <LockKeyhole color={colors.faint} size={16} />
+        <Text className="ml-3 flex-1 text-[12px] leading-[18px] text-faint">While the lock is on you can tighten a limit, but not loosen it.</Text>
+      </View>
+      <ErrorNote message={error} />
+    </Screen>
   );
 }
 
-function StatusPill({ label, tone }: { label: string; tone: 'accent' | 'danger' | 'neutral' }) {
-  const className = tone === 'accent' ? 'border-accent bg-accent text-onAccent' : tone === 'danger' ? 'border-dangerLine bg-dangerBg text-danger' : 'border-line bg-panel2 text-muted';
-  return <Text className={`rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-widest ${className}`}>{label}</Text>;
-}
-
-function SettingCard({ title, detail, value, children }: { title: string; detail: string; value?: string; children: React.ReactNode }) {
+/** A named limit with its current value and a row of preset choices. */
+function SettingCard({ title, detail, value, children }: { title: string; detail: string; value: string; children: React.ReactNode }) {
   return (
-    <View className="mt-2 rounded-3xl border border-line bg-panel p-4">
+    <Card>
       <View className="flex-row items-start justify-between">
         <View className="flex-1 pr-3">
-          <Text className="font-semibold text-copy">{title}</Text>
-          <Text className="mt-1 text-sm leading-5 text-muted">{detail}</Text>
+          <Text className="text-[15px] font-semibold text-copy">{title}</Text>
+          <Text className="mt-0.5 text-[13px] leading-[18px] text-muted">{detail}</Text>
         </View>
-        {value ? <Text className="text-sm font-bold text-accent">{value}</Text> : null}
+        <StatusPill label={value} tone="accent" />
       </View>
       {children}
-    </View>
+    </Card>
   );
 }
 
 function PresetRow({ values, selected, suffix, disabled, onSelect }: { values: number[]; selected?: number; suffix: string; disabled?: boolean; onSelect: (value: number) => void }) {
   return (
-    <View className="mt-4 flex-row flex-wrap gap-2">
+    <View className="mt-3.5 flex-row flex-wrap gap-2">
       {values.map((value) => (
         <Pressable
           key={value}
-          className={`min-w-14 items-center rounded-xl border px-3 py-2.5 ${selected === value ? 'border-accent bg-accent' : 'border-line bg-panel2'} ${disabled ? 'opacity-50' : 'active:opacity-80'}`}
+          accessibilityRole="radio"
+          accessibilityState={{ selected: selected === value, disabled }}
+          className={`min-w-[52px] items-center rounded-xl border px-3 py-2 ${selected === value ? 'border-accent bg-accent' : 'border-line bg-panel2'} ${disabled ? 'opacity-40' : 'active:opacity-70'}`}
           disabled={disabled}
           onPress={() => onSelect(value)}>
-          <Text className={selected === value ? 'font-bold text-onAccent' : 'font-bold text-muted'}>{value}{suffix}</Text>
+          <Text className={`text-[14px] font-bold ${selected === value ? 'text-onAccent' : 'text-muted'}`}>
+            {value}
+            {suffix}
+          </Text>
         </Pressable>
       ))}
     </View>

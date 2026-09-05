@@ -30,7 +30,6 @@ internal object ShortsDetector {
 
   private val ordinaryWatchIdFragments = listOf(
     "watch_player",
-    "watch_while",
     "player_control",
   )
 
@@ -44,7 +43,7 @@ internal object ShortsDetector {
   fun detect(nodes: List<NodeSignal>): DetectionResult {
     val ids = nodes.map { it.viewId.lowercase() }
     val hasViewerId = ids.any { id -> viewerIdFragments.any(id::contains) }
-    val hasOrdinaryWatchId = ids.any { id -> ordinaryWatchIdFragments.any(id::contains) }
+    val hasOrdinaryWatchId = ids.any { id -> !id.substringAfterLast('/').startsWith("reel_") && ordinaryWatchIdFragments.any(id::contains) }
 
     if (hasViewerId && !hasOrdinaryWatchId) {
       return DetectionResult(true, "viewer-resource-id")

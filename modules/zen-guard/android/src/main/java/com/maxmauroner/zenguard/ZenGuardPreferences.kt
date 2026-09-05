@@ -13,6 +13,29 @@ internal class ZenGuardPreferences(context: Context) {
     get() = preferences.getBoolean(KEY_OBSERVATION_MODE, true)
     set(value) = preferences.edit().putBoolean(KEY_OBSERVATION_MODE, value).apply()
 
+  var shortsEnabled: Boolean
+    get() = preferences.getBoolean("shorts_enabled", true)
+    set(value) = preferences.edit().putBoolean("shorts_enabled", value).apply()
+
+  var xHomeEnabled: Boolean
+    get() = preferences.getBoolean("x_home_enabled", true)
+    set(value) = preferences.edit().putBoolean("x_home_enabled", value).apply()
+  var xVideosEnabled: Boolean
+    get() = preferences.getBoolean("x_videos_enabled", true)
+    set(value) = preferences.edit().putBoolean("x_videos_enabled", value).apply()
+  var xHomeMinutes: Int
+    get() = preferences.getInt("x_home_minutes", 5)
+    set(value) = preferences.edit().putInt("x_home_minutes", value).apply()
+  var xObservationMode: Boolean
+    get() = preferences.getBoolean("x_observation_mode", true)
+    set(value) = preferences.edit().putBoolean("x_observation_mode", value).apply()
+  val xSignalMask: Int get() = preferences.getInt("x_signal_mask", 0)
+
+  fun recordXSignal(mask: Int) {
+    if (xSignalMask and mask == mask) return
+    preferences.edit().putInt("x_signal_mask", xSignalMask or mask).apply()
+  }
+
   val lastEventAt: Long get() = preferences.getLong(KEY_LAST_EVENT_AT, 0)
   val lastDetectionAt: Long get() = preferences.getLong(KEY_LAST_DETECTION_AT, 0)
   val detectionCount: Int get() = preferences.getInt(KEY_DETECTION_COUNT, 0)

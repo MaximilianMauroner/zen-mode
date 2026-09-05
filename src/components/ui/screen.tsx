@@ -1,15 +1,15 @@
 import { type ComponentType, type ReactNode } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View, type ScrollViewProps } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 import { ArrowLeft, type LucideProps } from 'lucide-react-native';
 
 import { StatusPill, type PillTone } from '@/components/ui/pill';
 import { colors } from '@/theme/colors';
 
 /** Scrolling page frame. Every screen shares the same width, gutter, and rhythm. */
-export function Screen({ children, refreshControl }: { children: ReactNode; refreshControl?: ScrollViewProps['refreshControl'] }) {
+export function Screen({ children, refreshControl, edges = ['top'] }: { children: ReactNode; refreshControl?: ScrollViewProps['refreshControl']; edges?: Edge[] }) {
   return (
-    <SafeAreaView className="flex-1 bg-night" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-night" edges={edges}>
       <ScrollView contentContainerClassName="mx-auto w-full max-w-xl gap-5 px-5 pb-14 pt-3" refreshControl={refreshControl}>
         {children}
       </ScrollView>

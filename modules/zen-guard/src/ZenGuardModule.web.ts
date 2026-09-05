@@ -9,6 +9,12 @@ class ZenGuardModule extends NativeModule<{}> {
       serviceEnabled: false,
       protectionEnabled: false,
       observationMode: true,
+      shortsEnabled: true,
+      xHomeEnabled: true,
+      xVideosEnabled: true,
+      xHomeMinutes: 5,
+      xObservationMode: true,
+      xSignalMask: 0,
       lastEventAt: 0,
       lastDetectionAt: 0,
       detectionCount: 0,
@@ -28,6 +34,10 @@ class ZenGuardModule extends NativeModule<{}> {
   async openAccessibilitySettings() {}
   async openYouTube() {}
   async openInstagram() {}
+  async openX() {}
+  async setShortsEnabled() {}
+  async setXSettings() {}
+  async setXObservationMode() {}
   async setProtectionEnabled() {}
   async setObservationMode() {}
   async setInstagramObservationMode() {}

@@ -45,3 +45,6 @@ example
 
 # Local agent research and planning artifacts
 /.agents/artifacts/
+
+# Image generation drafts and source exports
+/output/imagegen/

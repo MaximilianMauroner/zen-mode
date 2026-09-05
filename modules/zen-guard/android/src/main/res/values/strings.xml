@@ -4,7 +4,7 @@
   <string name="zen_guard_accessibility_service_description">Detects guarded YouTube and Instagram feeds on this device. Screen contents are processed locally and are never stored or sent anywhere.</string>
   <string name="zen_guard_app_limit_reached">Daily limit reached</string>
   <string name="zen_guard_rolling_limit_reached">Limit reached, refills over time</string>
-  <string name="zen_guard_shorts_blocked">Shorts blocked by Zen Mode</string>
+  <string name="zen_guard_shorts_blocked">One Short per visit. Scrolling is blocked.</string>
 
   <!-- Blocked screen, phase one: one line to read and nothing to work out. -->
   <string name="zen_guard_instagram_reels_blocked">Take a\nbreath.</string>
@@ -63,4 +63,11 @@
   <string name="zen_guard_intent_cooldown_detail">%1$s opens again when the downtime ends. Until then, do the other thing.</string>
   <string name="zen_guard_intent_cooldown_leave">Back home</string>
   <string name="zen_guard_intent_time_up">Time is up</string>
+  <string name="zen_guard_x_home_title">Time to leave the feed.</string>
+  <plurals name="zen_guard_x_home_detail">
+    <item quantity="one">You’ve spent %1$d minute in X Home.</item>
+    <item quantity="other">You’ve spent %1$d minutes in X Home.</item>
+  </plurals>
+  <string name="zen_guard_leave_x">Leave X</string>
+  <string name="zen_guard_x_video_blocked">One video per visit. Scrolling is blocked.</string>
 </resources>

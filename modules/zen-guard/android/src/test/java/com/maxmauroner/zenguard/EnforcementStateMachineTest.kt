@@ -4,15 +4,29 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class EnforcementStateMachineTest {
-  @Test
-  fun boundsActionsAndResetsAfterLeavingShorts() {
-    val state = EnforcementStateMachine(cooldownMs = 100, fallbackAfterMs = 200)
+  @Test fun allowsTheFirstShortIncludingRepeatedAndPlaybackEvents() {
+    val state = EnforcementStateMachine()
+    assertEquals(EnforcementAction.NONE, state.next(true, 7, 0))
+    assertEquals(EnforcementAction.NONE, state.next(true, 7, 60_000))
+    assertEquals(EnforcementAction.NONE, state.next(true, null, 61_000))
+    assertEquals(EnforcementAction.LEAVE_SHORTS, state.next(true, 8, 62_000))
+  }
 
-    assertEquals(EnforcementAction.BACK, state.next(true, 1_000))
-    assertEquals(EnforcementAction.NONE, state.next(true, 1_050))
-    assertEquals(EnforcementAction.HOME, state.next(true, 1_250))
-    assertEquals(EnforcementAction.NONE, state.next(true, 1_500))
-    assertEquals(EnforcementAction.NONE, state.next(false, 1_600))
-    assertEquals(EnforcementAction.BACK, state.next(true, 1_700))
+  @Test fun blocksBothSwipeDirectionsAndBoundsRepeatedActions() {
+    val state = EnforcementStateMachine(cooldownMs = 100)
+    assertEquals(EnforcementAction.NONE, state.next(true, 7, 0))
+    assertEquals(EnforcementAction.LEAVE_SHORTS, state.next(true, 6, 1_000))
+    assertEquals(EnforcementAction.NONE, state.next(true, 6, 1_050))
+    assertEquals(EnforcementAction.LEAVE_SHORTS, state.next(true, 6, 1_200))
+  }
+
+  @Test fun aNewVisitAllowsOneVideoAndUnknownIndicesDoNotCountAsVideos() {
+    val state = EnforcementStateMachine()
+    assertEquals(EnforcementAction.NONE, state.next(true, -1, 0))
+    assertEquals(EnforcementAction.NONE, state.next(true, 3, 100))
+    assertEquals(EnforcementAction.LEAVE_SHORTS, state.next(true, 4, 200))
+    assertEquals(EnforcementAction.NONE, state.next(false, null, 300))
+    assertEquals(EnforcementAction.NONE, state.next(true, 4, 400))
+    assertEquals(EnforcementAction.LEAVE_SHORTS, state.next(true, 5, 500))
   }
 }

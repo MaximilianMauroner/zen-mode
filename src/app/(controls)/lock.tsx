@@ -1,6 +1,7 @@
 import { DangerButton, PrimaryButton, SecondaryButton } from '@/components/ui/button';
 import { Card, CardHeader, SectionLabel } from '@/components/ui/card';
-import { ErrorNote, Screen, ScreenHeader, ScreenTitle } from '@/components/ui/screen';
+import { TopTabs } from 'expo-router/js-top-tabs';
+import { ErrorNote, Screen } from '@/components/ui/screen';
 import {
   armLock,
   cancelUnlock,
@@ -11,8 +12,8 @@ import {
   type LockState,
 } from '@/features/protection/lock';
 import { colors } from '@/theme/colors';
-import { Lock, TriangleAlert } from 'lucide-react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { Lock } from 'lucide-react-native';
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
@@ -32,7 +33,6 @@ export default function LockScreen() {
     if (refreshInFlightRef.current) return;
     refreshInFlightRef.current = true;
     setReadState('loading');
-    setLock(null);
     setError('');
     try {
       setLock(await readLockState());
@@ -46,17 +46,24 @@ export default function LockScreen() {
     }
   }, []);
 
+  // Warm inactive tabs after the first frame without delaying the visible screen.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => { void refresh(); });
+    return () => cancelAnimationFrame(frame);
+  }, [refresh]);
+
   useFocusEffect(
     useCallback(() => {
       void refresh();
     }, [refresh]),
   );
 
-  // Countdowns are minute-grained, so a minute tick is enough to keep them true.
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 60_000);
+  // Inactive tabs do not keep ticking. Refresh the actual lock when it can expire.
+  useFocusEffect(useCallback(() => {
+    setNow(Date.now());
+    const timer = setInterval(() => { setNow(Date.now()); if (!busyRef.current) void refresh(); }, 60_000);
     return () => clearInterval(timer);
-  }, []);
+  }, [refresh]));
 
   const runAction = useCallback((task: () => Promise<void>, fallbackMessage: string) => {
     if (busyRef.current) return;
@@ -93,36 +100,14 @@ export default function LockScreen() {
       await refresh();
     }, 'Could not keep it locked.');
 
-  const goBack = () => runAction(async () => router.back(), 'Could not go back.');
-
-  const currentLock = readState === 'ready' ? lock : null;
-  const pill =
-    currentLock === null
-      ? { label: readState === 'loading' ? 'CHECKING' : 'UNAVAILABLE', tone: 'neutral' as const }
-      : currentLock.kind === 'open'
-        ? { label: 'OPEN', tone: 'neutral' as const }
-        : currentLock.kind === 'pending'
-          ? { label: 'UNLOCKING', tone: 'danger' as const }
-          : { label: 'LOCKED', tone: 'accent' as const, solid: true };
+  const currentLock = lock;
+  const controlsDisabled = busy || readState !== 'ready';
 
   return (
-    <Screen>
-      <ScreenHeader label="LOCK" onBack={goBack} backDisabled={busy} pill={pill} />
+    <Screen edges={[]}>
+      <TopTabs.Screen options={{ swipeEnabled: !busy }} />
 
-      <ScreenTitle
-        title={currentLock?.kind === 'pending' ? 'Unlocking.' : currentLock?.kind === 'locked' ? 'Locked in.' : 'Commit to it.'}
-        description={
-          currentLock === null
-            ? readState === 'loading'
-              ? 'Reading the lock.'
-              : 'Zen Mode cannot show or change the lock until it can read this.'
-            : currentLock.kind === 'open'
-              ? 'Pick how long to hold your limits. While the lock is on you can tighten them, but not loosen them.'
-              : currentLock.kind === 'locked'
-                ? 'Tighten a limit whenever you like. Loosening one means asking to unlock, then waiting a day.'
-                : 'The wait is running. Your limits hold until it ends.'
-        }
-      />
+      <Text accessibilityRole="header" className="text-[18px] font-semibold text-copy">{currentLock === null ? readState === 'loading' ? 'Reading lock…' : 'Lock unavailable' : currentLock.kind === 'pending' ? 'Unlock requested' : currentLock.kind === 'locked' ? 'Settings locked' : 'Settings unlocked'}</Text>
 
       {currentLock !== null && currentLock.kind !== 'open' ? (
         <Card emphasis={currentLock.kind === 'locked'}>
@@ -139,7 +124,7 @@ export default function LockScreen() {
               : 'Tightening works right now. Loosening needs the wait.'}
           </Text>
           {currentLock.kind === 'pending' ? (
-            <PrimaryButton className="mt-4" title={busy ? 'Working…' : 'Keep it locked'} disabled={busy} onPress={keepLocked} />
+            <PrimaryButton className="mt-4" title={busy ? 'Working…' : 'Keep it locked'} disabled={controlsDisabled} onPress={keepLocked} />
           ) : null}
         </Card>
       ) : null}
@@ -152,9 +137,9 @@ export default function LockScreen() {
               <Pressable
                 key={days}
                 accessibilityRole="radio"
-                accessibilityState={{ selected: selectedDays === days, disabled: busy }}
-                className={`min-w-[56px] items-center rounded-xl border px-3 py-2 ${selectedDays === days ? 'border-accent bg-accent' : 'border-line bg-panel2'} ${busy ? 'opacity-40' : 'active:opacity-70'}`}
-                disabled={busy}
+                accessibilityState={{ selected: selectedDays === days, disabled: controlsDisabled }}
+                className={`min-h-11 min-w-[56px] items-center rounded-xl border px-3 py-2 ${selectedDays === days ? 'border-accent bg-accent' : 'border-line bg-panel2'} ${controlsDisabled ? 'opacity-40' : 'active:opacity-70'}`}
+                disabled={controlsDisabled}
                 onPress={() => setSelectedDays(days)}>
                 <Text className={`text-[14px] font-bold ${selectedDays === days ? 'text-onAccent' : 'text-muted'}`}>{days}d</Text>
               </Pressable>
@@ -164,14 +149,14 @@ export default function LockScreen() {
             <SecondaryButton
               className="mt-4"
               title={busy ? 'Working…' : `Extend to ${selectedDays} days`}
-              disabled={busy || readState !== 'ready'}
+              disabled={controlsDisabled}
               onPress={arm}
             />
           ) : (
             <PrimaryButton
               className="mt-4"
               title={busy ? 'Working…' : `Lock for ${selectedDays} days`}
-              disabled={busy || readState !== 'ready'}
+              disabled={controlsDisabled}
               onPress={arm}
             />
           )}
@@ -179,17 +164,10 @@ export default function LockScreen() {
       </View>
 
       {currentLock?.kind === 'locked' ? (
-        <DangerButton title={busy ? 'Working…' : 'Ask to unlock'} disabled={busy} onPress={askToUnlock} />
+        <DangerButton title={busy ? 'Working…' : 'Ask to unlock'} disabled={controlsDisabled} onPress={askToUnlock} />
       ) : null}
 
-      <View className="flex-row items-start rounded-2xl border border-line bg-panel2 px-4 py-3">
-        <View className="mt-0.5">
-          <TriangleAlert color={colors.faint} size={16} />
-        </View>
-        <Text className="ml-3 flex-1 text-[12px] leading-[18px] text-faint">
-          The lock trusts this phone&apos;s clock. Changing the date or uninstalling Zen Mode gets around it.
-        </Text>
-      </View>
+      <Text className="text-[12px] leading-[18px] text-muted">{currentLock?.kind === 'locked' || currentLock?.kind === 'pending' ? 'Unlocking takes at least 24 hours and cannot end before the lock expires.' : 'You can tighten limits while locked.'}</Text>
       <ErrorNote message={error} />
     </Screen>
   );

@@ -25,10 +25,12 @@
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-gesture-handler": "~2.32.0",
+    "react-native-pager-view": "8.0.2",
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
     "react-native-svg": "15.15.4",
+    "react-native-tab-view": "^4.3.2",
     "react-native-web": "~0.21.0",
     "react-native-worklets": "0.10.1"
   },
@@ -48,7 +50,8 @@
     "phone:mirror": "bash ./scripts/watch-phone.sh",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test": "node --test tests/*.test.mjs"
   },
   "private": true
 }

@@ -1,5 +1,7 @@
 import { Children, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
+import { ChevronRight, type LucideIcon } from 'lucide-react-native';
+import { colors } from '@/theme/colors';
 
 import { StatusPill, type PillTone } from '@/components/ui/pill';
 
@@ -51,17 +53,21 @@ export function RowGroup({ children, className = '' }: { children: ReactNode; cl
  * state, so it is tinted and carries no state pill.
  */
 export function Row({
+  icon: Icon,
   label,
   detail,
   value,
+  statusLabel,
   tone = 'neutral',
   destructive = false,
   disabled,
   onPress,
 }: {
+  icon?: LucideIcon;
   label: string;
   detail: string;
   value?: string;
+  statusLabel?: string;
   tone?: PillTone;
   destructive?: boolean;
   disabled?: boolean;
@@ -69,11 +75,16 @@ export function Row({
 }) {
   const content = (
     <>
+      {Icon ? <View className="mr-3"><Icon color={colors.accent} size={20} /></View> : null}
       <View className="flex-1 pr-3">
-        <Text className={`text-[15px] font-semibold ${destructive ? 'text-danger' : 'text-copy'}`}>{label}</Text>
+        <View className="flex-row flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <Text className={`text-[15px] font-semibold ${destructive ? 'text-danger' : 'text-copy'}`}>{label}</Text>
+          {statusLabel ? <Text className={`text-[12px] font-semibold ${tone === 'accent' ? 'text-accent' : tone === 'danger' ? 'text-danger' : 'text-muted'}`}>{statusLabel}</Text> : null}
+        </View>
         <Text className="mt-0.5 text-[13px] leading-[18px] text-muted">{detail}</Text>
       </View>
       {value && !destructive ? <StatusPill label={value} tone={tone} /> : null}
+      {onPress && !destructive ? <ChevronRight color={colors.muted} size={17} style={{ marginLeft: 8 }} /> : null}
     </>
   );
 
@@ -82,6 +93,7 @@ export function Row({
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityState={{ disabled: Boolean(disabled) }}
       className={`flex-row items-center py-3.5 ${disabled ? 'opacity-40' : 'active:opacity-60'}`}
       disabled={disabled}
       onPress={onPress}>

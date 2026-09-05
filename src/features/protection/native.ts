@@ -28,3 +28,8 @@ export const getRollingLimits = () => ZenGuardModule.getRollingLimits();
 export const setRollingLimit = (packageName: string, allowanceMinutes: number, windowMinutes: number) =>
   ZenGuardModule.setRollingLimit(packageName, allowanceMinutes, windowMinutes);
 export const removeRollingLimit = (packageName: string) => ZenGuardModule.removeRollingLimit(packageName);
+
+export const openX = () => ZenGuardModule.openX();
+export const setShortsEnabled = (enabled: boolean) => ZenGuardModule.setShortsEnabled(enabled);
+export const setXSettings = (homeEnabled: boolean, videosEnabled: boolean, homeMinutes: number) => ZenGuardModule.setXSettings(homeEnabled, videosEnabled, homeMinutes);
+export const setXObservationMode = (enabled: boolean) => ZenGuardModule.setXObservationMode(enabled);

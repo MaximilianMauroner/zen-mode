@@ -20,6 +20,12 @@ class ZenGuardModule : Module() {
         "serviceEnabled" to isServiceEnabled(context),
         "protectionEnabled" to preferences.protectionEnabled,
         "observationMode" to preferences.observationMode,
+        "shortsEnabled" to preferences.shortsEnabled,
+        "xHomeEnabled" to preferences.xHomeEnabled,
+        "xVideosEnabled" to preferences.xVideosEnabled,
+        "xHomeMinutes" to preferences.xHomeMinutes,
+        "xObservationMode" to preferences.xObservationMode,
+        "xSignalMask" to preferences.xSignalMask,
         "lastEventAt" to preferences.lastEventAt.toDouble(),
         "lastDetectionAt" to preferences.lastDetectionAt.toDouble(),
         "detectionCount" to preferences.detectionCount,
@@ -167,6 +173,36 @@ class ZenGuardModule : Module() {
         throw IllegalStateException("A Shorts signal must be observed before enforcement can be enabled")
       }
       preferences.observationMode = enabled
+    }
+
+    AsyncFunction("openX") {
+      val context = requireNotNull(appContext.reactContext)
+      val intent = context.packageManager.getLaunchIntentForPackage("com.twitter.android")
+        ?: throw IllegalStateException("The X app is not installed")
+      context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    AsyncFunction("setShortsEnabled") { enabled: Boolean ->
+      ZenGuardPreferences(requireNotNull(appContext.reactContext)).shortsEnabled = enabled
+    }
+
+    AsyncFunction("setXSettings") { homeEnabled: Boolean, videosEnabled: Boolean, homeMinutes: Int ->
+      require(homeMinutes in 1..30) { "Home time must be between 1 and 30 minutes" }
+      ZenGuardPreferences(requireNotNull(appContext.reactContext)).apply {
+        xHomeEnabled = homeEnabled
+        xVideosEnabled = videosEnabled
+        xHomeMinutes = homeMinutes
+        val required = (if (homeEnabled) 1 else 0) or (if (videosEnabled) 2 else 0)
+        if (xSignalMask and required != required) xObservationMode = true
+      }
+      Unit
+    }
+
+    AsyncFunction("setXObservationMode") { enabled: Boolean ->
+      val preferences = ZenGuardPreferences(requireNotNull(appContext.reactContext))
+      val required = (if (preferences.xHomeEnabled) 1 else 0) or (if (preferences.xVideosEnabled) 2 else 0)
+      check(enabled || preferences.xSignalMask and required == required) { "Open X Home and one video before starting protection" }
+      preferences.xObservationMode = enabled
     }
 
     AsyncFunction("setInstagramObservationMode") { enabled: Boolean ->

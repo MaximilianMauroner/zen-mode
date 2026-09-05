@@ -1,11 +1,12 @@
 import { DangerButton, PrimaryButton, SecondaryButton } from '@/components/ui/button';
-import { Card, Row, RowGroup, SectionLabel } from '@/components/ui/card';
-import { ErrorNote, Screen, ScreenHeader, ScreenTitle } from '@/components/ui/screen';
+import { Card, SectionLabel } from '@/components/ui/card';
+import { ErrorNote, Screen, ScreenHeader } from '@/components/ui/screen';
+import { AppPicker } from '@/components/ui/app-picker';
+import { TopTabs } from 'expo-router/js-top-tabs';
 import { StatusPill } from '@/components/ui/pill';
 import { isChangeBlocked } from '@/features/protection/lock';
 import {
   getAppLimits,
-  getInstalledApps,
   getIntentApps,
   getRollingLimits,
   removeAppLimit,
@@ -19,10 +20,9 @@ import {
   type IntentApp,
   type RollingLimit,
 } from '@/features/protection/native';
-import { colors } from '@/theme/colors';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Pressable, Text, View } from 'react-native';
 
 const MINUTE_OPTIONS = [5, 15, 30, 45, 60, 90, 120];
 /** Fixed visit lengths for the intent question. */
@@ -56,11 +56,10 @@ export default function AppLimitsScreen() {
   const [limits, setLimits] = useState<AppLimit[] | null>(null);
   const [intents, setIntents] = useState<IntentApp[] | null>(null);
   const [rolling, setRolling] = useState<RollingLimit[] | null>(null);
-  const [apps, setApps] = useState<InstalledApp[] | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [readState, setReadState] = useState<ReadState>('loading');
   const [selected, setSelected] = useState<InstalledApp | null>(null);
   const [mode, setMode] = useState<RuleMode>('daily');
-  const [search, setSearch] = useState('');
   const [minutes, setMinutes] = useState(15);
   const [session, setSession] = useState(5);
   const [cooldown, setCooldown] = useState(5);
@@ -77,20 +76,17 @@ export default function AppLimitsScreen() {
     setReadState('loading');
     setError('');
     try {
-      const [nextLimits, nextApps, nextIntents, nextRolling] = await Promise.all([
+      const [nextLimits, nextIntents, nextRolling] = await Promise.all([
         getAppLimits(),
-        getInstalledApps(),
         getIntentApps(),
         getRollingLimits(),
       ]);
       setLimits(nextLimits);
-      setApps(nextApps);
       setIntents(nextIntents);
       setRolling(nextRolling);
       setReadState('ready');
     } catch {
       setLimits(null);
-      setApps(null);
       setIntents(null);
       setRolling(null);
       setReadState('error');
@@ -99,6 +95,12 @@ export default function AppLimitsScreen() {
       refreshInFlightRef.current = false;
     }
   }, []);
+
+  // Warm inactive tabs after the first frame without delaying the visible screen.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => { void refresh(); });
+    return () => cancelAnimationFrame(frame);
+  }, [refresh]);
 
   useFocusEffect(
     useCallback(() => {
@@ -123,9 +125,10 @@ export default function AppLimitsScreen() {
     })();
   }, []);
 
-  const currentLimits = readState === 'ready' ? limits : null;
-  const currentIntents = readState === 'ready' ? intents : null;
-  const currentRolling = readState === 'ready' ? rolling : null;
+  const controlsDisabled = busy || readState !== 'ready';
+  const currentLimits = limits;
+  const currentIntents = intents;
+  const currentRolling = rolling;
 
   const guardedByPackage = new Map<string, GuardedEntry>();
   currentLimits?.forEach((limit) =>
@@ -139,14 +142,9 @@ export default function AppLimitsScreen() {
   );
   const guarded = [...guardedByPackage.values()].sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()));
 
-  const query = search.trim().toLowerCase();
-  const unguarded = (apps ?? [])
-    .filter((app) => !guardedByPackage.has(app.packageName))
-    .filter((app) => query === '' || app.label.toLowerCase().includes(query))
-    .slice(0, 40);
-
   // Opening an app pre-fills its current rule, or plain defaults for a new one.
   const selectApp = (app: InstalledApp) => {
+    if (controlsDisabled) return;
     const entry = guardedByPackage.get(app.packageName);
     if (entry?.limit) {
       setMode('daily');
@@ -172,7 +170,7 @@ export default function AppLimitsScreen() {
 
   // One rule per app keeps enforcement predictable, so saving replaces the rest.
   const saveRule = () => {
-    if (!selected) return;
+    if (!selected || controlsDisabled) return;
     if (mode === 'rolling' && allowance > window) {
       setError('The allowance must fit inside its window.');
       return;
@@ -202,7 +200,7 @@ export default function AppLimitsScreen() {
     runAction(async () => {
       if (await isChangeBlocked()) {
         setError('Removing a rule loosens the guard. Ask to unlock, then wait a day.');
-        router.push('/lock');
+        router.navigate('/lock');
         return;
       }
       await removeAppLimit(packageName);
@@ -212,25 +210,19 @@ export default function AppLimitsScreen() {
       await refresh();
     }, 'Those rules could not be removed.');
 
-  const goBack = () => runAction(async () => router.back(), 'Could not go back.');
 
   return (
-    <Screen>
-      <ScreenHeader
-        label="APP RULES"
-        onBack={selected ? () => setSelected(null) : goBack}
-        backDisabled={busy}
-        pill={{ label: readState !== 'ready' ? '—' : `${guarded.length}`, tone: guarded.length > 0 ? 'accent' : 'neutral' }}
-      />
+    <Screen edges={[]}>
+      <TopTabs.Screen options={{ swipeEnabled: !busy }} />
+      {selected ? <ScreenHeader label={selected.label} onBack={() => setSelected(null)} backDisabled={busy} /> : null}
 
       {selected ? (
         <>
-          <ScreenTitle title={selected.label} description="One rule per app. Saving replaces whatever this app had." />
 
           <View>
             <SectionLabel className="mb-2.5">RULE</SectionLabel>
             <Card>
-              <ModeRow selected={mode} disabled={busy} onSelect={setMode} />
+              <ModeRow selected={mode} disabled={controlsDisabled} onSelect={setMode} />
             </Card>
           </View>
 
@@ -239,7 +231,7 @@ export default function AppLimitsScreen() {
               <SectionLabel className="mb-2.5">DAILY BUDGET</SectionLabel>
               <Card>
                 <Text className="mb-3 text-[13px] leading-[19px] text-muted">When it runs out, Zen Mode sends you home until midnight.</Text>
-                <MinuteRow selected={minutes} disabled={busy} onSelect={setMinutes} />
+                <MinuteRow selected={minutes} disabled={controlsDisabled} onSelect={setMinutes} />
               </Card>
             </View>
           ) : mode === 'visit' ? (
@@ -250,9 +242,9 @@ export default function AppLimitsScreen() {
                   Opening the app asks first. Confirming starts one visit of this length, then the app rests.
                 </Text>
                 <SectionLabel className="mb-2">VISIT LENGTH</SectionLabel>
-                <MinuteRow options={SESSION_OPTIONS} selected={session} disabled={busy} onSelect={setSession} />
+                <MinuteRow options={SESSION_OPTIONS} selected={session} disabled={controlsDisabled} onSelect={setSession} />
                 <SectionLabel className="mb-2 mt-4">DOWNTIME</SectionLabel>
-                <CooldownRow selected={cooldown} disabled={busy} onSelect={setCooldown} />
+                <CooldownRow selected={cooldown} disabled={controlsDisabled} onSelect={setCooldown} />
               </Card>
             </View>
           ) : (
@@ -271,7 +263,7 @@ export default function AppLimitsScreen() {
                         accessibilityRole="radio"
                         accessibilityState={{ selected: active, disabled: busy }}
                         className={`items-center rounded-xl border px-3 py-2 ${active ? 'border-accent bg-accent' : 'border-line bg-panel2'} ${busy ? 'opacity-40' : 'active:opacity-70'}`}
-                        disabled={busy}
+                        disabled={controlsDisabled}
                         onPress={() => {
                           setAllowance(prefill.allowance);
                           setWindow(prefill.window);
@@ -282,26 +274,24 @@ export default function AppLimitsScreen() {
                   })}
                 </View>
                 <SectionLabel className="mb-2">ALLOWANCE</SectionLabel>
-                <MinuteRow options={ALLOWANCE_OPTIONS} selected={allowance} disabled={busy} onSelect={setAllowance} />
+                <MinuteRow options={ALLOWANCE_OPTIONS} selected={allowance} disabled={controlsDisabled} onSelect={setAllowance} />
                 <SectionLabel className="mb-2 mt-4">EVERY</SectionLabel>
-                <WindowRow selected={window} disabled={busy} onSelect={setWindow} />
+                <WindowRow selected={window} disabled={controlsDisabled} onSelect={setWindow} />
               </Card>
             </View>
           )}
 
-          <PrimaryButton title={busy ? 'Working…' : 'Save rule'} disabled={busy} onPress={saveRule} />
+          <PrimaryButton title={busy ? 'Working…' : 'Save rule'} disabled={controlsDisabled} onPress={saveRule} />
           {guardedByPackage.has(selected.packageName) ? (
-            <DangerButton title={busy ? 'Working…' : 'Remove rules'} disabled={busy} onPress={() => dropRules(selected.packageName)} />
+            <DangerButton title={busy ? 'Working…' : 'Remove rules'} disabled={controlsDisabled} onPress={() => dropRules(selected.packageName)} />
           ) : null}
           <SecondaryButton title="Cancel" disabled={busy} onPress={() => setSelected(null)} />
         </>
       ) : (
         <>
-          <ScreenTitle title="Time you meant to spend." description="Pick an app, give it one rule. Guarded apps sit at the top." />
 
           <View>
-            <SectionLabel className="mb-2.5">GUARDED</SectionLabel>
-            {readState !== 'ready' || currentLimits === null || currentIntents === null || currentRolling === null ? (
+            {currentLimits === null || currentIntents === null || currentRolling === null ? (
               <Card>
                 <Text className="text-[13px] leading-[19px] text-muted">
                   {readState === 'loading' ? 'Reading your app rules.' : 'The app rules could not be read.'}
@@ -309,48 +299,22 @@ export default function AppLimitsScreen() {
               </Card>
             ) : guarded.length === 0 ? (
               <Card>
-                <Text className="text-[13px] leading-[19px] text-muted">No app has a rule yet. Pick one below.</Text>
+                <Text className="text-[13px] leading-[19px] text-muted">No app limits yet.</Text>
               </Card>
             ) : (
               <View className="gap-2.5">
                 {guarded.map((entry) => (
-                  <GuardedCard key={entry.packageName} entry={entry} disabled={busy} onEdit={() => selectApp({ packageName: entry.packageName, label: entry.label })} />
+                  <GuardedCard key={entry.packageName} entry={entry} disabled={controlsDisabled} onEdit={() => selectApp({ packageName: entry.packageName, label: entry.label })} />
                 ))}
               </View>
             )}
           </View>
 
-          <View>
-            <SectionLabel className="mb-2.5">ALL APPS</SectionLabel>
-            <TextInput
-              accessibilityLabel="Search apps"
-              autoCapitalize="none"
-              autoCorrect={false}
-              className="mb-2.5 rounded-2xl border border-line bg-panel px-4 py-3.5 text-[15px] text-copy"
-              editable={!busy && readState === 'ready'}
-              onChangeText={setSearch}
-              placeholder="Search"
-              placeholderTextColor={colors.faint}
-              value={search}
-            />
-            {unguarded.length === 0 ? (
-              <Card>
-                <Text className="text-[13px] leading-[19px] text-muted">
-                  {readState === 'loading' ? 'Reading the apps on this phone.' : 'No app matches that.'}
-                </Text>
-              </Card>
-            ) : (
-              <RowGroup>
-                {unguarded.map((app) => (
-                  <Row key={app.packageName} label={app.label} detail={app.packageName} value="ADD" tone="accent" disabled={busy} onPress={() => selectApp(app)} />
-                ))}
-              </RowGroup>
-            )}
-          </View>
+          <SecondaryButton title="＋ Add app" disabled={controlsDisabled} onPress={() => setPickerOpen(true)} />
         </>
       )}
 
-      <Text className="text-center text-[12px] leading-[18px] text-faint">Budgets reset at midnight. Visits ask first. Allowances refill over time.</Text>
+      <AppPicker visible={pickerOpen} configuredPackages={new Set(guardedByPackage.keys())} onClose={() => setPickerOpen(false)} onSelect={(app) => { setPickerOpen(false); selectApp(app); }} />
       <ErrorNote message={error} />
     </Screen>
   );
@@ -360,13 +324,11 @@ export default function AppLimitsScreen() {
 function GuardedCard({ entry, disabled, onEdit }: { entry: GuardedEntry; disabled: boolean; onEdit: () => void }) {
   const summaries: string[] = [];
   let pill = 'RULE';
-  let spentRatio: number | null = null;
   let spentTone: 'accent' | 'danger' = 'accent';
   if (entry.limit) {
     const used = Math.floor(entry.limit.usedMs / 60_000);
     summaries.push(`${used} of ${entry.limit.minutes} minutes today`);
     pill = MODE_LABEL.daily;
-    spentRatio = Math.min(100, Math.round((entry.limit.usedMs / (entry.limit.minutes * 60_000)) * 100));
     if (entry.limit.usedMs >= entry.limit.minutes * 60_000) {
       pill = 'SPENT';
       spentTone = 'danger';
@@ -382,7 +344,6 @@ function GuardedCard({ entry, disabled, onEdit }: { entry: GuardedEntry; disable
     const used = Math.floor(entry.rolling.usedMs / 60_000);
     summaries.push(`${used} of ${entry.rolling.allowanceMinutes}m per ${WINDOW_LABEL[entry.rolling.windowMinutes] ?? `${entry.rolling.windowMinutes}m`}`);
     pill = MODE_LABEL.rolling;
-    spentRatio = Math.min(100, Math.round((entry.rolling.usedMs / (entry.rolling.allowanceMinutes * 60_000)) * 100));
     if (entry.rolling.usedMs >= entry.rolling.allowanceMinutes * 60_000) {
       pill = 'SPENT';
       spentTone = 'danger';
@@ -390,25 +351,14 @@ function GuardedCard({ entry, disabled, onEdit }: { entry: GuardedEntry; disable
   }
 
   return (
-    <Card>
-      <View className="flex-row items-start justify-between">
-        <View className="flex-1 pr-3">
-          <Text className="text-[15px] font-semibold text-copy">{entry.label}</Text>
-          {summaries.map((summary) => (
-            <Text key={summary} className="mt-0.5 text-[13px] text-muted">
-              {summary}
-            </Text>
-          ))}
-        </View>
-        <StatusPill label={pill} tone={spentTone} />
+    <Pressable accessibilityRole="button" accessibilityLabel={`Edit ${entry.label}`} disabled={disabled} onPress={onEdit} className="flex-row items-center justify-between gap-3 rounded-2xl border border-line bg-panel px-4 py-4 active:opacity-60">
+      <View className="flex-1">
+        <Text className="text-[15px] font-semibold text-copy">{entry.label}</Text>
+        {summaries.map((summary) => <Text key={summary} className="mt-1 text-[12px] text-muted">{summary}</Text>)}
       </View>
-      {spentRatio !== null ? (
-        <View className="mt-3 h-1 overflow-hidden rounded-full bg-track">
-          <View className={`h-full rounded-full ${spentTone === 'danger' ? 'bg-danger' : 'bg-accent'}`} style={{ width: `${spentRatio}%` }} />
-        </View>
-      ) : null}
-      <SecondaryButton className="mt-3.5" title="Edit" disabled={disabled} onPress={onEdit} />
-    </Card>
+      <StatusPill label={pill} tone={spentTone} />
+      <Text className="text-[22px] text-muted">›</Text>
+    </Pressable>
   );
 }
 

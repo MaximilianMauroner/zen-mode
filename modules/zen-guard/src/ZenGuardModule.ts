@@ -5,6 +5,12 @@ export type ZenGuardStatus = {
   serviceEnabled: boolean;
   protectionEnabled: boolean;
   observationMode: boolean;
+  shortsEnabled: boolean;
+  xHomeEnabled: boolean;
+  xVideosEnabled: boolean;
+  xHomeMinutes: number;
+  xObservationMode: boolean;
+  xSignalMask: number;
   lastEventAt: number;
   lastDetectionAt: number;
   detectionCount: number;
@@ -50,6 +56,10 @@ declare class ZenGuardModule extends NativeModule<{}> {
   openAccessibilitySettings(): Promise<void>;
   openYouTube(): Promise<void>;
   openInstagram(): Promise<void>;
+  openX(): Promise<void>;
+  setShortsEnabled(enabled: boolean): Promise<void>;
+  setXSettings(homeEnabled: boolean, videosEnabled: boolean, homeMinutes: number): Promise<void>;
+  setXObservationMode(enabled: boolean): Promise<void>;
   setProtectionEnabled(enabled: boolean): Promise<void>;
   setObservationMode(enabled: boolean): Promise<void>;
   setInstagramObservationMode(enabled: boolean): Promise<void>;

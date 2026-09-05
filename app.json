@@ -4,26 +4,24 @@
     "slug": "zen-mode",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/refuge/icon.png",
     "scheme": "zenmode",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0D1210",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/refuge/icon.png"
     },
     "android": {
       "package": "com.maxmauroner.zenmode",
       "adaptiveIcon": {
         "backgroundColor": "#0D1210",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/refuge/icon.png"
       },
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/refuge/icon.png"
     },
     "plugins": [
       "expo-router",
@@ -31,8 +29,8 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#0D1210",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "image": "./assets/images/refuge/icon.png",
+          "imageWidth": 96
         }
       ],
       "expo-secure-store"

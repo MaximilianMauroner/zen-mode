@@ -6,6 +6,16 @@ import org.junit.Test
 
 class ShortsDetectorTest {
   @Test
+  fun reelWatchPlayerIsNotAnOrdinaryVideoPlayer() {
+    assertTrue(ShortsDetector.detect(listOf(
+      NodeSignal(viewId = "com.google.android.youtube:id/watch_while_layout_coordinator_layout"),
+      NodeSignal(viewId = "com.google.android.youtube:id/reel_watch_fragment_root"),
+      NodeSignal(viewId = "com.google.android.youtube:id/reel_recycler"),
+      NodeSignal(viewId = "com.google.android.youtube:id/reel_watch_player"),
+    )).isShortsViewer)
+  }
+
+  @Test
   fun detectsViewerSpecificResourceId() {
     val result = ShortsDetector.detect(
       listOf(NodeSignal(viewId = "com.google.android.youtube:id/reel_player_page_container")),

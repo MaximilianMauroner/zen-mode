@@ -1,48 +1,31 @@
 package com.maxmauroner.zenguard
 
-internal enum class EnforcementAction {
-  NONE,
-  BACK,
-  HOME,
-}
+internal enum class EnforcementAction { NONE, LEAVE_SHORTS }
 
-/** Bounds enforcement to at most one action per cooldown and one HOME fallback per Shorts visit. */
-internal class EnforcementStateMachine(
-  private val cooldownMs: Long = 900,
-  private val fallbackAfterMs: Long = 1_800,
-) {
-  private var firstDetectionAt: Long? = null
-  private var lastActionAt = Long.MIN_VALUE
-  private var usedHomeFallback = false
+/** Allow the entry video for each Shorts visit; a different pager row ends that visit. */
+internal class EnforcementStateMachine(private val cooldownMs: Long = 900) {
+  private var firstPage: Int? = null
+  private var lastActionAt: Long? = null
 
-  fun next(isShorts: Boolean, nowMs: Long): EnforcementAction {
+  fun next(isShorts: Boolean, pageIndex: Int?, nowMs: Long): EnforcementAction {
     if (!isShorts) {
       reset()
       return EnforcementAction.NONE
     }
-
-    val firstAt = firstDetectionAt ?: nowMs.also { firstDetectionAt = it }
-    if (lastActionAt != Long.MIN_VALUE && nowMs - lastActionAt < cooldownMs) {
+    if (pageIndex == null || pageIndex < 0) return EnforcementAction.NONE
+    val first = firstPage
+    if (first == null) {
+      firstPage = pageIndex
       return EnforcementAction.NONE
     }
-
-    if (nowMs - firstAt >= fallbackAfterMs && !usedHomeFallback) {
-      usedHomeFallback = true
-      lastActionAt = nowMs
-      return EnforcementAction.HOME
-    }
-
-    if (lastActionAt == Long.MIN_VALUE) {
-      lastActionAt = nowMs
-      return EnforcementAction.BACK
-    }
-
-    return EnforcementAction.NONE
+    if (pageIndex == first) return EnforcementAction.NONE
+    if (lastActionAt?.let { nowMs - it < cooldownMs } == true) return EnforcementAction.NONE
+    lastActionAt = nowMs
+    return EnforcementAction.LEAVE_SHORTS
   }
 
-  private fun reset() {
-    firstDetectionAt = null
-    lastActionAt = Long.MIN_VALUE
-    usedHomeFallback = false
+  fun reset() {
+    firstPage = null
+    lastActionAt = null
   }
 }

@@ -13,6 +13,11 @@
     },
     "android": {
       "package": "com.maxmauroner.zenmode",
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#0D1210",
         "foregroundImage": "./assets/images/refuge/icon.png"

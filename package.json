@@ -45,7 +45,6 @@
   },
   "scripts": {
     "start": "expo start",
-    "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "phone:mirror": "bash ./scripts/watch-phone.sh",
     "ios": "expo run:ios",

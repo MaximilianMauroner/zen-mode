@@ -184,7 +184,7 @@ internal class InstagramBlockerOverlay(
   private var titleView: TextView? = null
   private var descriptionView: TextView? = null
 
-  // Triple-tap gesture state for developer diagnostics
+  // Triple-tap gesture state for debug-build diagnostics.
   private var debugTapCount = 0
   private var lastDebugTapAtMs = 0L
 
@@ -202,7 +202,7 @@ internal class InstagramBlockerOverlay(
     homeMinutes: Int,
     reelsMinutes: Int,
     stats: InstagramBlockerStats,
-    debugInfo: InstagramBlockerDebugInfo,
+    debugInfo: InstagramBlockerDebugInfo?,
   ) {
     root?.let {
       if (it.isAttachedToWindow) return
@@ -253,10 +253,12 @@ internal class InstagramBlockerOverlay(
     val top = LinearLayout(service).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
-      isClickable = true
+      isClickable = debugInfo != null
       isFocusable = false
-      setOnClickListener {
-        handleHeaderTap(debugInfo)
+      debugInfo?.let { info ->
+        setOnClickListener {
+          handleHeaderTap(info)
+        }
       }
     }
 

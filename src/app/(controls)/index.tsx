@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Pressable, RefreshControl, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { Clapperboard, Compass, House, LockKeyhole, Play } from 'lucide-react-native';
+import { Clapperboard, House, LockKeyhole, Play } from 'lucide-react-native';
 
 import { FeedControlsDrawer, type FeedDrawer } from '@/components/ui/feed-controls-drawer';
 import { PrimaryButton } from '@/components/ui/button';
@@ -90,12 +90,9 @@ export default function FeedsScreen() {
 
       <View className="gap-3">
         <RowGroup>
-          <Row icon={Play} label="YouTube Shorts" {...getFeedPresentation(status, 'shorts', loading)} onPress={() => setDrawer('shorts')} disabled={!editable} />
-          <Row icon={Clapperboard} label="Instagram Reels" {...getFeedPresentation(status, 'reels', loading)} onPress={() => setDrawer('reels')} disabled={!editable} />
-          <Row icon={House} label="Instagram home feed" {...getFeedPresentation(status, 'home', loading)} onPress={() => setDrawer('home')} disabled={!editable} />
-          <Row icon={Compass} label="Instagram Explore" {...getFeedPresentation(status, 'explore', loading)} onPress={() => setDrawer('explore')} disabled={!editable} />
-          <Row icon={House} label="X home feed" {...getFeedPresentation(status, 'xHome', loading)} onPress={() => setDrawer('x')} disabled={!editable} />
-          <Row icon={Play} label="X videos" {...getFeedPresentation(status, 'xVideos', loading)} onPress={() => setDrawer('x')} disabled={!editable} />
+          <Row icon={Play} label="YouTube" {...getFeedPresentation(status, 'shorts', loading)} onPress={() => setDrawer('youtube')} disabled={!editable} />
+          <Row icon={Clapperboard} label="Instagram" detail={`Reels: ${getFeedPresentation(status, 'reels', loading).statusLabel} · Home: ${getFeedPresentation(status, 'home', loading).statusLabel} · Explore: ${getFeedPresentation(status, 'explore', loading).statusLabel}`} onPress={() => setDrawer('instagram')} disabled={!editable} />
+          <Row icon={House} label="X" detail={`Home: ${getFeedPresentation(status, 'xHome', loading).statusLabel} · Videos: ${getFeedPresentation(status, 'xVideos', loading).statusLabel}`} onPress={() => setDrawer('x')} disabled={!editable} />
         </RowGroup>
       </View>
 

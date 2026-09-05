@@ -1,5 +1,5 @@
 import { Card } from '@/components/ui/card';
-import { PrimaryButton } from '@/components/ui/button';
+import { PrimaryButton, SecondaryButton } from '@/components/ui/button';
 import { ErrorNote, IconTile, Screen, ScreenTitle } from '@/components/ui/screen';
 import { hasCompletedSetup, markSetupComplete } from '@/features/protection/setup';
 import { openAccessibilitySettings, setInstagramObservationMode, setNativeProtectionEnabled, setObservationMode } from '@/features/protection/native';
@@ -71,7 +71,7 @@ export default function SetupScreen() {
       <IconTile icon={ShieldCheck} />
       <ScreenTitle
         title="Set up the guard"
-        description="Zen Mode watches YouTube for Shorts, and Instagram for Reels, the home feed, and Explore. Messages and anything you go looking for on purpose stay open."
+        description="Zen Mode watches YouTube Shorts, Instagram Reels, Home and Explore, and X Home and videos. Feed rules keep Messages open. Whole-app limits apply to the apps and times you choose."
       />
 
       <Card className="border-dangerLine">
@@ -80,10 +80,10 @@ export default function SetupScreen() {
           <Text className="ml-2.5 text-[15px] font-semibold text-copy">Accessibility access</Text>
         </View>
         <Text className="mt-3.5 text-[14px] leading-[21px] text-muted">
-          To spot Shorts and Instagram feeds, Zen Mode reads what those two apps put on screen through Android accessibility. That reading never leaves this phone, and it is only used to tell one screen from another.
+          To recognize guarded feeds, Zen Mode processes what YouTube, Instagram, and X put on screen through Android accessibility. It also checks which app is in the foreground to apply app limits. When you add an app limit or timed visit, it lists launchable apps installed on this device so you can select one.
         </Text>
         <Text className="mt-2.5 text-[14px] leading-[21px] text-muted">
-          Zen Mode never reads any other app, never records what you type, never keeps what was on screen, and never sends any of it anywhere.
+          Zen Mode does not read screen contents from other apps, record what you type, take screenshots, or send screen contents or installed-app inventory anywhere. It stores guard settings and local usage and detection summaries, not screen text.
         </Text>
         <Pressable
           accessibilityRole="checkbox"
@@ -99,6 +99,7 @@ export default function SetupScreen() {
       </Card>
 
       <ErrorNote message={error} />
+      <SecondaryButton title="Privacy" disabled={busy} onPress={() => router.navigate('/privacy')} />
       <PrimaryButton
         title={setupReadState === 'loading' ? 'Checking…' : saving ? 'Saving…' : setupReadState === 'error' ? 'Try again' : 'Turn on the guard'}
         disabled={busy}

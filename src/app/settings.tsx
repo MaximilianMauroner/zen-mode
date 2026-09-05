@@ -71,6 +71,7 @@ export default function SettingsScreen() {
         </RowGroup>
       </View>
       <View className="gap-3">
+        <SecondaryButton title="Privacy" onPress={() => router.navigate('/privacy')} disabled={busy} />
         <SecondaryButton title="Open YouTube" disabled={disabled} onPress={() => runAction(openYouTube)} />
         <SecondaryButton title="Open Instagram" disabled={disabled} onPress={() => runAction(openInstagram)} />
         <SecondaryButton title="Open X" disabled={disabled} onPress={() => runAction(openX)} />

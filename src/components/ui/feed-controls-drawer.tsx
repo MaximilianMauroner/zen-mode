@@ -9,9 +9,9 @@ import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { isChangeBlocked } from '@/features/protection/lock';
 import { getZenGuardStatus, openInstagram, setInstagramObservationMode, setInstagramSettings, openX, openYouTube, setObservationMode, setShortsEnabled, setXObservationMode, setXSettings, type ZenGuardStatus } from '@/features/protection/native';
 
-export type FeedDrawer = 'x' | 'shorts' | 'reels' | 'home' | 'explore';
+export type FeedDrawer = 'youtube' | 'instagram' | 'x';
 type Props = { feed: FeedDrawer | null; onClose: () => void };
-const TITLES = { x: 'X controls', shorts: 'YouTube Shorts', reels: 'Instagram Reels', home: 'Instagram home feed', explore: 'Instagram Explore' };
+const TITLES = { youtube: 'YouTube', instagram: 'Instagram', x: 'X' };
 const HOME_MINUTES = [1, 5, 10, 15, 30];
 
 /** Keep the feed list in place while editing cached rules in a native drawer. */
@@ -23,9 +23,9 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
   const reduceMotion = useReducedMotion();
   const disabled = busy || loading || !status?.available || Boolean(readError);
   const isX = feed === 'x';
-  const isInstagram = feed === 'reels' || feed === 'home' || feed === 'explore';
+  const isInstagram = feed === 'instagram';
   const observing = isInstagram ? status?.instagramObservationMode : isX ? status?.xObservationMode : status?.observationMode;
-  const enabled = isInstagram ? feed !== 'explore' || status?.instagramExploreBlocked : isX ? status?.xHomeEnabled || status?.xVideosEnabled : status?.shortsEnabled;
+  const enabled = isInstagram ? true : isX ? status?.xHomeEnabled || status?.xVideosEnabled : status?.shortsEnabled;
   const requiredMask = status ? (status.xHomeEnabled ? 1 : 0) | (status.xVideosEnabled ? 2 : 0) : 3;
   const detected = status && (isInstagram ? (status.instagramSignalMask & 3) === 3 : isX ? (status.xSignalMask & requiredMask) === requiredMask : status.lastDetectionAt > 0);
   const canStart = detected && status?.serviceEnabled && status.protectionEnabled;
@@ -60,7 +60,7 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
     else await setShortsEnabled(proposed.shortsEnabled);
   });
   const close = () => { if (!inFlight.current) onClose(); };
-  const result = getFeedPresentation(status, isInstagram ? feed : isX ? 'xVideos' : 'shorts');
+  const result = getFeedPresentation(status, isX ? 'xVideos' : 'shorts');
 
   return (
     <Modal visible={feed !== null} transparent animationType={reduceMotion ? 'none' : 'slide'} onRequestClose={close} onShow={() => { setError(''); void refresh(); }} statusBarTranslucent>
@@ -68,7 +68,7 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
         <Pressable accessibilityRole="button" accessibilityLabel="Close feed controls" onPress={close} disabled={busy} className="absolute inset-0" />
         <SafeAreaView edges={['bottom']} style={{ maxHeight: '88%' }} className="rounded-t-3xl border-t border-line2 bg-panel px-5 pt-3">
           <View className="mb-3 flex-row items-center justify-between">
-            <Text accessibilityRole="header" className="text-[20px] font-semibold text-copy">{TITLES[feed ?? 'shorts']}</Text>
+            <Text accessibilityRole="header" className="text-[20px] font-semibold text-copy">{TITLES[feed ?? 'youtube']}</Text>
             <Pressable accessibilityRole="button" accessibilityLabel="Close feed controls" disabled={busy} onPress={close} className="min-h-11 min-w-11 items-center justify-center"><Text className="text-[28px] text-muted">×</Text></Pressable>
           </View>
           <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
@@ -79,17 +79,24 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
               <PresetRow label="X Home break interval" values={HOME_MINUTES} selected={status?.xHomeMinutes} suffix="m" disabled={disabled || !status?.xHomeEnabled} onSelect={(value) => change({ xHomeMinutes: value })} />
             </View> : null}
             {isInstagram ? <View className="gap-5">
-              <Text className="text-[13px] text-muted">{result.statusLabel} · {result.detail}</Text>
-              {feed === 'reels' ? <>
-                <View className="gap-3"><Text className="text-[15px] font-semibold text-copy">Pause before Reels</Text>
-                  <PresetRow label="Pause before Reels" values={[15, 30, 60, 120, 300]} selected={status?.instagramWaitSeconds} suffix="s" disabled={disabled} onSelect={(value) => change({ instagramWaitSeconds: value })} />
-                </View>
-                <View className="gap-3"><Text className="text-[15px] font-semibold text-copy">Reels window</Text>
-                  <PresetRow label="Reels viewing window" values={[1, 5, 10, 15]} selected={status?.instagramReelsMinutes} suffix="m" disabled={disabled} onSelect={(value) => change({ instagramReelsMinutes: value })} />
-                </View>
-              </> : feed === 'home' ? <View className="gap-3"><Text className="text-[15px] font-semibold text-copy">Break after</Text>
+              <View className="gap-3">
+                <Text accessibilityRole="header" className="text-[15px] font-semibold text-copy">Reels</Text>
+                <Text className="text-[13px] text-muted">{getFeedPresentation(status, 'reels').statusLabel}</Text>
+                <Text className="text-[13px] text-muted">Pause before Reels</Text>
+                <PresetRow label="Pause before Reels" values={[15, 30, 60, 120, 300]} selected={status?.instagramWaitSeconds} suffix="s" disabled={disabled} onSelect={(value) => change({ instagramWaitSeconds: value })} />
+                <Text className="text-[13px] text-muted">Viewing window</Text>
+                <PresetRow label="Reels viewing window" values={[1, 5, 10, 15]} selected={status?.instagramReelsMinutes} suffix="m" disabled={disabled} onSelect={(value) => change({ instagramReelsMinutes: value })} />
+              </View>
+              <View className="gap-3 border-t border-line pt-4">
+                <Text accessibilityRole="header" className="text-[15px] font-semibold text-copy">Home feed</Text>
+                <Text className="text-[13px] text-muted">{getFeedPresentation(status, 'home').statusLabel} · Break after</Text>
                 <PresetRow label="Instagram Home break interval" values={HOME_MINUTES} selected={status?.instagramHomeMinutes} suffix="m" disabled={disabled} onSelect={(value) => change({ instagramHomeMinutes: value })} />
-              </View> : <RuleChoice label="Explore rule" limitedLabel="Block Explore" allowedLabel="Allow Explore" enabled={status?.instagramExploreBlocked === true} disabled={disabled} onChange={(value) => change({ instagramExploreBlocked: value })} />}
+              </View>
+              <View className="gap-3 border-t border-line pt-4">
+                <Text accessibilityRole="header" className="text-[15px] font-semibold text-copy">Explore</Text>
+                <Text className="text-[13px] text-muted">{getFeedPresentation(status, 'explore').statusLabel}</Text>
+                <RuleChoice label="Explore rule" limitedLabel="Block Explore" allowedLabel="Allow Explore" enabled={status?.instagramExploreBlocked === true} disabled={disabled} onChange={(value) => change({ instagramExploreBlocked: value })} />
+              </View>
             </View> : <View className="gap-3 border-t border-line pt-4">
               <View className="flex-row items-center justify-between"><Text className="text-[15px] font-semibold text-copy">{isX ? 'Video scrolling' : 'Shorts scrolling'}</Text><Text className="text-[12px] text-muted">{result.statusLabel}</Text></View>
               <RuleChoice label={isX ? 'X video rule' : 'YouTube Shorts rule'} limitedLabel="Limit to one" allowedLabel="Allow scrolling" enabled={(isX ? status?.xVideosEnabled : status?.shortsEnabled) === true} disabled={disabled} onChange={(value) => change(isX ? { xVideosEnabled: value } : { shortsEnabled: value })} />

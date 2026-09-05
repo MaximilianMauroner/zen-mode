@@ -139,6 +139,8 @@ internal class InstagramGuardStateMachine(
     blockerReason = blocker?.reason,
   )
 
+  fun homeElapsedMs(): Long = homeElapsedMs
+
   /** Clears enforcement state when the service loses the Instagram app or a known surface. */
   fun onSurfaceLost() {
     blocker = null

@@ -1,38 +1,64 @@
 # Zen Mode
 
-A personal screen-time companion for understanding attention, setting limits, and starting distraction-free focus sessions.
+Zen Mode is an Expo and React Native app for setting screen-time and feed
+rules. Its protection service runs only in an Android native build.
 
-## Stack
+## What it protects
 
-- Expo SDK 57 and React Native
-- Expo Router
-- TypeScript
-- NativeWind with Tailwind CSS
+After the user enables Android Accessibility access, the native service can:
+
+- apply daily, rolling-window, or timed-visit rules to launchable Android apps;
+- manage YouTube Shorts, Instagram Reels, Home, and Explore, and X Home and
+  video feeds;
+- show an overlay or return to Home when a configured rule is reached.
+
+Feed detection depends on accessibility data exposed by YouTube, Instagram,
+and X. Setup observes supported surfaces before feed enforcement starts. If a
+surface is unknown or ambiguous, Zen Mode does not enforce that feed rule.
+Updates to those apps can change detection behavior.
+
+Protection is off until the user enables it. The settings lock controls changes
+that loosen existing rules.
+
+## Interface
+
+Feeds has one row and settings drawer for each supported platform:
+
+- YouTube controls Shorts.
+- Instagram controls Reels, Home, and Explore.
+- X controls Home and videos.
+
+App limits manages whole-app daily, rolling-window, and timed-visit rules.
+Lock manages the settings lock for feeds and app limits.
+
+For distribution requirements, see [Google Play readiness](docs/google-play-readiness.md)
+and the [store listing](docs/store-listing.md).
 
 ## Run locally
 
-```bash
-npm install
-npm start
-```
-
-Press `i` for iOS, `a` for Android, or `w` for web from the Expo terminal. You can also run a platform directly with `npm run ios`, `npm run android`, or `npm run web`.
-
-## Watch the connected phone
-
-With one authorized Android phone connected over USB or wireless ADB, run:
+Install dependencies with the lockfile:
 
 ```bash
-npm run phone:mirror
+npm ci
 ```
 
-The command refuses to start without exactly one connected phone. It uses `scrcpy` when installed and falls back to Android `screenrecord` with `ffplay`. The mirror is local to the laptop and stops when the mirror closes or the phone disconnects. Install `scrcpy` for longer sessions:
+Start the interface preview:
 
 ```bash
-brew install scrcpy
+npm run web
 ```
 
-## Verify
+Build and install the Android native app on an emulator or connected device:
+
+```bash
+npm run android
+```
+
+Then enable Zen Mode in Android Accessibility settings and complete the
+in-app setup. `npm run phone:mirror` mirrors exactly one ADB-connected Android
+device. It uses `scrcpy` when available.
+
+## Check changes
 
 ```bash
 npm test
@@ -41,14 +67,29 @@ npm run lint
 npx expo export --platform web
 ```
 
-The Android app separates settings into three tabs: Feeds, App limits, and Lock. Feeds controls Shorts, Reels, Instagram home, Explore, X home, and X videos. Every feed row opens a settings drawer over the feed list. Reels keeps its pause and viewing window, Home feeds keep their break intervals, and Explore, X videos, and Shorts retain their block or allow choices. Disabling a rule or increasing its allowance requires an open settings lock. App limits holds whole-app time rules. Lock holds both categories. Settings contains Android access, the protection switch, and detection details.
+Run `npm run android` after a change to `modules/zen-guard/` or Android app
+configuration. Test the affected rule on a real device when accessibility
+events or overlays change.
 
-The tabs use Expo Router UI under `src/app/(controls)`. Feed detail controls use `/instagram?section=reels`, `home`, or `explore`. Refuge artwork and the launcher icon live in `assets/images/refuge/`.
+## Preview and release limits
 
-Protection needs the native Android build and accessibility access. The web export checks the interface and routing; it does not enforce app limits.
+Web export checks routing and the interface. It cannot enforce Android app or
+feed limits. iOS is not a supported protection target.
 
-App limits loads configured rules independently of the installed-app inventory. Add app opens a bottom drawer with a cached, virtualized picker.
+Expo Go cannot include this project's local Android module. Use `npm run
+android` for native development and testing. This repository has no EAS build
+profiles or release automation.
 
-YouTube Shorts permits one video per viewer visit. A change in the Shorts pager row returns to YouTube’s Home tab with a brief notice. The Home tab action avoids the PiP behavior caused by Android Back. Detection is conservative when viewer identifiers or pager metadata are unavailable.
+## Standalone ARM64 preview
 
-X support targets the Android app (`com.twitter.android`), not browser x.com. Home breaks use a foreground session allowance like Instagram, checked once per second even when the feed is still. The video viewer permits the first video; a verified full-screen pager scroll exits through X’s Back control. Post text, playback progress, and nested scrolling are not video advancement signals. Setup records Home and video-pager detection before activation. Unknown layouts fail open, and the next video may briefly appear before its accessibility event is handled.
+This local build requires the Android SDK and a JDK.
+
+```bash
+npx expo prebuild --platform android --no-install
+cd android
+./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a
+```
+
+The generated release APK is signed with the default debug key. It is suitable
+for local preview only and is not ready to upload. Configure a release keystore
+and signing process before distribution.

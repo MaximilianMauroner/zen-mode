@@ -24,7 +24,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     }
   }
   private val instagramStateMachine = InstagramGuardStateMachine()
-  private val instagramDebugTrace = InstagramDebugTrace()
+  private val instagramDebugTrace = if (BuildConfig.DEBUG) InstagramDebugTrace() else null
   private val navigationHandler = Handler(Looper.getMainLooper())
   private lateinit var instagramOverlay: InstagramBlockerOverlay
   private var instagramBlockReason: InstagramBlockReason? = null
@@ -408,7 +408,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     val nodes = snapshot(root)
     val detection = InstagramDetector.detect(nodes)
     if (detection.surface == InstagramSurface.UNKNOWN) {
-      instagramDebugTrace.record(
+      instagramDebugTrace?.record(
         event = event,
         nodes = nodes,
         detection = detection,
@@ -429,7 +429,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
         instagramBlockReason = null
         instagramOverlay.hide()
       }
-      instagramDebugTrace.record(
+      instagramDebugTrace?.record(
         event = event,
         nodes = nodes,
         detection = detection,
@@ -441,7 +441,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     }
 
     if (preferences.instagramObservationMode) {
-      instagramDebugTrace.record(
+      instagramDebugTrace?.record(
         event = event,
         nodes = nodes,
         detection = detection,
@@ -464,8 +464,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
       reelPagerScrolled = isReelPagerScroll(event, nodes, reelPagerVisible),
     )
     val action = instagramStateMachine.next(guardInput, preferences.instagramSettings())
-    val debugState = instagramStateMachine.debugState(nowMs)
-    instagramDebugTrace.record(
+    instagramDebugTrace?.record(
       event = event,
       nodes = nodes,
       detection = detection,
@@ -489,29 +488,34 @@ class ZenGuardAccessibilityService : AccessibilityService() {
           homeMinutes = preferences.instagramHomeMinutes,
           reelsMinutes = preferences.instagramReelsMinutes,
           stats = InstagramBlockerStats(
-            homeUsedMinutes = (debugState.homeElapsedMs / 60_000L).toInt(),
+            homeUsedMinutes = (instagramStateMachine.homeElapsedMs() / 60_000L).toInt(),
             homeAllowanceMinutes = preferences.instagramHomeMinutes,
             stoppedToday = tally.stopped,
             continuedToday = tally.continued,
             resetsInMs = millisUntilLocalMidnight(wallNow),
           ),
-          debugInfo = InstagramBlockerDebugInfo(
-            surface = detection.surface,
-            reason = action.reason,
-            event = AccessibilityEvent.eventTypeToString(event.eventType),
-            eventPackage = event.packageName?.toString().orEmpty().ifEmpty { "none" },
-            rootPackage = root.packageName?.toString().orEmpty().ifEmpty { "none" },
-            source = event.source?.viewIdResourceName?.substringAfterLast('/').orEmpty().ifEmpty { "none" },
-            limits = "home=${preferences.instagramHomeMinutes}m reels=${preferences.instagramReelsMinutes}m wait=${preferences.instagramWaitSeconds}s",
-            dmThreadVisible = guardInput.dmThreadVisible,
-            dmThreadClicked = guardInput.dmThreadClicked,
-            reelPagerVisible = guardInput.reelPagerVisible,
-            reelPagerScrolled = guardInput.reelPagerScrolled,
-            dmProvenanceAgeMs = debugState.dmProvenanceAgeMs,
-            dmThreadActive = debugState.dmThreadActive,
-            homeElapsedMs = debugState.homeElapsedMs,
-            reelsWindowRemainingMs = debugState.reelsWindowRemainingMs,
-          ),
+          debugInfo = if (BuildConfig.DEBUG) {
+            val debugState = instagramStateMachine.debugState(nowMs)
+            InstagramBlockerDebugInfo(
+              surface = detection.surface,
+              reason = action.reason,
+              event = AccessibilityEvent.eventTypeToString(event.eventType),
+              eventPackage = event.packageName?.toString().orEmpty().ifEmpty { "none" },
+              rootPackage = root.packageName?.toString().orEmpty().ifEmpty { "none" },
+              source = event.source?.viewIdResourceName?.substringAfterLast('/').orEmpty().ifEmpty { "none" },
+              limits = "home=${preferences.instagramHomeMinutes}m reels=${preferences.instagramReelsMinutes}m wait=${preferences.instagramWaitSeconds}s",
+              dmThreadVisible = guardInput.dmThreadVisible,
+              dmThreadClicked = guardInput.dmThreadClicked,
+              reelPagerVisible = guardInput.reelPagerVisible,
+              reelPagerScrolled = guardInput.reelPagerScrolled,
+              dmProvenanceAgeMs = debugState.dmProvenanceAgeMs,
+              dmThreadActive = debugState.dmThreadActive,
+              homeElapsedMs = debugState.homeElapsedMs,
+              reelsWindowRemainingMs = debugState.reelsWindowRemainingMs,
+            )
+          } else {
+            null
+          },
         )
       }
       InstagramGuardAction.None -> {

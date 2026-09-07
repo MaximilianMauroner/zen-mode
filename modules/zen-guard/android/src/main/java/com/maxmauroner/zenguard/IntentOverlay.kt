@@ -33,9 +33,9 @@ internal class IntentOverlay(
   private var shownFor: String? = null
   private var isCooldown = false
 
-  fun isShowing(): Boolean = root != null
-  fun shownPackage(): String? = shownFor
-  fun isCooldown(): Boolean = root != null && isCooldown
+  fun isShowing(): Boolean = root?.isAttachedToWindow == true
+  fun shownPackage(): String? = shownFor.takeIf { isShowing() }
+  fun isCooldown(): Boolean = isShowing() && isCooldown
 
   fun showAsk(
     packageName: String,

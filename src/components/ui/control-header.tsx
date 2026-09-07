@@ -43,7 +43,7 @@ export function ControlHeader({ position, state: navigationState, descriptors }:
     <View className="mx-auto w-full max-w-xl gap-4 px-5 pt-3">
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center gap-2">
-          <Image source={require('@/assets/images/refuge/icon.png')} style={{ width: 36, height: 36 }} className="rounded-xl" accessibilityIgnoresInvertColors />
+          <Image source={require('@/assets/images/refuge/mark-header.png')} style={{ width: 36, height: 36 }} accessibilityIgnoresInvertColors />
           <Text className="text-[12px] font-bold tracking-[0.14em] text-copy">ZEN MODE</Text>
         </View>
         <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={() => router.push('/settings')} className={`min-h-11 justify-center px-2 ${disabled ? 'opacity-40' : 'active:opacity-60'}`}>

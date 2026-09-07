@@ -2,7 +2,7 @@
   "expo": {
     "name": "Zen Mode",
     "slug": "zen-mode",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/refuge/icon.png",
     "scheme": "zenmode",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.maxmauroner.zenmode",
-      "versionCode": 3,
+      "versionCode": 4,
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.READ_EXTERNAL_STORAGE",

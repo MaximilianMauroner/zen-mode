@@ -88,6 +88,12 @@ class ZenGuardAccessibilityService : AccessibilityService() {
           else -> performGlobalAction(GLOBAL_ACTION_BACK)
         }
       },
+      onOpenMessages = {
+        instagramStateMachine.leaveBlockedSurface()
+        instagramBlockReason = null
+        instagramOverlay.hide()
+        openInstagramMessages()
+      },
       onContinue = {
         val continued = instagramStateMachine.continueReels(SystemClock.elapsedRealtime(), preferences.instagramSettings())
         if (continued) dailyTally.recordContinue(System.currentTimeMillis())

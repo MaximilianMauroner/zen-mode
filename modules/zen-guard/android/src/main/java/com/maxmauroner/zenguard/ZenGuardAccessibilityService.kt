@@ -66,7 +66,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     intentOverlay = IntentOverlay(this)
     usageHandler.postDelayed(usageTicker, USAGE_TICK_MS)
     xOverlay = XBreakOverlay(this) {
-      xStateMachine.reset()
+      xStateMachine.leaveBlockedSurface()
       xOverlay.hide()
       performGlobalAction(GLOBAL_ACTION_HOME)
     }
@@ -121,7 +121,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     // content events; treating them as an external app would immediately remove the blocker.
     if (event.packageName?.toString() == packageName) return
     if (event.packageName?.toString() != X_PACKAGE && event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-      windows.none { it.root?.packageName?.toString() == X_PACKAGE }) clearXEnforcement()
+      windows.none { it.root?.packageName?.toString() == X_PACKAGE }) clearXEnforcement(preserveHomeLockout = true)
 
     when (event.packageName?.toString()) {
       YOUTUBE_PACKAGE -> {
@@ -321,8 +321,8 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     }
   }
 
-  private fun clearXEnforcement() {
-    xStateMachine.reset()
+  private fun clearXEnforcement(preserveHomeLockout: Boolean = false) {
+    if (preserveHomeLockout) xStateMachine.pause() else xStateMachine.reset()
     if (::xOverlay.isInitialized) xOverlay.hide()
   }
 
@@ -534,7 +534,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   }
 
   override fun onInterrupt() {
-    clearXEnforcement()
+    clearXEnforcement(preserveHomeLockout = true)
     stateMachine.reset()
     clearInstagramEnforcement(preserveHomeSession = true)
   }

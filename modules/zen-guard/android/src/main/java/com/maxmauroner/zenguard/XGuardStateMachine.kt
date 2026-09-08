@@ -2,12 +2,18 @@ package com.maxmauroner.zenguard
 
 internal enum class XSurface { HOME, VIDEO, OTHER, UNKNOWN }
 internal enum class XAction { NONE, HOME_BREAK, LEAVE_VIDEO }
-internal data class XSettings(val homeEnabled: Boolean = true, val videosEnabled: Boolean = true, val homeAllowanceMs: Long = 300_000L)
+internal data class XSettings(
+  val homeEnabled: Boolean = true,
+  val videosEnabled: Boolean = true,
+  val homeAllowanceMs: Long = 300_000L,
+  val homeLockoutMs: Long = 3_600_000L,
+)
 
 /** Home sessions match Instagram; only a verified video-pager scroll consumes the video visit. */
 internal class XGuardStateMachine {
   private var homeElapsedMs = 0L
   private var lastHomeAt: Long? = null
+  private var homeBlockedUntil: Long? = null
   private var lastVideoExitAt: Long? = null
 
   fun next(surface: XSurface, nowMs: Long, settings: XSettings, videoPagerAdvanced: Boolean = false): XAction {
@@ -15,15 +21,26 @@ internal class XGuardStateMachine {
       pause()
       return XAction.NONE
     }
-    if (surface != XSurface.HOME || !settings.homeEnabled) {
-      homeElapsedMs = 0L
-      lastHomeAt = null
+    if (!settings.homeEnabled) {
+      resetHomeSession()
+      homeBlockedUntil = null
+    } else if (surface != XSurface.HOME) {
+      resetHomeSession()
     }
     if (surface != XSurface.VIDEO) lastVideoExitAt = null
     if (surface == XSurface.HOME && settings.homeEnabled) {
+      val blockedUntil = homeBlockedUntil
+      if (blockedUntil != null) {
+        if (nowMs < blockedUntil) return XAction.HOME_BREAK
+        homeBlockedUntil = null
+        resetHomeSession()
+      }
       lastHomeAt?.let { homeElapsedMs += (nowMs - it).coerceAtLeast(0L) }
       lastHomeAt = nowMs
-      if (homeElapsedMs >= settings.homeAllowanceMs) return XAction.HOME_BREAK
+      if (homeElapsedMs >= settings.homeAllowanceMs) {
+        homeBlockedUntil = nowMs + settings.homeLockoutMs
+        return XAction.HOME_BREAK
+      }
     }
     if (surface == XSurface.VIDEO && settings.videosEnabled && videoPagerAdvanced) {
       if (lastVideoExitAt?.let { nowMs - it < 900L } == true) return XAction.NONE
@@ -34,7 +51,13 @@ internal class XGuardStateMachine {
   }
 
   fun pause() { lastHomeAt = null }
-  fun reset() { homeElapsedMs = 0L; lastHomeAt = null; lastVideoExitAt = null }
+  fun leaveBlockedSurface() { lastHomeAt = null }
+  fun reset() { resetHomeSession(); homeBlockedUntil = null; lastVideoExitAt = null }
+
+  private fun resetHomeSession() {
+    homeElapsedMs = 0L
+    lastHomeAt = null
+  }
 }
 
 /** IDs observed in X's Compose accessibility tree. Post text is never a surface signal. */

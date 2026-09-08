@@ -368,7 +368,7 @@ class InstagramGuardStateMachineTest {
   }
 
   @Test
-  fun leavingHomeBlockerStartsANewHomeSession() {
+  fun homeStaysBlockedForOneHourAfterLeavingAndReopening() {
     val state = InstagramGuardStateMachine()
     state.next(InstagramSurface.HOME_FEED, false, 1_000, settings)
     assertEquals(
@@ -377,15 +377,17 @@ class InstagramGuardStateMachineTest {
     )
 
     state.leaveBlockedSurface()
-    assertEquals(InstagramGuardAction.None, state.next(InstagramSurface.HOME_FEED, false, 301_001, settings))
-    assertEquals(
-      InstagramGuardAction.None,
-      state.next(InstagramSurface.HOME_FEED, false, 600_999, settings),
-    )
+    state.onSurfaceLost()
     assertEquals(
       InstagramGuardAction.ShowBlocker(InstagramBlockReason.HOME_LIMIT, null),
-      state.next(InstagramSurface.HOME_FEED, false, 601_001, settings),
+      state.next(InstagramSurface.HOME_FEED, false, 301_001, settings),
     )
+    state.onSurfaceLost()
+    assertEquals(
+      InstagramGuardAction.ShowBlocker(InstagramBlockReason.HOME_LIMIT, null),
+      state.next(InstagramSurface.HOME_FEED, false, 3_900_999, settings),
+    )
+    assertEquals(InstagramGuardAction.None, state.next(InstagramSurface.HOME_FEED, false, 3_901_000, settings))
   }
 
   @Test

@@ -157,6 +157,7 @@ internal class ZenProgressRingView(context: Context) : View(context) {
 internal class InstagramBlockerOverlay(
   private val service: AccessibilityService,
   private val onLeave: () -> Unit,
+  private val onOpenMessages: () -> Unit,
   private val onContinue: () -> Boolean,
 ) {
   private val handler = Handler(Looper.getMainLooper())
@@ -409,6 +410,13 @@ internal class InstagramBlockerOverlay(
     // button even when it becomes real.
     val actions = LinearLayout(service).apply {
       orientation = LinearLayout.VERTICAL
+    }
+
+    if (action.reason == InstagramBlockReason.HOME_LIMIT) {
+      val messages = compactActionButton(service.getString(R.string.zen_guard_go_to_messages)).apply {
+        setOnClickListener { onOpenMessages() }
+      }
+      actions.addView(messages, matchWrap(bottomMargin = dp(10)))
     }
 
     val leave = actionButton(leaveLabel(action), primary = true).apply {
@@ -786,6 +794,24 @@ internal class InstagramBlockerOverlay(
     }
   }
 
+  private fun compactActionButton(label: String) = Button(service).apply {
+    text = label
+    setAllCaps(false)
+    setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13f)
+    typeface = Typeface.DEFAULT_BOLD
+    minHeight = dp(44)
+    minimumHeight = dp(44)
+    stateListAnimator = null
+    elevation = 0f
+    setPadding(dp(16), dp(8), dp(16), dp(8))
+    setTextColor(service.getColor(R.color.zen_copy))
+    background = roundedBackground(
+      service.getColor(R.color.zen_panel2),
+      service.getColor(R.color.zen_line2),
+      dp(14).toFloat(),
+    )
+  }
+
   private fun roundedBackground(fill: Int, stroke: Int, radius: Float = dp(14).toFloat()) = GradientDrawable().apply {
     setColor(fill)
     cornerRadius = radius
@@ -856,7 +882,7 @@ internal class InstagramBlockerOverlay(
   }
 
   private fun leaveLabel(action: InstagramGuardAction.ShowBlocker): String = when (action.reason) {
-    InstagramBlockReason.HOME_LIMIT -> service.getString(R.string.zen_guard_return_home)
+    InstagramBlockReason.HOME_LIMIT -> service.getString(R.string.zen_guard_go_home)
     InstagramBlockReason.EXPLORE -> service.getString(R.string.zen_guard_open_messages)
     InstagramBlockReason.REELS_ENTRY -> service.getString(R.string.zen_guard_leave_reels)
     else -> service.getString(R.string.zen_guard_return_to_dm)

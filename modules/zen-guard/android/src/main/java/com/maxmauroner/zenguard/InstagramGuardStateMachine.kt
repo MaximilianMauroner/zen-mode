@@ -4,6 +4,7 @@ internal data class InstagramGuardSettings(
   val waitMs: Long = 30_000,
   val reelsWindowMs: Long = 300_000,
   val homeAllowanceMs: Long = 300_000,
+  val homeLockoutMs: Long = 3_600_000,
   val exploreBlocked: Boolean = true,
 )
 
@@ -59,6 +60,7 @@ internal class InstagramGuardStateMachine(
 
   private var homeElapsedMs = 0L
   private var homeLastActiveAt: Long? = null
+  private var homeBlockedUntil: Long? = null
 
   private var blocker: InstagramGuardAction.ShowBlocker? = null
   private var blockedSurface: InstagramSurface? = null
@@ -170,7 +172,7 @@ internal class InstagramGuardStateMachine(
     resetReelsProvenance()
   }
 
-  /** Leaving through a blocker is a new Home session as well as a new Reel provenance session. */
+  /** Leaves the blocked surface without clearing an active Home lockout. */
   fun leaveBlockedSurface() {
     blocker = null
     blockedSurface = null
@@ -251,6 +253,13 @@ internal class InstagramGuardStateMachine(
   ): InstagramGuardAction {
     resetReelsProvenance()
 
+    val blockedUntil = homeBlockedUntil
+    if (blockedUntil != null) {
+      if (input.nowMs < blockedUntil) return block(InstagramBlockReason.HOME_LIMIT, null)
+      homeBlockedUntil = null
+      resetHomeSession()
+    }
+
     val previousActiveAt = homeLastActiveAt
     if (previousActiveAt != null) {
       homeElapsedMs += (input.nowMs - previousActiveAt).coerceAtLeast(0L)
@@ -258,6 +267,7 @@ internal class InstagramGuardStateMachine(
     homeLastActiveAt = input.nowMs
 
     return if (homeElapsedMs >= settings.homeAllowanceMs) {
+      homeBlockedUntil = input.nowMs + settings.homeLockoutMs
       block(InstagramBlockReason.HOME_LIMIT, null)
     } else {
       InstagramGuardAction.None
@@ -278,11 +288,17 @@ internal class InstagramGuardStateMachine(
   }
 
   private fun clearStaleBlocker(input: InstagramGuardInput) {
-    blocker ?: return
+    val active = blocker ?: return
     val sameSurface = blockedSurface == input.surface
-    if (!sameSurface) {
+    val homeLockExpired = active.reason == InstagramBlockReason.HOME_LIMIT &&
+      homeBlockedUntil?.let { input.nowMs >= it } == true
+    if (!sameSurface || homeLockExpired) {
       blocker = null
       blockedSurface = null
+    }
+    if (homeLockExpired) {
+      homeBlockedUntil = null
+      resetHomeSession()
     }
   }
 

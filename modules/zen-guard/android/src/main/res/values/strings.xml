@@ -43,7 +43,8 @@
   <string name="zen_guard_surface_home">INSTAGRAM / HOME</string>
   <string name="zen_guard_surface_explore">INSTAGRAM / EXPLORE</string>
   <string name="zen_guard_surface_reels">INSTAGRAM / REELS</string>
-  <string name="zen_guard_return_home">Return Home</string>
+  <string name="zen_guard_go_home">Go home</string>
+  <string name="zen_guard_go_to_messages">Go to messages</string>
   <string name="zen_guard_return_to_dm">Return to DM</string>
   <string name="zen_guard_leave_reels">Leave Reels</string>
   <string name="zen_guard_open_messages">Open Messages</string>

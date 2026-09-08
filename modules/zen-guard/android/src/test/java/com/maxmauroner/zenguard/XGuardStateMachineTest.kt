@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class XGuardStateMachineTest {
-  @Test fun `Home breaks count foreground time and stay blocked until leaving`() {
+  @Test fun `Home remains blocked for one hour after leaving and reopening X`() {
     val guard = XGuardStateMachine()
     val settings = XSettings(homeAllowanceMs = 60_000L)
     assertEquals(XAction.NONE, guard.next(XSurface.HOME, 0L, settings))
@@ -13,8 +13,10 @@ class XGuardStateMachineTest {
     assertEquals(XAction.NONE, guard.next(XSurface.HOME, 300_000L, settings))
     assertEquals(XAction.HOME_BREAK, guard.next(XSurface.HOME, 330_000L, settings))
     assertEquals(XAction.HOME_BREAK, guard.next(XSurface.HOME, 331_000L, settings))
-    guard.reset()
-    assertEquals(XAction.NONE, guard.next(XSurface.HOME, 332_000L, settings))
+    guard.leaveBlockedSurface()
+    guard.pause()
+    assertEquals(XAction.HOME_BREAK, guard.next(XSurface.HOME, 3_929_999L, settings))
+    assertEquals(XAction.NONE, guard.next(XSurface.HOME, 3_930_000L, settings))
   }
 
   @Test fun `other X surfaces end the Home session while unknown trees only pause it`() {
@@ -24,9 +26,18 @@ class XGuardStateMachineTest {
     guard.next(XSurface.HOME, 60L, settings)
     guard.next(XSurface.UNKNOWN, 70L, settings)
     guard.next(XSurface.HOME, 300L, settings)
-    assertEquals(XAction.HOME_BREAK, guard.next(XSurface.HOME, 340L, settings))
+    assertEquals(XAction.NONE, guard.next(XSurface.HOME, 330L, settings))
     guard.next(XSurface.VIDEO, 350L, settings)
     assertEquals(XAction.NONE, guard.next(XSurface.HOME, 500L, settings))
+  }
+
+  @Test fun `other X surfaces stay allowed during the Home lockout`() {
+    val guard = XGuardStateMachine()
+    val settings = XSettings(homeAllowanceMs = 100L)
+    guard.next(XSurface.HOME, 0L, settings)
+    assertEquals(XAction.HOME_BREAK, guard.next(XSurface.HOME, 100L, settings))
+    assertEquals(XAction.NONE, guard.next(XSurface.OTHER, 200L, settings))
+    assertEquals(XAction.HOME_BREAK, guard.next(XSurface.HOME, 300L, settings))
   }
 
   @Test fun `first video and playback events stay open but pager advancement leaves`() {

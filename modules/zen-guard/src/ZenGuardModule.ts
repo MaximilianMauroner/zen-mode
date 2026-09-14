@@ -3,6 +3,7 @@ import { NativeModule, requireNativeModule } from 'expo';
 export type ZenGuardStatus = {
   available: boolean;
   serviceEnabled: boolean;
+  currentConsent: boolean;
   protectionEnabled: boolean;
   observationMode: boolean;
   shortsEnabled: boolean;
@@ -60,6 +61,8 @@ declare class ZenGuardModule extends NativeModule<{}> {
   setShortsEnabled(enabled: boolean): Promise<void>;
   setXSettings(homeEnabled: boolean, videosEnabled: boolean, homeMinutes: number): Promise<void>;
   setXObservationMode(enabled: boolean): Promise<void>;
+  hasCurrentConsent(): Promise<boolean>;
+  acceptCurrentConsent(): Promise<void>;
   setProtectionEnabled(enabled: boolean): Promise<void>;
   setObservationMode(enabled: boolean): Promise<void>;
   setInstagramObservationMode(enabled: boolean): Promise<void>;

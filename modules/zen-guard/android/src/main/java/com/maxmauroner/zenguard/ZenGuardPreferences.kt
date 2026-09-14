@@ -5,6 +5,20 @@ import android.content.Context
 internal class ZenGuardPreferences(context: Context) {
   private val preferences = context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
 
+  val hasCurrentConsent: Boolean
+    get() {
+      val storedVersion = try {
+        preferences.getInt(KEY_CONSENT_VERSION, Int.MIN_VALUE)
+      } catch (_: ClassCastException) {
+        null
+      }
+      return ConsentPolicy.isCurrent(storedVersion)
+    }
+
+  fun acceptCurrentConsent(): Boolean = preferences.edit()
+    .putInt(KEY_CONSENT_VERSION, ConsentPolicy.CURRENT_VERSION)
+    .commit()
+
   var protectionEnabled: Boolean
     get() = preferences.getBoolean(KEY_PROTECTION_ENABLED, false)
     set(value) = preferences.edit().putBoolean(KEY_PROTECTION_ENABLED, value).apply()
@@ -96,6 +110,7 @@ internal class ZenGuardPreferences(context: Context) {
 
   companion object {
     private const val FILE_NAME = "zen_guard_preferences"
+    private const val KEY_CONSENT_VERSION = "consent_version"
     private const val KEY_PROTECTION_ENABLED = "protection_enabled"
     private const val KEY_OBSERVATION_MODE = "observation_mode"
     private const val KEY_LAST_EVENT_AT = "last_event_at"

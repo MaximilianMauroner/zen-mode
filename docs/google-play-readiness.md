@@ -13,6 +13,8 @@ current repository state. It does not publish or send anything externally.
 | Protection target | Android only. Web checks the interface; iOS does not provide protection. |
 | Accessibility service | The native module declares `BIND_ACCESSIBILITY_SERVICE`, can retrieve window content, and receives window/content, click, and scroll events. The service is marked `isAccessibilityTool=false`. |
 | Supported feed surfaces | YouTube Shorts; Instagram Reels, Home, Explore, and Direct Messages for setup/provenance; X Home and video viewer. X support is for the Android app package, not the browser. |
+| Supported browser probes | Chrome, Samsung Internet, Opera, and Firefox have package-specific address-bar adapters. Each remains unverified until its current stable normal/private modes pass on-device checks. |
+| Website rules | The adult-site switch is off by default. A small bundled hostname catalog and up to 100 user-added domains are matched locally. Visited addresses are not persisted. This is reactive accessibility enforcement, not network filtering. |
 | Other app rules | Launchable Android apps can receive daily, timed-visit, or rolling-window rules. Foreground package events are used to charge configured app rules. |
 | Package visibility | The module queries YouTube, Instagram, X, and launcher activities. `app.json` blocks unrelated storage and overlay permissions. Verify the merged release manifest. |
 | Build state | The generated release variant uses a debug key. Production upload signing and release automation are not configured. |
@@ -69,15 +71,16 @@ upload an APK signed with the debug key.
       A one-sided bump can either repeat setup unnecessarily or let the service
       accept an outdated disclosure.
 - [ ] Complete Play Console's current Accessibility API declaration for the
-      service. Explain that the core function is applying user-selected app and
-      feed rules.
+      service. Explain that the core function is applying user-selected app,
+      feed, and website rules, and that enabled website protection reads only
+      known browser address bars locally.
 - [ ] Review the in-app prominent disclosure and consent screen against the
       final behavior. The current copy covers accessibility screen-content
-      processing for YouTube, Instagram, and X, foreground tracking for app
-      limits, and the launchable-app list used when choosing a rule. It also
-      says screen contents and installed-app inventory are not sent off this
-      device. The owner must approve that wording and keep it aligned with the
-      shipped behavior.
+      processing for YouTube, Instagram, and X, known browser address bars when
+      website blocking is enabled, foreground tracking for app limits, and the
+      launchable-app list used when choosing a rule. It also says screen contents,
+      browser addresses, and installed-app inventory are not sent off this device.
+      The owner must approve that wording and keep it aligned with the shipped behavior.
 - [ ] Complete the current Data safety form and privacy policy review. The
       native implementation has no server client and describes local handling,
       but the owner must decide how accessibility data, screen content, and
@@ -126,7 +129,8 @@ and 1 minute for timed visits where available.
 
 ### Controls and rule behavior
 
-5. On Feeds, confirm exactly three grouped controls: YouTube, Instagram, and X.
+5. On Feeds, confirm exactly four grouped controls: YouTube, Instagram, X, and
+   Sites.
    Open each drawer and verify its controls, saved status, and `Open` button.
 6. Set a daily app budget. Use the app until it reaches the budget and confirm
    Zen Mode returns to Home. Set a timed visit and confirm Start grants one
@@ -142,11 +146,17 @@ and 1 minute for timed visits where available.
 9. X: set the shortest Home break. Confirm the Home break appears after the
    allowance and a verified video-pager scroll leaves the video viewer. Check
    that ordinary posts and playback progress do not trigger the video rule.
-10. Lock settings for one day. Confirm tightening a rule still works, while
-    disabling a rule, removing an app rule, or increasing an allowance is
-    refused. Request unlock and confirm the UI says it cannot open before the
-    cooling-off period and lock expiry.
-11. Disable the Accessibility service or pause protection in Android settings.
+10. Open Sites and turn on adult-site blocking. Add a safe fixture domain and
+    test direct navigation, link navigation, redirect, reload, tab switch,
+    collapsed toolbar, Back, and Home in current stable Chrome and Samsung
+    Internet, in normal and private modes. Repeat for Opera and Firefox before
+    claiming them supported. Do not load or record real adult content. Confirm
+    lookalike domains, unknown browsers, and in-app pages remain open.
+11. Lock settings for one day. Confirm tightening a rule and adding a domain
+    still work, while disabling a rule, removing a domain or app rule, or
+    increasing an allowance is refused. Request unlock and confirm the UI says
+    it cannot open before the cooling-off period and lock expiry.
+12. Disable the Accessibility service or pause protection in Android settings.
     Confirm saved rules remain visible but no longer enforce. Re-enable access
     and protection, then repeat one feed check.
 
@@ -156,8 +166,9 @@ Record a short, reviewer-safe walkthrough from the signed candidate:
 
 1. Start on the setup disclosure, then show Android Accessibility access and
    the running status after returning.
-2. Show the Feeds page with the three grouped rows. Open the Instagram drawer
-   to show Reels, Home, and Explore, then show the App limits and Lock tabs.
+2. Show the Feeds page with the four grouped rows. Open the Sites drawer to show
+   the switch, browser readiness, and an empty custom list; then show the App
+   limits and Lock tabs.
 3. Capture one real enforcement result, such as the Instagram Explore blocker
    or the YouTube one-Short boundary. Include the user action that caused it.
 4. End on the saved rule/status screen. Keep personal messages, usernames,
@@ -172,6 +183,8 @@ for final store media.
 These items cannot be completed from the repository:
 
 - permanent package ID and Play developer account identity;
+- owner approval of the bundled adult-site catalog, its review source, and its
+  release update policy;
 - support URL and public privacy policy URL (support email is
   `lab4code.dev@gmail.com`);
 - Accessibility API and Data safety declarations approved by the owner;

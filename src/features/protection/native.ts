@@ -1,6 +1,6 @@
-import ZenGuardModule, { type AppLimit, type InstalledApp, type IntentApp, type RollingLimit, type ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
+import ZenGuardModule, { type AdultSiteSettings, type AppLimit, type InstalledApp, type IntentApp, type RollingLimit, type ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
 
-export type { AppLimit, InstalledApp, IntentApp, RollingLimit, ZenGuardStatus };
+export type { AdultSiteSettings, AppLimit, InstalledApp, IntentApp, RollingLimit, ZenGuardStatus };
 
 export const getZenGuardStatus = () => ZenGuardModule.getStatus();
 export const openAccessibilitySettings = () => ZenGuardModule.openAccessibilitySettings();
@@ -35,3 +35,8 @@ export const openX = () => ZenGuardModule.openX();
 export const setShortsEnabled = (enabled: boolean) => ZenGuardModule.setShortsEnabled(enabled);
 export const setXSettings = (homeEnabled: boolean, videosEnabled: boolean, homeMinutes: number) => ZenGuardModule.setXSettings(homeEnabled, videosEnabled, homeMinutes);
 export const setXObservationMode = (enabled: boolean) => ZenGuardModule.setXObservationMode(enabled);
+export const getAdultSiteSettings = () => ZenGuardModule.getAdultSiteSettings();
+export const setAdultSiteBlockingEnabled = (enabled: boolean) => ZenGuardModule.setAdultSiteBlockingEnabled(enabled);
+export const addBlockedDomain = (input: string) => ZenGuardModule.addBlockedDomain(input);
+export const removeBlockedDomain = (host: string) => ZenGuardModule.removeBlockedDomain(host);
+export const openBrowserCheck = () => ZenGuardModule.openBrowserCheck();

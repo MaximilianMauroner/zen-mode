@@ -72,7 +72,7 @@ export default function SetupScreen() {
       <IconTile icon={ShieldCheck} />
       <ScreenTitle
         title="Set up the guard"
-        description="Zen Mode watches YouTube Shorts, Instagram Reels, Home and Explore, and X Home and videos. Feed rules keep Messages open. Whole-app limits apply to the apps and times you choose."
+        description="Zen Mode watches YouTube Shorts, Instagram Reels, Home and Explore, and X Home and videos. It can also close blocked websites in supported Android browsers. Whole-app limits apply to the apps and times you choose."
       />
 
       <Card className="border-dangerLine">
@@ -81,10 +81,10 @@ export default function SetupScreen() {
           <Text className="ml-2.5 text-[15px] font-semibold text-copy">Accessibility access</Text>
         </View>
         <Text className="mt-3.5 text-[14px] leading-[21px] text-muted">
-          To recognize guarded feeds, Zen Mode processes what YouTube, Instagram, and X put on screen through Android accessibility. It also checks which app is in the foreground to apply app limits. When you add an app limit or timed visit, it lists launchable apps installed on this device so you can select one.
+          To recognize guarded feeds, Zen Mode processes what YouTube, Instagram, and X put on screen through Android accessibility. When you turn on website blocking, it reads the current address from known browser address bars to close matching sites. It also checks which app is in the foreground to apply app limits. When you add an app limit or timed visit, it lists launchable apps installed on this device so you can select one.
         </Text>
         <Text className="mt-2.5 text-[14px] leading-[21px] text-muted">
-          Zen Mode does not read screen contents from other apps, record what you type, take screenshots, or send screen contents or installed-app inventory anywhere. It stores guard settings and local usage and detection summaries, not screen text.
+          Zen Mode does not inspect browser page content, record what you type, take screenshots, or send screen contents, browser addresses, or installed-app inventory anywhere. It stores guard settings and local usage and detection summaries, not visited addresses or screen text.
         </Text>
         <Pressable
           accessibilityRole="checkbox"

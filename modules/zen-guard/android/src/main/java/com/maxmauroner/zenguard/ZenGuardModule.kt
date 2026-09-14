@@ -3,6 +3,7 @@ package com.maxmauroner.zenguard
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.provider.Settings
 import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
@@ -15,6 +16,7 @@ class ZenGuardModule : Module() {
     AsyncFunction("getStatus") {
       val context = requireNotNull(appContext.reactContext)
       val preferences = ZenGuardPreferences(context)
+      val adultSites = AdultSiteRuleStore(context)
       mapOf(
         "available" to true,
         "serviceEnabled" to isServiceEnabled(context),
@@ -40,7 +42,40 @@ class ZenGuardModule : Module() {
         "instagramDetectionCount" to preferences.instagramDetectionCount,
         "instagramSignalMask" to preferences.instagramSignalMask,
         "instagramLastDetectionReason" to preferences.instagramLastDetectionReason,
+        "adultSiteEnabled" to adultSites.enabled,
+        "adultSiteCustomCount" to adultSites.customHosts().size,
+        "browserSignalMask" to adultSites.browserSignalMask,
       )
+    }
+
+    AsyncFunction("getAdultSiteSettings") {
+      val store = AdultSiteRuleStore(requireNotNull(appContext.reactContext))
+      mapOf(
+        "available" to true,
+        "enabled" to store.enabled,
+        "customHosts" to store.customHosts().sorted(),
+        "browserSignalMask" to store.browserSignalMask,
+      )
+    }
+
+    AsyncFunction("setAdultSiteBlockingEnabled") { enabled: Boolean ->
+      AdultSiteRuleStore(requireNotNull(appContext.reactContext)).enabled = enabled
+    }
+
+    AsyncFunction("addBlockedDomain") { input: String ->
+      AdultSiteRuleStore(requireNotNull(appContext.reactContext)).add(input)
+    }
+
+    AsyncFunction("removeBlockedDomain") { host: String ->
+      AdultSiteRuleStore(requireNotNull(appContext.reactContext)).remove(host)
+    }
+
+    AsyncFunction("openBrowserCheck") {
+      val context = requireNotNull(appContext.reactContext)
+      val intent = Intent(Intent.ACTION_VIEW, Uri.parse(BROWSER_CHECK_URL)).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      context.startActivity(intent)
     }
 
     /** Launchable apps, so the limiter can offer a picker. Excludes Zen Mode itself. */
@@ -268,5 +303,6 @@ class ZenGuardModule : Module() {
   companion object {
     private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
     private const val REQUIRED_INSTAGRAM_SIGNALS = 3
+    private const val BROWSER_CHECK_URL = "https://example.com"
   }
 }

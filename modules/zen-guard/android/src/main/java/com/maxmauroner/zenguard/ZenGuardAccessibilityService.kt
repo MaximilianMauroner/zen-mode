@@ -39,6 +39,9 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   private lateinit var rollingLimits: RollingLimitStore
   private val intentSessions = IntentSessionTracker()
   private lateinit var intentOverlay: IntentOverlay
+  private lateinit var adultSiteStore: AdultSiteRuleStore
+  private lateinit var adultSiteOverlay: AdultSiteBlockerOverlay
+  private val browserHandler = Handler(Looper.getMainLooper())
   private var lastExternalPackage: String? = null
   private val usageTracker = AppUsageTracker()
   private val usageHandler = Handler(Looper.getMainLooper())
@@ -72,6 +75,8 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     intentStore = IntentAppStore(this)
     rollingLimits = RollingLimitStore(this)
     intentOverlay = IntentOverlay(this)
+    adultSiteStore = AdultSiteRuleStore(this)
+    adultSiteOverlay = AdultSiteBlockerOverlay(this)
     usageHandler.postDelayed(usageTicker, USAGE_TICK_MS)
     xOverlay = XBreakOverlay(this) {
       if (hasActiveProtection()) {
@@ -137,11 +142,25 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     trackForegroundApp(event)
     // The blocker is an accessibility overlay owned by this package. Ignore its own focus and
     // content events; treating them as an external app would immediately remove the blocker.
-    if (event.packageName?.toString() == packageName) return
-    if (event.packageName?.toString() != X_PACKAGE && event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+    val eventPackage = event.packageName?.toString()
+    if (eventPackage == packageName) {
+      if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+        windows.none { BrowserUrlDetector.supports(it.root?.packageName?.toString()) }
+      ) clearAdultSiteEnforcement()
+      return
+    }
+    if (BrowserUrlDetector.supports(eventPackage)) {
+      handleBrowserEvent(eventPackage!!)
+    } else if ((event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+        event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) &&
+      windows.none { BrowserUrlDetector.supports(it.root?.packageName?.toString()) }
+    ) {
+      clearAdultSiteEnforcement()
+    }
+    if (eventPackage != X_PACKAGE && event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
       windows.none { it.root?.packageName?.toString() == X_PACKAGE }) clearXEnforcement(preserveHomeLockout = true)
 
-    when (event.packageName?.toString()) {
+    when (eventPackage) {
       YOUTUBE_PACKAGE -> {
         instagramNavigationSuppressedUntilMs = 0L
         clearInstagramEnforcement()
@@ -560,6 +579,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   }
 
   override fun onInterrupt() {
+    clearAdultSiteEnforcement()
     clearXEnforcement(preserveHomeLockout = true)
     stateMachine.reset()
     clearInstagramEnforcement(preserveHomeSession = true)
@@ -579,6 +599,8 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   }
 
   override fun onDestroy() {
+    browserHandler.removeCallbacksAndMessages(null)
+    clearAdultSiteEnforcement()
     xHandler.removeCallbacksAndMessages(null)
     clearXEnforcement()
     navigationHandler.removeCallbacksAndMessages(null)
@@ -606,6 +628,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
 
   /** Clear every in-memory action path without inspecting another app's screen. */
   private fun clearInactiveProtection() {
+    clearAdultSiteEnforcement()
     stateMachine.reset()
     clearXEnforcement()
     usageTracker.reset()
@@ -616,6 +639,77 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     navigationHandler.removeCallbacksAndMessages(null)
     instagramNavigationSuppressedUntilMs = 0L
     clearInstagramEnforcement()
+  }
+
+  /** Reads text only from exact address-bar nodes; arbitrary browser page text is never copied. */
+  private fun handleBrowserEvent(browserPackage: String) {
+    if (!::adultSiteStore.isInitialized || !::adultSiteOverlay.isInitialized) return
+    if (!adultSiteStore.enabled) {
+      clearAdultSiteEnforcement()
+      return
+    }
+    val root = browserRoot(browserPackage) ?: return
+    val detection = BrowserUrlDetector.detect(browserPackage, browserAddressBars(root, browserPackage)) ?: return
+    adultSiteStore.recordBrowserSignal(detection.browserMask)
+    if (AdultSitePolicy.isBlocked(detection.host, adultSiteStore.customHosts())) {
+      adultSiteOverlay.show(
+        browserPackage = browserPackage,
+        onBack = { leaveBlockedSiteBack() },
+        onHome = { leaveBlockedSiteHome() },
+      )
+    } else if (adultSiteOverlay.shownPackage() == browserPackage) {
+      adultSiteOverlay.hide()
+    }
+  }
+
+  private fun browserRoot(browserPackage: String): AccessibilityNodeInfo? =
+    windows.firstNotNullOfOrNull { window ->
+      window.root?.takeIf { it.packageName?.toString() == browserPackage }
+    } ?: rootInActiveWindow?.takeIf { it.packageName?.toString() == browserPackage }
+
+  private fun browserAddressBars(root: AccessibilityNodeInfo, browserPackage: String): List<BrowserNodeSignal> {
+    data class Pending(val node: AccessibilityNodeInfo, val depth: Int)
+    val pending = ArrayDeque<Pending>()
+    val result = ArrayList<BrowserNodeSignal>(2)
+    pending.add(Pending(root, 0))
+    var visited = 0
+    while (pending.isNotEmpty() && visited++ < MAX_BROWSER_NODES) {
+      val (node, depth) = pending.removeFirst()
+      if (!node.isVisibleToUser) continue
+      val viewId = node.viewIdResourceName.orEmpty()
+      if (BrowserUrlDetector.isAddressBar(browserPackage, viewId)) {
+        result.add(BrowserNodeSignal(viewId, node.text?.toString().orEmpty(), true))
+      }
+      if (depth >= MAX_BROWSER_DEPTH) continue
+      for (index in 0 until node.childCount) node.getChild(index)?.let { pending.add(Pending(it, depth + 1)) }
+    }
+    return result
+  }
+
+  /** Keep the overlay in place until Back produces a verified non-blocked URL. */
+  private fun leaveBlockedSiteBack() {
+    val browserPackage = adultSiteOverlay.shownPackage() ?: return
+    if (!hasActiveProtection() || !adultSiteStore.enabled) {
+      clearAdultSiteEnforcement()
+      return
+    }
+    performGlobalAction(GLOBAL_ACTION_BACK)
+    browserHandler.removeCallbacksAndMessages(null)
+    browserHandler.postDelayed({
+      if (hasActiveProtection() && adultSiteOverlay.shownPackage() == browserPackage) {
+        handleBrowserEvent(browserPackage)
+      }
+    }, BROWSER_RECHECK_MS)
+  }
+
+  private fun leaveBlockedSiteHome() {
+    adultSiteOverlay.hide()
+    if (hasActiveProtection()) performGlobalAction(GLOBAL_ACTION_HOME) else clearInactiveProtection()
+  }
+
+  private fun clearAdultSiteEnforcement() {
+    browserHandler.removeCallbacksAndMessages(null)
+    if (::adultSiteOverlay.isInitialized) adultSiteOverlay.hide()
   }
 
   /**
@@ -793,6 +887,9 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     private const val MAX_NAVIGATION_ATTEMPTS = 12
     private const val USAGE_TICK_MS = 15_000L
     private const val LIMIT_TOAST_INTERVAL_MS = 30_000L
+    private const val BROWSER_RECHECK_MS = 350L
+    private const val MAX_BROWSER_NODES = 180
+    private const val MAX_BROWSER_DEPTH = 18
 
     private val INBOX_ID_FRAGMENTS = listOf(
       "direct_inbox",

@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { DangerButton, PrimaryButton, SecondaryButton } from '@/components/ui/button';
 import { Row, RowGroup } from '@/components/ui/card';
 import { ErrorNote, Screen, ScreenHeader } from '@/components/ui/screen';
+import { openFeedbackIssue } from '@/features/feedback/github-issue';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { isChangeBlocked } from '@/features/protection/lock';
 import { openAccessibilitySettings, openInstagram, openYouTube, openX, setNativeProtectionEnabled } from '@/features/protection/native';
@@ -72,6 +73,7 @@ export default function SettingsScreen() {
       </View>
       <View className="gap-3">
         <SecondaryButton title="Privacy" onPress={() => router.navigate('/privacy')} disabled={busy} />
+        <SecondaryButton title="Send feedback" disabled={busy} onPress={() => runAction(openFeedbackIssue)} />
         <SecondaryButton title="Open YouTube" disabled={disabled} onPress={() => runAction(openYouTube)} />
         <SecondaryButton title="Open Instagram" disabled={disabled} onPress={() => runAction(openInstagram)} />
         <SecondaryButton title="Open X" disabled={disabled} onPress={() => runAction(openX)} />

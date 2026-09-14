@@ -1,7 +1,7 @@
 import { Card } from '@/components/ui/card';
 import { PrimaryButton, SecondaryButton } from '@/components/ui/button';
 import { ErrorNote, IconTile, Screen, ScreenTitle } from '@/components/ui/screen';
-import { hasCompletedSetup, markSetupComplete } from '@/features/protection/setup';
+import { acceptSetupConsent, hasCompletedSetup, markSetupComplete } from '@/features/protection/setup';
 import { openAccessibilitySettings, setInstagramObservationMode, setNativeProtectionEnabled, setObservationMode } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
 import { Check, Eye, ShieldCheck } from 'lucide-react-native';
@@ -51,6 +51,7 @@ export default function SetupScreen() {
     if (!consented) return setError('Read the note above and tick the box first.');
     setSaving(true);
     try {
+      await acceptSetupConsent();
       await setNativeProtectionEnabled(true);
       await setObservationMode(true);
       await setInstagramObservationMode(true);

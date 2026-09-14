@@ -7,6 +7,7 @@ class ZenGuardModule extends NativeModule<{}> {
     return {
       available: false,
       serviceEnabled: false,
+      currentConsent: false,
       protectionEnabled: false,
       observationMode: true,
       shortsEnabled: true,
@@ -38,6 +39,8 @@ class ZenGuardModule extends NativeModule<{}> {
   async setShortsEnabled() {}
   async setXSettings() {}
   async setXObservationMode() {}
+  async hasCurrentConsent() { return false; }
+  async acceptCurrentConsent() {}
   async setProtectionEnabled() {}
   async setObservationMode() {}
   async setInstagramObservationMode() {}

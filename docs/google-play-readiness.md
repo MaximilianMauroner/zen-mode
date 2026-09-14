@@ -9,7 +9,7 @@ current repository state. It does not publish or send anything externally.
 | --- | --- |
 | App name | `Zen Mode` in `app.json`. |
 | Android package | `com.maxmauroner.zenmode` in `app.json`; owner must confirm that this is the permanent Play package ID before the first upload. |
-| Version | `1.0.0` in `app.json`; no explicit Android `versionCode` is configured. Set and increment a release version code in the release process. |
+| Version | `1.0.3` with Android version code `4` in `app.json`; confirm code `4` exceeds every artifact previously uploaded, then increment it for each later upload. |
 | Protection target | Android only. Web checks the interface; iOS does not provide protection. |
 | Accessibility service | The native module declares `BIND_ACCESSIBILITY_SERVICE`, can retrieve window content, and receives window/content, click, and scroll events. The service is marked `isAccessibilityTool=false`. |
 | Supported feed surfaces | YouTube Shorts; Instagram Reels, Home, Explore, and Direct Messages for setup/provenance; X Home and video viewer. X support is for the Android app package, not the browser. |
@@ -59,9 +59,15 @@ upload an APK signed with the debug key.
 
 ### Accessibility, privacy, and review declarations
 
-- [ ] Add and test a native consent gate for upgrades. Consent v2 currently
-      pauses protection when Zen Mode next opens. An already enabled service
-      can run between an upgrade and that app launch.
+- [ ] Validate the native consent gate on a device upgrade with the service
+      already enabled. The service now requires current native consent before
+      event, timer, usage, overlay, or navigation processing; unit coverage is
+      present, but the real upgrade journey is still required.
+- [ ] When the accessibility disclosure changes, bump both
+      `CONSENT_VERSION` in `src/features/protection/setup-policy.ts` and
+      `CURRENT_VERSION` in the native `ConsentPolicy.kt` in the same release.
+      A one-sided bump can either repeat setup unnecessarily or let the service
+      accept an outdated disclosure.
 - [ ] Complete Play Console's current Accessibility API declaration for the
       service. Explain that the core function is applying user-selected app and
       feed rules.
@@ -166,7 +172,8 @@ for final store media.
 These items cannot be completed from the repository:
 
 - permanent package ID and Play developer account identity;
-- support email, support URL, and public privacy policy URL;
+- support URL and public privacy policy URL (support email is
+  `lab4code.dev@gmail.com`);
 - Accessibility API and Data safety declarations approved by the owner;
 - release keystore, Play App Signing/upload-key ownership, and build pipeline;
 - supported Android API/device and third-party app-version matrix;

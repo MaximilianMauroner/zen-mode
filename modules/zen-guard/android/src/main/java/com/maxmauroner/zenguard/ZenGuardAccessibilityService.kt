@@ -19,7 +19,11 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   private val xHandler = Handler(Looper.getMainLooper())
   private val xTicker = object : Runnable {
     override fun run() {
-      if (::preferences.isInitialized) handleXEvent(null)
+      if (hasActiveProtection()) {
+        handleXEvent(null)
+      } else if (::preferences.isInitialized) {
+        clearInactiveProtection()
+      }
       xHandler.postDelayed(this, 1_000L)
     }
   }
@@ -48,10 +52,14 @@ class ZenGuardAccessibilityService : AccessibilityService() {
    */
   private val usageTicker = object : Runnable {
     override fun run() {
-      usageTracker.tick(SystemClock.elapsedRealtime())?.let(::bankUsage)
-      enforceAppLimit(currentForegroundPackage)
-      enforceRollingLimit(currentForegroundPackage)
-      enforceIntentSession()
+      if (hasActiveProtection()) {
+        usageTracker.tick(SystemClock.elapsedRealtime())?.let(::bankUsage)
+        enforceAppLimit(currentForegroundPackage)
+        enforceRollingLimit(currentForegroundPackage)
+        enforceIntentSession()
+      } else {
+        clearInactiveProtection()
+      }
       usageHandler.postDelayed(this, USAGE_TICK_MS)
     }
   }
@@ -66,53 +74,63 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     intentOverlay = IntentOverlay(this)
     usageHandler.postDelayed(usageTicker, USAGE_TICK_MS)
     xOverlay = XBreakOverlay(this) {
-      xStateMachine.leaveBlockedSurface()
-      xOverlay.hide()
-      performGlobalAction(GLOBAL_ACTION_HOME)
+      if (hasActiveProtection()) {
+        xStateMachine.leaveBlockedSurface()
+        xOverlay.hide()
+        performGlobalAction(GLOBAL_ACTION_HOME)
+      } else {
+        clearInactiveProtection()
+      }
     }
     xHandler.postDelayed(xTicker, 1_000L)
     instagramOverlay = InstagramBlockerOverlay(
       service = this,
       onLeave = {
-        val reason = instagramBlockReason
-        instagramStateMachine.leaveBlockedSurface()
-        instagramBlockReason = null
-        instagramOverlay.hide()
-        when (reason) {
-          InstagramBlockReason.HOME_LIMIT -> performGlobalAction(GLOBAL_ACTION_HOME)
-          InstagramBlockReason.EXPLORE -> openInstagramMessages()
-          InstagramBlockReason.REELS_ENTRY,
-          InstagramBlockReason.REELS_SWIPE,
-          InstagramBlockReason.REELS_WINDOW_EXPIRED,
-          -> openInstagramMessages()
-          else -> performGlobalAction(GLOBAL_ACTION_BACK)
+        if (hasActiveProtection()) {
+          val reason = instagramBlockReason
+          instagramStateMachine.leaveBlockedSurface()
+          instagramBlockReason = null
+          instagramOverlay.hide()
+          when (reason) {
+            InstagramBlockReason.HOME_LIMIT -> performGlobalAction(GLOBAL_ACTION_HOME)
+            InstagramBlockReason.EXPLORE -> openInstagramMessages()
+            InstagramBlockReason.REELS_ENTRY,
+            InstagramBlockReason.REELS_SWIPE,
+            InstagramBlockReason.REELS_WINDOW_EXPIRED,
+            -> openInstagramMessages()
+            else -> performGlobalAction(GLOBAL_ACTION_BACK)
+          }
+        } else {
+          clearInactiveProtection()
         }
       },
       onOpenMessages = {
-        instagramStateMachine.leaveBlockedSurface()
-        instagramBlockReason = null
-        instagramOverlay.hide()
-        openInstagramMessages()
+        if (hasActiveProtection()) {
+          instagramStateMachine.leaveBlockedSurface()
+          instagramBlockReason = null
+          instagramOverlay.hide()
+          openInstagramMessages()
+        } else {
+          clearInactiveProtection()
+        }
       },
       onContinue = {
-        val continued = instagramStateMachine.continueReels(SystemClock.elapsedRealtime(), preferences.instagramSettings())
-        if (continued) dailyTally.recordContinue(System.currentTimeMillis())
-        continued
+        if (hasActiveProtection()) {
+          val continued = instagramStateMachine.continueReels(SystemClock.elapsedRealtime(), preferences.instagramSettings())
+          if (continued) dailyTally.recordContinue(System.currentTimeMillis())
+          continued
+        } else {
+          clearInactiveProtection()
+          false
+        }
       },
     )
   }
 
   override fun onAccessibilityEvent(event: AccessibilityEvent?) {
     if (!::preferences.isInitialized || event == null) return
-    if (!preferences.protectionEnabled) {
-      stateMachine.reset()
-      clearXEnforcement()
-      usageTracker.reset()
-      currentForegroundPackage = null
-      lastExternalPackage = null
-      intentSessions.reset()
-      if (::intentOverlay.isInitialized) intentOverlay.hide()
-      clearInstagramEnforcement()
+    if (!hasActiveProtection()) {
+      clearInactiveProtection()
       return
     }
 
@@ -256,6 +274,10 @@ class ZenGuardAccessibilityService : AccessibilityService() {
 
   /** Starts one timed visit and lets the app through. */
   private fun grantIntentSession(packageName: String, minutes: Int) {
+    if (!hasActiveProtection()) {
+      clearInactiveProtection()
+      return
+    }
     intentSessions.grant(packageName, minutes, SystemClock.elapsedRealtime())
     if (intentOverlay.shownPackage() == packageName) intentOverlay.hide()
   }
@@ -263,6 +285,10 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   /** Leaves without starting a session. */
   private fun leaveIntent() {
     intentOverlay.hide()
+    if (!hasActiveProtection()) {
+      clearInactiveProtection()
+      return
+    }
     performGlobalAction(GLOBAL_ACTION_HOME)
   }
 
@@ -328,7 +354,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
 
   /** One-second ticks count a still Home feed; events identify only the full-screen video pager. */
   private fun handleXEvent(event: AccessibilityEvent?) {
-    if (!preferences.protectionEnabled) { clearXEnforcement(); return }
+    if (!hasActiveProtection()) { clearInactiveProtection(); return }
     if (!isScreenInteractive) { xStateMachine.pause(); return }
     val root = rootInActiveWindow ?: run { xStateMachine.pause(); return }
     if (root.packageName?.toString() != X_PACKAGE) {
@@ -540,6 +566,10 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   }
 
   private fun openInstagramMessages() {
+    if (!hasActiveProtection()) {
+      clearInactiveProtection()
+      return
+    }
     navigationHandler.removeCallbacksAndMessages(null)
     instagramNavigationSuppressedUntilMs =
       SystemClock.elapsedRealtime() + NAVIGATION_SUPPRESSION_MS
@@ -569,6 +599,23 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     }
     instagramBlockReason = null
     if (::instagramOverlay.isInitialized) instagramOverlay.hide()
+  }
+
+  private fun hasActiveProtection(): Boolean =
+    ::preferences.isInitialized && preferences.hasCurrentConsent && preferences.protectionEnabled
+
+  /** Clear every in-memory action path without inspecting another app's screen. */
+  private fun clearInactiveProtection() {
+    stateMachine.reset()
+    clearXEnforcement()
+    usageTracker.reset()
+    currentForegroundPackage = null
+    lastExternalPackage = null
+    intentSessions.reset()
+    if (::intentOverlay.isInitialized) intentOverlay.hide()
+    navigationHandler.removeCallbacksAndMessages(null)
+    instagramNavigationSuppressedUntilMs = 0L
+    clearInstagramEnforcement()
   }
 
   /**
@@ -606,6 +653,10 @@ class ZenGuardAccessibilityService : AccessibilityService() {
    * after a package launch when the deep link did not produce the requested surface.
    */
   private fun ensureMessagesVisible(attempt: Int) {
+    if (!hasActiveProtection()) {
+      clearInactiveProtection()
+      return
+    }
     if (!isScreenInteractive || attempt > MAX_NAVIGATION_ATTEMPTS) return
 
     val root = rootInActiveWindow

@@ -53,6 +53,16 @@ internal class XBreakOverlay(private val service: AccessibilityService, private 
     root = body
   }
 
-  fun hide() { root?.let(manager::removeView); root = null }
+  fun hide() {
+    val existingRoot = root
+    root = null
+    existingRoot?.let {
+      try {
+        manager.removeView(it)
+      } catch (_: IllegalArgumentException) {
+        // Android may already have detached an accessibility overlay during service teardown.
+      }
+    }
+  }
   private fun dp(value: Int) = (value * service.resources.displayMetrics.density).toInt()
 }

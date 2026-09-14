@@ -1,16 +1,24 @@
 import * as SecureStore from 'expo-secure-store';
-import { setNativeProtectionEnabled } from './native';
+import { Platform } from 'react-native';
+import { acceptCurrentNativeConsent, hasCurrentNativeConsent, setNativeProtectionEnabled } from './native';
+import { CONSENT_VERSION, isSetupComplete } from './setup-policy';
 
-const SETUP_COMPLETE_KEY = 'zen-mode.setup-complete.v2';
+const SETUP_COMPLETE_KEY = `zen-mode.setup-complete.v${CONSENT_VERSION}`;
 
 /**
  * A missing or outdated consent record disables protection before setup can
  * continue. This makes an updated disclosure require a fresh agreement.
  */
 export async function hasCompletedSetup(): Promise<boolean> {
-  const complete = (await SecureStore.getItemAsync(SETUP_COMPLETE_KEY)) === 'true';
+  const secureStoreComplete = (await SecureStore.getItemAsync(SETUP_COMPLETE_KEY)) === 'true';
+  const nativeConsent = Platform.OS === 'android' ? await hasCurrentNativeConsent() : true;
+  const complete = isSetupComplete(Platform.OS, secureStoreComplete, nativeConsent);
   if (!complete) await setNativeProtectionEnabled(false);
   return complete;
+}
+
+export async function acceptSetupConsent(): Promise<void> {
+  if (Platform.OS === 'android') await acceptCurrentNativeConsent();
 }
 
 export async function markSetupComplete(): Promise<void> {

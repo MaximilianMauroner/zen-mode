@@ -6,6 +6,8 @@ export const getZenGuardStatus = () => ZenGuardModule.getStatus();
 export const openAccessibilitySettings = () => ZenGuardModule.openAccessibilitySettings();
 export const openYouTube = () => ZenGuardModule.openYouTube();
 export const openInstagram = () => ZenGuardModule.openInstagram();
+export const hasCurrentNativeConsent = () => ZenGuardModule.hasCurrentConsent();
+export const acceptCurrentNativeConsent = () => ZenGuardModule.acceptCurrentConsent();
 export const setNativeProtectionEnabled = (enabled: boolean) => ZenGuardModule.setProtectionEnabled(enabled);
 export const setObservationMode = (enabled: boolean) => ZenGuardModule.setObservationMode(enabled);
 export const setInstagramObservationMode = (enabled: boolean) => ZenGuardModule.setInstagramObservationMode(enabled);

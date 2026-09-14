@@ -9,7 +9,7 @@ approve the wording before publication.
 
 - Developer or legal entity: `[OWNER INPUT]`
 - Privacy policy effective date: `[OWNER INPUT]`
-- Privacy contact and support email: `[OWNER INPUT]`
+- Privacy contact and support email: `lab4code.dev@gmail.com`
 - Public support URL: `[OWNER INPUT]`
 - Applicable jurisdiction and controller details: `[OWNER INPUT]`
 
@@ -90,8 +90,8 @@ The code does not define one universal retention period or a global erase job:
   flag. Android log retention is controlled by the platform and device.
 
 The owner must set and publish the actual retention policy after reviewing the
-final SDKs, Android backup configuration, and release manifest. This draft does
-not promise automatic deletion or that local data is never backed up.
+final SDKs and release manifest. Zen Mode configures Android backup off, so app
+data is not included in Android cloud backup or device-to-device transfer.
 
 ## User controls and deletion
 
@@ -108,9 +108,10 @@ the associated daily usage record. Removing a rolling rule clears its stored
 rolling usage, and removing a timed-visit rule clears its stored visit-end
 record. The app currently has no single in-app control to erase all local data.
 
-Uninstalling the app normally removes its app-private data, but Android backup
-and restore behavior must be checked for the final build. This draft makes no
-claim about backup, restoration, or recovery of deleted data.
+Uninstalling the app normally removes its app-private data. Zen Mode configures
+Android backup off, so this data is not restored from Android cloud backup or
+device-to-device transfer. This setting must be verified in the final merged
+release manifest.
 
 ## Security
 
@@ -121,7 +122,7 @@ signing settings before publication.
 
 ## Contact and changes
 
-For privacy questions or requests, contact `[OWNER SUPPORT EMAIL]`. For policy
+For privacy questions or requests, contact `lab4code.dev@gmail.com`. For policy
 updates, the owner should publish the new effective date and explain the change
 at the public privacy policy URL.
 
@@ -136,5 +137,5 @@ policy:
 - The Accessibility service reads screen trees only for the supported feed
   packages. Other-app handling uses foreground package events for configured
   app rules.
-- The owner still needs an SDK inventory, backup review, final merged-manifest
-  review, retention decision, legal identity, and support contact.
+- The owner still needs an SDK inventory, final merged-manifest review,
+  retention decision, legal identity, support URL, and public policy URL.

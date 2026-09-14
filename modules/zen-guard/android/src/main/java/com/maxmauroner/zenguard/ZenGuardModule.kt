@@ -18,7 +18,8 @@ class ZenGuardModule : Module() {
       mapOf(
         "available" to true,
         "serviceEnabled" to isServiceEnabled(context),
-        "protectionEnabled" to preferences.protectionEnabled,
+        "currentConsent" to preferences.hasCurrentConsent,
+        "protectionEnabled" to (preferences.protectionEnabled && preferences.hasCurrentConsent),
         "observationMode" to preferences.observationMode,
         "shortsEnabled" to preferences.shortsEnabled,
         "xHomeEnabled" to preferences.xHomeEnabled,
@@ -163,7 +164,21 @@ class ZenGuardModule : Module() {
 
     AsyncFunction("setProtectionEnabled") { enabled: Boolean ->
       val context = requireNotNull(appContext.reactContext)
-      ZenGuardPreferences(context).protectionEnabled = enabled
+      val preferences = ZenGuardPreferences(context)
+      check(!enabled || preferences.hasCurrentConsent) {
+        "Accept the current accessibility disclosure before enabling protection"
+      }
+      preferences.protectionEnabled = enabled
+    }
+
+    AsyncFunction("hasCurrentConsent") {
+      ZenGuardPreferences(requireNotNull(appContext.reactContext)).hasCurrentConsent
+    }
+
+    AsyncFunction("acceptCurrentConsent") {
+      check(ZenGuardPreferences(requireNotNull(appContext.reactContext)).acceptCurrentConsent()) {
+        "Could not save accessibility consent"
+      }
     }
 
     AsyncFunction("setObservationMode") { enabled: Boolean ->

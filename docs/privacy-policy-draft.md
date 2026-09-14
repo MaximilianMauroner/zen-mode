@@ -15,7 +15,7 @@ approve the wording before publication.
 
 ## Scope
 
-Zen Mode is an Android app for applying user-selected screen-time and feed
+Zen Mode is an Android app for applying user-selected screen-time, feed, and website
 rules. It uses an Android Accessibility service when the user enables the
 service in Android Settings and accepts the in-app disclosure. The app has no
 account sign-in or app-owned server in the audited source.
@@ -29,6 +29,10 @@ When the Accessibility service is enabled, Zen Mode processes:
   selected state, and limited visible text or descriptions while classifying a
   screen. The app does not take screenshots or store screen text as an app
   record.
+- When website blocking is on, the current address from exact, known address-bar
+  nodes in supported browsers. Zen Mode uses the hostname to apply the bundled
+  and user-added rules. It does not inspect browser page content or store visited
+  addresses.
 - Foreground app events to charge time to a configured app rule. These events
   identify which app is in front and how long it remains there. Zen Mode does
   not use screen content from other apps for this purpose.
@@ -36,22 +40,24 @@ When the Accessibility service is enabled, Zen Mode processes:
   user opens the app picker and chooses an app rule.
 - User-selected rules and local state: feed settings, protection and
   observation state, daily budgets, timed-visit rules and visit-end times,
-  rolling allowances and timestamped usage slices, setup completion, and the
-  settings lock.
+  rolling allowances and timestamped usage slices, user-added blocked domains,
+  browser readiness bits, setup completion, and the settings lock.
 - Local usage and detection summaries: same-day app usage, rolling-window use,
   feed detection timestamps, counts, class or reason, observed signals, and
   same-day stop and continue counts.
 
-The current in-app disclosure says that screen contents and installed-app
-inventory are not sent off the device, and that settings, local usage, and
-detection summaries are stored instead of screen text. The owner must confirm
-that this remains true for the final binary and all included SDKs.
+The current in-app disclosure says that screen contents, browser addresses, and
+installed-app inventory are not sent off the device, and that settings, local
+usage, and detection summaries are stored instead of visited addresses or screen
+text. The owner must confirm that this remains true for the final binary and all
+included SDKs.
 
 ## How the information is used
 
 Zen Mode uses this information only to:
 
 - identify supported YouTube, Instagram, and X surfaces;
+- match supported browser hostnames against locally stored website rules;
 - apply the feed and app rules chosen by the user;
 - show rule status, usage summaries, and detection state in the app; and
 - complete setup, enforce the settings lock, and remember the user's choices.
@@ -73,7 +79,8 @@ Console declarations before publishing this section.
 
 The app stores state locally in Android app-private storage. Expo SecureStore
 holds setup completion and the settings lock. Android SharedPreferences holds
-guard settings, app rules, usage, detection summaries, and daily tally data.
+guard settings, app and website rules, browser readiness, usage, detection
+summaries, and daily tally data.
 Active visit and enforcement state also exists in memory while the service is
 running.
 
@@ -102,6 +109,8 @@ Users can:
   Android Settings;
 - pause protection in Zen Mode while keeping its saved rules;
 - remove an individual app rule; and
+- turn off website blocking or remove a user-added domain, subject to the
+  settings lock; and
 - allow a settings lock to expire or manage its unlock request.
 
 Removing a daily rule removes its rule definition but does not currently clear
@@ -136,8 +145,9 @@ policy:
 - Source reviewed: `src/app/setup.tsx`, `src/features/protection/setup.ts`,
   `src/features/protection/lock.ts`, `modules/zen-guard/android/src/main/`,
   and `app.json`.
-- The Accessibility service reads screen trees only for the supported feed
-  packages. Other-app handling uses foreground package events for configured
-  app rules.
+- The Accessibility service reads screen trees for supported feed packages. It
+  traverses supported browser trees narrowly and reads text only from exact,
+  known address-bar nodes while website blocking is on. Other-app handling uses
+  foreground package events for configured app rules.
 - The owner still needs an SDK inventory, final merged-manifest review,
   retention decision, legal identity, support URL, and public policy URL.

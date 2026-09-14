@@ -14,7 +14,7 @@ it in Play Console.
 
 ### Short description
 
-Set clear limits for feeds and apps on Android.
+Set clear limits for feeds, websites, and apps on Android.
 
 ### Full description
 
@@ -35,11 +35,19 @@ Set feed rules in grouped controls for YouTube, Instagram, and X:
 - X Home: take breaks after a chosen interval; and
 - X videos: allow one video per visit, then block video scrolling.
 
+Turn on adult-site blocking for supported browsers. Zen Mode includes a local
+site list and lets you add domains of your own. Browser addresses are checked on
+the device and are not saved. Browser support depends on the address-bar data
+exposed through Android Accessibility, so unknown browsers and ambiguous pages
+are left alone.
+
 Zen Mode uses Android Accessibility access to identify supported screens and
 apply your rules. Complete the in-app observation setup before feed protection
 starts. Detection is limited to supported accessibility layouts, so an update
-to YouTube, Instagram, or X can change what is recognized. Protection stays
-off until you enable it.
+to YouTube, Instagram, X, or a supported browser can change what is recognized.
+Website blocking is a focus boundary and can react only after a browser exposes
+its address; it is not network-level filtering. Protection stays off until you
+enable it.
 
 The feed protections require Android Accessibility access. YouTube, Instagram,
 X, and Android are third-party products and are not affiliated with Zen Mode.

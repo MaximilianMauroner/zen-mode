@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="zen_guard_accessibility_service_label">Zen Mode protection</string>
-  <string name="zen_guard_accessibility_service_description">Processes screen content locally to recognize guarded YouTube, Instagram, and X feeds. Zen Mode checks foreground apps to apply limits and lists launchable apps when you choose one. Screen content and app inventory are not sent off this device.</string>
+  <string name="zen_guard_accessibility_service_description">Processes screen content locally to recognize guarded YouTube, Instagram, and X feeds. When website blocking is on, it reads current addresses from known browser address bars, not page content. Zen Mode checks foreground apps to apply limits and lists launchable apps when you choose one. Screen content, browser addresses, and app inventory are not sent off this device.</string>
   <string name="zen_guard_app_limit_reached">Daily limit reached</string>
   <string name="zen_guard_rolling_limit_reached">Limit reached, refills over time</string>
   <string name="zen_guard_shorts_blocked">One Short per visit. Scrolling is blocked.</string>
@@ -71,4 +71,11 @@
   </plurals>
   <string name="zen_guard_leave_x">Leave X</string>
   <string name="zen_guard_x_video_blocked">One video per visit. Scrolling is blocked.</string>
+
+  <!-- Website guard. The blocked host is deliberately never shown. -->
+  <string name="zen_guard_site_surface">●  WEB / SITE</string>
+  <string name="zen_guard_site_eyebrow">THIS SITE IS CLOSED</string>
+  <string name="zen_guard_site_title">Not this\none.</string>
+  <string name="zen_guard_site_detail">Zen Mode closed this page. Go back, or go home.</string>
+  <string name="zen_guard_site_go_back">Go back</string>
 </resources>

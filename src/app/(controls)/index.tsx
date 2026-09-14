@@ -1,8 +1,9 @@
 import { useCallback, useRef, useState } from 'react';
 import { Pressable, RefreshControl, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { Clapperboard, House, LockKeyhole, Play } from 'lucide-react-native';
+import { Clapperboard, Globe2, House, LockKeyhole, Play } from 'lucide-react-native';
 
+import { AdultSiteControlsDrawer } from '@/components/ui/adult-site-controls-drawer';
 import { FeedControlsDrawer, type FeedDrawer } from '@/components/ui/feed-controls-drawer';
 import { PrimaryButton } from '@/components/ui/button';
 import { TopTabs } from 'expo-router/js-top-tabs';
@@ -11,6 +12,7 @@ import { ErrorNote, Screen } from '@/components/ui/screen';
 import { formatRemaining, readLockState, type LockState } from '@/features/protection/lock';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { getFeedStatus } from '@/features/protection/feed-status';
+import { getAdultSitePresentation } from '@/features/protection/adult-site-presentation';
 import { useSharedGuardStatus } from '@/features/protection/guard-status-context';
 import { hasCompletedSetup } from '@/features/protection/setup';
 import { openAccessibilitySettings, openInstagram, openYouTube, setInstagramObservationMode, setNativeProtectionEnabled, setObservationMode } from '@/features/protection/native';
@@ -21,6 +23,7 @@ export default function FeedsScreen() {
   const [lock, setLock] = useState<LockState | null>(null);
   const [error, setError] = useState('');
   const [drawer, setDrawer] = useState<FeedDrawer | null>(null);
+  const [siteDrawerOpen, setSiteDrawerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
 
@@ -58,6 +61,7 @@ export default function FeedsScreen() {
 
   const state = getFeedStatus(status);
   const editable = Boolean(status?.available) && !loading && !busy;
+  const adultSites = getAdultSitePresentation(status, loading);
 
   const nextAction = (() => {
     if (readError) return { title: 'Try again', run: refresh };
@@ -78,7 +82,7 @@ export default function FeedsScreen() {
 
   return (
     <Screen edges={[]} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => { if (!busy) void refresh(); }} tintColor={colors.accent} />}>
-      <TopTabs.Screen options={{ swipeEnabled: !busy && drawer === null }} />
+      <TopTabs.Screen options={{ swipeEnabled: !busy && drawer === null && !siteDrawerOpen }} />
 
       {nextAction ? (
         <View className="gap-2">
@@ -93,6 +97,13 @@ export default function FeedsScreen() {
           <Row icon={Play} label="YouTube" {...getFeedPresentation(status, 'shorts', loading)} onPress={() => setDrawer('youtube')} disabled={!editable} />
           <Row icon={Clapperboard} label="Instagram" detail={`Reels: ${getFeedPresentation(status, 'reels', loading).statusLabel} · Home: ${getFeedPresentation(status, 'home', loading).statusLabel} · Explore: ${getFeedPresentation(status, 'explore', loading).statusLabel}`} onPress={() => setDrawer('instagram')} disabled={!editable} />
           <Row icon={House} label="X" detail={`Home: ${getFeedPresentation(status, 'xHome', loading).statusLabel} · Videos: ${getFeedPresentation(status, 'xVideos', loading).statusLabel}`} onPress={() => setDrawer('x')} disabled={!editable} />
+          <Row
+            icon={Globe2}
+            label="Sites"
+            {...adultSites}
+            onPress={() => setSiteDrawerOpen(true)}
+            disabled={!editable}
+          />
         </RowGroup>
       </View>
 
@@ -104,6 +115,7 @@ export default function FeedsScreen() {
       </Pressable>
 
       <FeedControlsDrawer feed={drawer} onClose={() => setDrawer(null)} />
+      <AdultSiteControlsDrawer visible={siteDrawerOpen} onClose={() => setSiteDrawerOpen(false)} />
     </Screen>
   );
 }

@@ -25,6 +25,16 @@ export type ZenGuardStatus = {
   instagramDetectionCount: number;
   instagramSignalMask: number;
   instagramLastDetectionReason: string;
+  adultSiteEnabled: boolean;
+  adultSiteCustomCount: number;
+  browserSignalMask: number;
+};
+
+export type AdultSiteSettings = {
+  available: boolean;
+  enabled: boolean;
+  customHosts: string[];
+  browserSignalMask: number;
 };
 
 /** A launchable app on this device. */
@@ -77,6 +87,11 @@ declare class ZenGuardModule extends NativeModule<{}> {
   getRollingLimits(): Promise<RollingLimit[]>;
   setRollingLimit(packageName: string, allowanceMinutes: number, windowMinutes: number): Promise<void>;
   removeRollingLimit(packageName: string): Promise<void>;
+  getAdultSiteSettings(): Promise<AdultSiteSettings>;
+  setAdultSiteBlockingEnabled(enabled: boolean): Promise<void>;
+  addBlockedDomain(input: string): Promise<string>;
+  removeBlockedDomain(host: string): Promise<void>;
+  openBrowserCheck(): Promise<void>;
 }
 
 export default requireNativeModule<ZenGuardModule>('ZenGuard');

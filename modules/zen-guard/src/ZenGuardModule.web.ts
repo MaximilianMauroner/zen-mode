@@ -29,6 +29,9 @@ class ZenGuardModule extends NativeModule<{}> {
       instagramDetectionCount: 0,
       instagramSignalMask: 0,
       instagramLastDetectionReason: '',
+      adultSiteEnabled: false,
+      adultSiteCustomCount: 0,
+      browserSignalMask: 0,
     };
   }
 
@@ -45,6 +48,11 @@ class ZenGuardModule extends NativeModule<{}> {
   async setObservationMode() {}
   async setInstagramObservationMode() {}
   async setInstagramSettings() {}
+  async getAdultSiteSettings() { return { available: false, enabled: false, customHosts: [], browserSignalMask: 0 }; }
+  async setAdultSiteBlockingEnabled() {}
+  async addBlockedDomain(input: string) { return input; }
+  async removeBlockedDomain() {}
+  async openBrowserCheck() {}
 }
 
 export default registerWebModule(ZenGuardModule, 'ZenGuard');

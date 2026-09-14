@@ -10,12 +10,21 @@ After the user enables Android Accessibility access, the native service can:
 - apply daily, rolling-window, or timed-visit rules to launchable Android apps;
 - manage YouTube Shorts, Instagram Reels, Home, and Explore, and X Home and
   video feeds;
+- close a bundled set of adult websites plus user-added domains in supported
+  Android browsers; and
 - show an overlay or return to Home when a configured rule is reached.
 
 Feed detection depends on accessibility data exposed by YouTube, Instagram,
 and X. Setup observes supported surfaces before feed enforcement starts. If a
 surface is unknown or ambiguous, Zen Mode does not enforce that feed rule.
 Updates to those apps can change detection behavior.
+
+Website blocking reads only exact, known address-bar nodes in Chrome, Samsung
+Internet, Opera, and Firefox. Each browser stays marked as needing a check until
+the service observes a valid address-bar signal. Unknown browsers, in-app pages,
+and ambiguous or hidden address bars are left alone. This is a focus boundary,
+not network-level filtering; a page can begin loading before the browser exposes
+its address.
 
 Protection is off until the user enables it. The settings lock controls changes
 that loosen existing rules.
@@ -27,9 +36,10 @@ Feeds has one row and settings drawer for each supported platform:
 - YouTube controls Shorts.
 - Instagram controls Reels, Home, and Explore.
 - X controls Home and videos.
+- Sites controls the adult-site switch, browser readiness, and extra domains.
 
 App limits manages whole-app daily, rolling-window, and timed-visit rules.
-Lock manages the settings lock for feeds and app limits.
+Lock manages the settings lock for feeds, websites, and app limits.
 
 For distribution requirements, see [Google Play readiness](docs/google-play-readiness.md)
 and the [store listing](docs/store-listing.md).

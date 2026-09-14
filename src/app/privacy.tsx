@@ -18,7 +18,7 @@ export default function PrivacyScreen() {
       </View>
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-[18px] font-semibold text-copy">Your controls</Text>
-        <Text className="text-[14px] leading-[21px] text-muted">You can turn off Zen Mode in Android Accessibility settings at any time. Clear storage for Zen Mode in Android settings or uninstall it to remove its local data. Zen Mode disables Android backup, so its app data is not restored from device or cloud backups.</Text>
+        <Text className="text-[14px] leading-[21px] text-muted">You can turn off Zen Mode in Android Accessibility settings at any time. Clear storage for Zen Mode in Android settings or uninstall it to remove its local data. Zen Mode opts out of Android cloud backup. Device-to-device transfer behavior can still depend on the device manufacturer.</Text>
         <Text className="text-[14px] leading-[21px] text-muted">Privacy and support: lab4code.dev@gmail.com</Text>
       </View>
     </Screen>

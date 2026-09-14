@@ -90,8 +90,9 @@ The code does not define one universal retention period or a global erase job:
   flag. Android log retention is controlled by the platform and device.
 
 The owner must set and publish the actual retention policy after reviewing the
-final SDKs and release manifest. Zen Mode configures Android backup off, so app
-data is not included in Android cloud backup or device-to-device transfer.
+final SDKs and release manifest. Zen Mode opts out of Android cloud backup.
+On Android 12 and later, device-to-device transfer behavior can still depend on
+the device manufacturer and must be checked on the final test devices.
 
 ## User controls and deletion
 
@@ -108,10 +109,11 @@ the associated daily usage record. Removing a rolling rule clears its stored
 rolling usage, and removing a timed-visit rule clears its stored visit-end
 record. The app currently has no single in-app control to erase all local data.
 
-Uninstalling the app normally removes its app-private data. Zen Mode configures
-Android backup off, so this data is not restored from Android cloud backup or
-device-to-device transfer. This setting must be verified in the final merged
-release manifest.
+Uninstalling the app normally removes its app-private data. Zen Mode opts out
+of Android cloud backup, so this data should not be restored from cloud backup.
+Device-to-device transfer behavior can still depend on the device manufacturer.
+The manifest setting and transfer behavior must be verified for the final
+release and test devices.
 
 ## Security
 

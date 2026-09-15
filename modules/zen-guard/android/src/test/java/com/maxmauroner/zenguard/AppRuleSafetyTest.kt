@@ -18,7 +18,7 @@ class AppRuleSafetyTest {
     assertFalse(safety.isExempt("com.example.reader"))
   }
 
-  @Test fun staleSavedRulesCannotReachAnyEnforcementDecisionForSettings() {
+  @Test fun allRuleModesRejectSettingsAtThePolicyBoundary() {
     assertFalse(safety.allowsDailyEnforcement("com.android.settings"))
     assertFalse(safety.allowsTimedVisitEnforcement("com.android.settings"))
     assertFalse(safety.allowsRollingEnforcement("com.android.settings"))

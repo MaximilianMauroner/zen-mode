@@ -75,8 +75,21 @@ test data needs manual migration or retention.
       resolved Settings package, confirm Android Settings never appears in the
       app picker and remains reachable without an overlay or Home navigation.
       Repeat while the in-app settings lock is active, then disable the service
-      from Accessibility settings. Unit coverage is present; this native escape
-      path still requires device evidence.
+      from Accessibility settings. The app-picker check remains manual. The API
+      35 native escape-path regression can be repeated on the dedicated `moodqa`
+      task AVD while Metro serves the installed debug build:
+
+      ```bash
+      ZEN_GUARD_TEST_SERIAL=emulator-5554 \
+        ZEN_GUARD_ALLOW_TASK_DATA_RESET=clear-com.lab4code.zenmode-on-moodqa \
+        npm run test:android-settings-safety
+      ```
+
+      The harness clears only `com.lab4code.zenmode` data, seeds its private rule
+      stores, toggles its accessibility service through Android UI, and clears
+      the task-app data after its final assertions. It refuses non-emulators,
+      other AVD names, and runs without the explicit reset acknowledgement.
+      Final OEM/device coverage remains required.
 - [ ] When the accessibility disclosure changes, bump both
       `CONSENT_VERSION` in `src/features/protection/setup-policy.ts` and
       `CURRENT_VERSION` in the native `ConsentPolicy.kt` in the same release.

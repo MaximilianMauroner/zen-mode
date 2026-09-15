@@ -63,6 +63,15 @@ reviewer video:
   timed-visit overlay, so this clip is preserved as a failed attempt and must
   not be used to claim enforcement. SHA-256:
   `734a5237767bcbcb7b079c84bc2ce466006d02e0b861df4da9e0a199a3313f2a`.
+  Frame review confirms that the clip shows a saved `VISIT` rule; however, it
+  has no correlated service-bound assertion or accessibility-event log. The
+  green “You can find the privacy policy here” coachmark is owned by Clock
+  (`com.google.android.deskclock`), not Zen Mode or SystemUI. The follow-up
+  device harness reproduced the real Visit → Daily → Visit save sequence,
+  verified the native stores, observed Clock beneath the Zen overlay on the
+  first launch, and retained the overlay across a transient SystemUI window.
+  No current product failure was reproduced, so production behavior was not
+  changed. See `docs/evidence/android-clock-timed-visit-and-settings-20260915.log`.
 - `reviewer-03-settings-escape-disable.mp4` (71.034 s, 1080 x 2400, H.264)
   continuously records `Granted`/`Running`, navigation into Android
   Accessibility settings, the user-visible disable confirmation, disablement,

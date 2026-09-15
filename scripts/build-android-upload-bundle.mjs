@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
+const appConfig = JSON.parse(readFileSync(resolve(root, 'app.json'), 'utf8')).expo;
 const output = resolve(root, 'android/app/build/outputs/bundle/release/app-release.aab');
 const debugCertificateSha256 = 'fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c';
 const required = [
@@ -39,6 +40,10 @@ function run(command, args, options = {}) {
 
 function normalizeFingerprint(value) {
   return value.replaceAll(':', '').trim().toLowerCase();
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 const missing = required.filter((name) => !process.env[name]?.trim());
@@ -91,8 +96,15 @@ if (process.env.BUNDLETOOL_JAR?.trim()) {
   const bundletool = process.env.BUNDLETOOL_JAR.trim();
   if (!isAbsolute(bundletool) || !existsSync(bundletool)) fail('BUNDLETOOL_JAR must be an existing absolute path');
   const manifest = run('java', ['-jar', bundletool, 'dump', 'manifest', `--bundle=${output}`]);
-  if (!/package="com\.lab4code\.zenmode"/.test(manifest)) fail('bundletool reported an unexpected application ID');
-  if (!/android:versionCode="5"/.test(manifest)) fail('bundletool reported an unexpected Android version code');
+  if (!new RegExp(`package="${escapeRegExp(appConfig.android.package)}"`).test(manifest)) {
+    fail('bundletool reported an unexpected application ID');
+  }
+  if (!new RegExp(`android:versionName="${escapeRegExp(appConfig.version)}"`).test(manifest)) {
+    fail('bundletool reported an unexpected Android version name');
+  }
+  if (!new RegExp(`android:versionCode="${appConfig.android.versionCode}"`).test(manifest)) {
+    fail('bundletool reported an unexpected Android version code');
+  }
 }
 
 const digest = createHash('sha256').update(readFileSync(output)).digest('hex');

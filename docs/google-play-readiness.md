@@ -10,7 +10,7 @@ current repository state. It does not publish or send anything externally.
 | App name | `Zen Mode` in `app.json`. |
 | Play app | Console app `4973526737842711493`, personal developer `6468274858330069554`; Console changes are maintained separately from this repository. |
 | Android application ID | `com.lab4code.zenmode` in `app.json`; the owner selected it as the permanent Play package ID and the Console app has been created with it. |
-| Version | `1.0.3` with Android version code `5` in `app.json`; no Play artifact has been uploaded. Increment the code for every later upload. |
+| Version | `0.1.5` with Android version code `5` in `app.json`; no Play artifact has been uploaded. Increment the code for every later upload. |
 | Protection target | Android only. Web checks the interface; iOS does not provide protection. |
 | Accessibility service | The native module declares `BIND_ACCESSIBILITY_SERVICE`, can retrieve window content, and receives window/content, click, and scroll events. The service is marked `isAccessibilityTool=false`. |
 | Supported feed surfaces | YouTube Shorts; Instagram Reels, Home, Explore, and Direct Messages for setup/provenance; X Home and video viewer. X support is for the Android app package, not the browser. |

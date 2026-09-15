@@ -7,14 +7,22 @@ const require = createRequire(import.meta.url);
 
 test('Android application ID and accessibility settings activity stay aligned', () => {
   const appConfig = JSON.parse(readFileSync(new URL('../app.json', import.meta.url), 'utf8'));
+  const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const packageLock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+  const settingsScreen = readFileSync(new URL('../src/app/settings.tsx', import.meta.url), 'utf8');
   const accessibilityConfig = readFileSync(
     new URL('../modules/zen-guard/android/src/main/res/xml/zen_guard_accessibility_service.xml', import.meta.url),
     'utf8',
   );
 
   assert.equal(appConfig.expo.android.package, 'com.lab4code.zenmode');
+  assert.equal(appConfig.expo.version, '0.1.5');
   assert.equal(appConfig.expo.android.versionCode, 5);
+  assert.equal(packageJson.version, appConfig.expo.version);
+  assert.equal(packageLock.version, appConfig.expo.version);
+  assert.equal(packageLock.packages[''].version, appConfig.expo.version);
   assert.ok(appConfig.expo.plugins.includes('./plugins/with-android-release-signing'));
+  assert.match(settingsScreen, /Constants\.expoConfig\?\.version/);
   assert.match(accessibilityConfig, /android:settingsActivity="com\.lab4code\.zenmode\.MainActivity"/);
 });
 

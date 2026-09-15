@@ -8,7 +8,7 @@ artifact SHA-256.
 
 ## Shot list
 
-1. **Identity** — briefly show Android App info with Zen Mode 1.0.3 and package
+1. **Identity** — briefly show Android App info with Zen Mode 0.1.5 and package
    `com.lab4code.zenmode`, then launch the app.
 2. **Disclosure and consent** — scroll the complete setup disclosure, show that
    the guard cannot be enabled before the checkbox, select the affirmative

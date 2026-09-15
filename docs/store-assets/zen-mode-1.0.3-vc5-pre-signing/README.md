@@ -4,6 +4,9 @@ These files are preparation assets, not final Play submission media. They were
 captured on 2026-09-15 from source commit
 `5e6a32db1c50b76764233c31bce2820dd82b06e2` using a release-mode APK signed
 with the repository's existing Android debug test certificate.
+Their `1.0.3` label preserves that historical artifact identity; the current
+release version is `0.1.5`, so these files must not be relabeled or submitted
+as candidate-correlated media.
 
 ## Build and device identity
 

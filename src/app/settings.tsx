@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { RefreshControl, Text, View } from 'react-native';
+import Constants from 'expo-constants';
 import { router } from 'expo-router';
 
 import { DangerButton, PrimaryButton, SecondaryButton } from '@/components/ui/button';
@@ -72,6 +73,10 @@ export default function SettingsScreen() {
         </RowGroup>
       </View>
       <View className="gap-3">
+        <Text accessibilityRole="header" className="text-[18px] font-semibold text-copy">About</Text>
+        <RowGroup>
+          <Row label="Zen Mode" detail="Version installed on this device" value={Constants.expoConfig?.version ?? 'Unknown'} />
+        </RowGroup>
         <SecondaryButton title="Privacy" onPress={() => router.navigate('/privacy')} disabled={busy} />
         <SecondaryButton title="Send feedback" disabled={busy} onPress={() => runAction(openFeedbackIssue)} />
         <SecondaryButton title="Open YouTube" disabled={disabled} onPress={() => runAction(openYouTube)} />

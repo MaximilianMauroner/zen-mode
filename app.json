@@ -2,7 +2,7 @@
   "expo": {
     "name": "Zen Mode",
     "slug": "zen-mode",
-    "version": "1.0.3",
+    "version": "0.1.5",
     "orientation": "portrait",
     "icon": "./assets/images/refuge/icon.png",
     "scheme": "zenmode",

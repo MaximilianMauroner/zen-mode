@@ -17,7 +17,9 @@ Set these values in the release operator's secret manager or ephemeral shell:
 - `ZEN_MODE_UPLOAD_KEY_ALIAS`;
 - `ZEN_MODE_UPLOAD_KEY_PASSWORD`; and
 - `ZEN_MODE_UPLOAD_CERT_SHA256`: owner-approved 64-hex SHA-256 certificate
-  fingerprint. Colons and letter case are accepted.
+  fingerprint. Colons and letter case are accepted. Gradle independently
+  checks this fingerprint for every task graph that produces a release
+  artifact, even when the documented wrapper is bypassed.
 
 Optionally set `BUNDLETOOL_JAR` to an absolute path to an official bundletool
 JAR. When present, the workflow also checks the bundle manifest package and
@@ -35,7 +37,13 @@ npm run android:bundle:upload
 
 The command refuses missing/partial values, relative or absent keystore paths,
 malformed fingerprints, the repository's known Android debug certificate, and
-certificate mismatches. It then builds `app-release.aab`, verifies its JAR
+certificate mismatches. Raw Gradle release artifact tasks enforce the same
+five-value requirement, reject the known Android debug certificate, and verify
+the selected alias certificate before any release task runs. There is no CI
+workflow in this repository, so this Gradle boundary—not CI—is the fail-closed
+backstop for direct `assembleRelease` and `bundleRelease` invocations.
+
+The documented command then builds `app-release.aab`, verifies its JAR
 signature, checks that its signer is the approved certificate, optionally
 audits its manifest with bundletool, and prints the AAB and signer SHA-256
 values. Gradle itself also refuses partial signing configuration and never

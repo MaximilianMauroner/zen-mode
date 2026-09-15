@@ -8,8 +8,9 @@ current repository state. It does not publish or send anything externally.
 | Item | Evidence and implication |
 | --- | --- |
 | App name | `Zen Mode` in `app.json`. |
-| Android application ID | `com.lab4code.zenmode` in `app.json`; the owner selected it as the permanent Play package ID before the first upload. No Play app has been saved or created yet. |
-| Version | `1.0.3` with Android version code `4` in `app.json`; confirm code `4` exceeds every artifact previously uploaded, then increment it for each later upload. |
+| Play app | Console app `4973526737842711493`, personal developer `6468274858330069554`; Console changes are maintained separately from this repository. |
+| Android application ID | `com.lab4code.zenmode` in `app.json`; the owner selected it as the permanent Play package ID and the Console app has been created with it. |
+| Version | `1.0.3` with Android version code `5` in `app.json`; no Play artifact has been uploaded. Increment the code for every later upload. |
 | Protection target | Android only. Web checks the interface; iOS does not provide protection. |
 | Accessibility service | The native module declares `BIND_ACCESSIBILITY_SERVICE`, can retrieve window content, and receives window/content, click, and scroll events. The service is marked `isAccessibilityTool=false`. |
 | Supported feed surfaces | YouTube Shorts; Instagram Reels, Home, Explore, and Direct Messages for setup/provenance; X Home and video viewer. X support is for the Android app package, not the browser. |
@@ -17,14 +18,19 @@ current repository state. It does not publish or send anything externally.
 | Website rules | The adult-site switch is off by default. A small bundled hostname catalog and up to 100 user-added domains are matched locally. Visited addresses are not persisted. This is reactive accessibility enforcement, not network filtering. |
 | Other app rules | Launchable Android apps can receive daily, timed-visit, or rolling-window rules. Foreground package events are used to charge configured app rules. |
 | Package visibility | The module queries YouTube, Instagram, X, launcher activities, and exact Android Settings intents used to preserve the Accessibility escape path. Settings handlers are exempted only when Android identifies them as system or updated-system apps. `app.json` blocks unrelated storage and overlay permissions. Verify the merged release manifest. |
-| Build state | The generated release variant uses a debug key. Production upload signing and release automation are not configured. |
+| Listing decisions | Free, Productivity, support@lab4code.com, repository website, no ads/AD_ID, no account requirement, target ages 13–15/16–17/18+, IARC PEGI 3 / ESRB Everyone. Console operator reports these saved. |
+| Public policy identity | Maximilian Mauroner (Lab4Code), Austria, support@lab4code.com; explicitly approved for publication. |
+| Build state | Release signing is fail-closed and requires externally supplied upload-key values. No authorized upload key is present on this VM, so no production-signed candidate exists yet. |
+
+The repeatable build, signer verification, and key-custody boundary are in
+[android-release-signing.md](android-release-signing.md).
 
 ## Debug preview versus Play upload
 
-`npm run android` installs a local native development build. The standalone
-preview documented in `README.md` uses `assembleRelease` but is still signed
-with the default debug key and produces an APK for local preview. Neither is a
-Play upload artifact.
+`npm run android` installs a local native development build. Historical local
+release-mode APKs were signed with the default debug key; they remain test
+artifacts and are not Play upload candidates. Release configuration must never
+fall back to that certificate.
 
 A Play release needs a signed Android App Bundle (`.aab`) built by the chosen
 release pipeline. Configure the release keystore or Play App Signing upload
@@ -42,8 +48,8 @@ test data needs manual migration or retention.
 
 ### Console and listing
 
-- [ ] Resolve every item in [Unresolved owner inputs](#unresolved-owner-inputs)
-      before creating or uploading the Play app.
+- [ ] Resolve every item in [Remaining human gates](#remaining-human-gates)
+      before uploading an artifact or making the listing available.
 - [ ] Prepare the required 512 × 512 app icon, 1024 × 500 feature graphic, and
       final screenshots. A promo video is optional.
 - [ ] Choose the initial Play testing or release track after the signed build
@@ -51,7 +57,9 @@ test data needs manual migration or retention.
 
 ### Build and signing
 
-- [ ] Configure a repeatable release build that creates a signed `.aab`.
+- [x] Configure a repeatable fail-closed release build that creates a signed
+      `.aab` only when all external upload-key values and its approved
+      certificate fingerprint are supplied.
 - [ ] Decide who owns the keystore and Play upload key; back up recovery
       material securely.
 - [ ] Set the release version code and version name. Confirm the package in the
@@ -62,11 +70,12 @@ test data needs manual migration or retention.
 - [ ] Install and test the exact signed candidate. Check that debug-only
       diagnostics are absent; Instagram trace and blocker diagnostics are gated
       by the debug build flag.
-- [ ] Retest the unattributed React Native/Fabric SIGSEGV seen during repeated
-      force-stop/relaunch cycles of the API 35 development client. It reproduced
-      during one bounded attempt on 2026-09-15 before a subsequent run passed;
-      that does not establish a cause or prove it harmless in a release
-      candidate.
+- [x] Backport the exact merged `react-native-screens` listener-lifetime fix
+      and run bounded API-35 regression samples: 100/100 valid debug cold starts
+      and 100/100 valid test-signed release-mode cold starts, with no Zen Mode
+      crash. See `docs/evidence/android-fabric-lifetime-backport-20260915.md`.
+      Remove the patch only after an Expo-supported dependency includes the fix
+      and the documented clean-install/device checks pass without it.
 - [ ] Verify the AAB signature and contents with the release toolchain. Keep the
       debug APK and preview APK out of Play uploads.
 
@@ -100,10 +109,9 @@ test data needs manual migration or retention.
       `CURRENT_VERSION` in the native `ConsentPolicy.kt` in the same release.
       A one-sided bump can either repeat setup unnecessarily or let the service
       accept an outdated disclosure.
-- [ ] Complete Play Console's current Accessibility API declaration for the
-      service. Explain that the core function is applying user-selected app,
-      feed, and website rules, and that enabled website protection reads only
-      known browser address bars locally.
+- [x] Prepare the Accessibility API declaration and reviewer instructions in
+      [play-accessibility-declaration.md](play-accessibility-declaration.md).
+      Console acceptance and exact signed-candidate evidence remain pending.
 - [ ] Review the in-app prominent disclosure and consent screen against the
       final behavior. The current copy covers accessibility screen-content
       processing for YouTube, Instagram, and X, known browser address bars when
@@ -111,13 +119,12 @@ test data needs manual migration or retention.
       launchable-app list used when choosing a rule. It also says screen contents,
       browser addresses, and installed-app inventory are not sent off this device.
       The owner must approve that wording and keep it aligned with the shipped behavior.
-- [ ] Complete the current Data safety form and privacy policy review. The
-      native implementation has no server client and describes local handling,
-      but the owner must decide how accessibility data, screen content, and
-      foreground package metadata are represented under the current forms.
-- [ ] Review and approve the [privacy policy draft](privacy-policy-draft.md),
-      replace every owner placeholder, and publish it at the approved public
-      URL before using that URL in the listing.
+- [x] Prepare the current Data safety evidence and category worksheet in
+      [play-data-safety.md](play-data-safety.md). The Console operator must
+      resolve the documented GitHub-feedback classification and submit it.
+- [x] Finalize the owner-approved [privacy policy](../PRIVACY.md) and align the
+      in-app privacy screen. Verify the public GitHub URL before entering it in
+      Console.
 - [ ] Ensure the listing and review notes say that protection needs Android
       Accessibility access, an installed native Android build, and observation
       setup. Do not describe the web preview or iOS as enforcement targets.
@@ -213,20 +220,22 @@ Do not record a fabricated state or claim that a web preview enforces Android
 rules. Label any debug build as an internal preview; use the signed candidate
 for final store media.
 
-## Unresolved owner inputs
+The synthetic, Settings-focused shot list is maintained in
+[reviewer-video-script.md](reviewer-video-script.md).
+
+## Remaining human gates
 
 These items cannot be completed from the repository:
 
-- Play developer account identity and completion of the unsaved app-creation form;
 - owner approval of the bundled adult-site catalog, its review source, and its
   release update policy;
-- support URL and public privacy policy URL (support email is
-  `support@lab4code.com`);
-- Accessibility API and Data safety declarations approved by the owner;
-- release keystore, Play App Signing/upload-key ownership, and build pipeline;
+- final Data safety classification of the optional GitHub feedback URL and
+  submission of Data safety/Accessibility forms by the Console operator;
+- upload-key generation or import, owner/custodian choice, secure backup and
+  recovery, Play App Signing enrollment, and approved certificate fingerprint;
 - supported Android API/device and third-party app-version matrix;
 - reviewer setup or test-account instructions, if required;
-- category, countries, pricing, content rating, target audience, and launch
-  track; and
-- final screenshots, feature graphic, promo video, and any legal/trademark
-  review of the YouTube, Instagram, and X references.
+- exact production-signed candidate correlation for the reported physical-device
+  testing, plus candidate-specific screenshots and reviewer video;
+- countries and initial testing/release track; and
+- any final legal/trademark review of the YouTube, Instagram, and X references.

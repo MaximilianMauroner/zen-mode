@@ -557,7 +557,7 @@ async function main() {
   assert.equal(installedApkSha256, localApkSha256, 'Installed APK differs from the locally built debug APK');
   const packageDump = shell('dumpsys', 'package', appPackage);
   assert.match(packageDump, /versionName=1\.0\.3/);
-  assert.match(packageDump, /versionCode=4\b/);
+  assert.match(packageDump, /versionCode=5\b/);
   assert.match(packageDump, /targetSdk=36\b/);
   assert.ok(packageDump.includes(serviceComponent.split('/')[1]));
   assert.ok(shell('pm', 'path', clockPackage).trim(), `${clockPackage} is unavailable`);

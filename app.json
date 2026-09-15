@@ -42,7 +42,8 @@
       ],
       "expo-secure-store",
       "expo-image",
-      "expo-web-browser"
+      "expo-web-browser",
+      "./plugins/with-android-release-signing"
     ],
     "experiments": {
       "typedRoutes": true,

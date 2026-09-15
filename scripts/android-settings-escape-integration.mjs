@@ -562,7 +562,7 @@ async function main() {
   assert.ok(packageDump.includes(serviceComponent.split('/')[1]));
   assert.ok(shell('pm', 'path', clockPackage).trim(), `${clockPackage} is unavailable`);
   assert.ok(shell('pm', 'path', contactsPackage).trim(), `${contactsPackage} is unavailable`);
-  pass(`${serial}: Android 15/API 35, ${appPackage} 1.0.3 (4), target SDK 36, debuggable task build`);
+  pass(`${serial}: Android 15/API 35, ${appPackage} 1.0.3 (5), target SDK 36, debuggable task build`);
   pass(`source HEAD=${sourceHead}; APK sha256=${localApkSha256}; ${/lastUpdateTime=([^\n]+)/.exec(packageDump)?.[0]}`);
   adb('logcat', '-c');
   destructiveRunStarted = true;

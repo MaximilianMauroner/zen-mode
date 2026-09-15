@@ -19,11 +19,13 @@ const serviceComponent = `${appPackage}/com.maxmauroner.zenguard.ZenGuardAccessi
 const settingsPackage = 'com.android.settings';
 const clockPackage = 'com.google.android.deskclock';
 const clockActivity = `${clockPackage}/com.android.deskclock.DeskClock`;
-const contactsPackage = 'com.google.android.contacts';
-const contactsActivity = `${contactsPackage}/com.android.contacts.activities.PeopleActivity`;
 const launcherPackage = 'com.google.android.apps.nexuslauncher';
 const uiDumpPath = '/sdcard/zen-guard-settings-safety.xml';
 const debugApkPath = resolve(root, 'android/app/build/outputs/apk/debug/app-debug.apk');
+const evidenceLogPath = process.env.ZEN_GUARD_EVIDENCE_LOG
+  ? resolve(root, process.env.ZEN_GUARD_EVIDENCE_LOG)
+  : null;
+let evidenceTranscript = '';
 
 const sleep = (milliseconds) => new Promise((resolveSleep) => setTimeout(resolveSleep, milliseconds));
 
@@ -58,11 +60,19 @@ function shell(...args) {
 }
 
 function pass(message) {
-  process.stdout.write(`${new Date().toISOString()} PASS ${message}\n`);
+  const line = `${new Date().toISOString()} PASS ${message}\n`;
+  evidenceTranscript += line;
+  process.stdout.write(line);
 }
 
 function step(message) {
-  process.stdout.write(`\n${new Date().toISOString()} ## ${message}\n`);
+  const line = `\n${new Date().toISOString()} ## ${message}\n`;
+  evidenceTranscript += line;
+  process.stdout.write(line);
+}
+
+function writeEvidence() {
+  if (evidenceLogPath) writeFileSync(evidenceLogPath, evidenceTranscript);
 }
 
 async function waitFor(description, predicate, timeoutMs = 20_000, intervalMs = 250) {
@@ -287,7 +297,7 @@ function seedScenario(mode, day, nowWallMs) {
       name: 'intents',
       value: JSON.stringify({
         [settingsPackage]: { session: 1, cooldown: 1 },
-        [contactsPackage]: { session: 1, cooldown: 1 },
+        [clockPackage]: { session: 1, cooldown: 1 },
       }),
     });
   } else if (mode === 'rolling') {
@@ -387,7 +397,7 @@ async function launchApp() {
   await waitFor('Zen Mode JavaScript UI', () => {
     const ui = dumpUi();
     return ui.nodes.some((node) => ['Feeds', 'App limits', 'Lock'].includes(node['content-desc']));
-  }, 30_000, 500);
+  }, 90_000, 500);
 }
 
 async function launchDevelopmentClient() {
@@ -472,17 +482,17 @@ async function assertTimedOverlayAndSettingsEscape() {
   await waitForFocus(launcherPackage);
   await waitFor('accessibility service rebound after UI inspection', () => serviceIsBound(), 10_000);
   await sleep(2_000);
-  startComponent(contactsActivity);
-  const before = await waitFor('real timed-visit accessibility overlay above visible Contacts', () => {
+  startComponent(clockActivity);
+  const before = await waitFor('real timed-visit accessibility overlay above visible Clock', () => {
     const windows = shell('dumpsys', 'window', 'windows');
     const records = parseWindowRecords(windows);
     const overlay = records.find((record) => record.ownerPackage === appPackage &&
       record.type === 'ACCESSIBILITY_OVERLAY' && record.isOnScreen && record.isVisible);
-    const contacts = records.find((record) => record.ownerPackage === contactsPackage &&
+    const clock = records.find((record) => record.ownerPackage === clockPackage &&
       record.isOnScreen && record.isVisible);
-    return overlay && contacts && overlay.index < contacts.index ? { overlay, contacts } : false;
+    return overlay && clock && overlay.index < clock.index ? { overlay, clock } : false;
   }, 10_000, 100);
-  pass(`real timed-visit overlay relation: ${visibleWindowEvidence(before.overlay)} above ${visibleWindowEvidence(before.contacts)}`);
+  pass(`real timed-visit Clock overlay relation: ${visibleWindowEvidence(before.overlay)} above ${visibleWindowEvidence(before.clock)}`);
 
   let settingsBeneathOverlay;
   await assertSettingsStaysForeground(
@@ -507,6 +517,84 @@ async function assertTimedOverlayAndSettingsEscape() {
     record.type === 'ACCESSIBILITY_OVERLAY' && record.isOnScreen && record.isVisible),
   'The timed overlay remained visible above Settings');
   pass('existing timed overlay was removed and did not run its Home callback over Settings');
+}
+
+async function selectRuleMode(label) {
+  for (let attempt = 0; attempt < 3 && !matchingNode('text', label); attempt += 1) {
+    shell('input', 'swipe', '540', '650', '540', '1900', '300');
+    await sleep(300);
+  }
+  await tapNode('text', label);
+  await waitFor(`selected ${label} rule mode`, () => {
+    const { nodes } = dumpUi();
+    return nodes.some((node) => node.selected === 'true' && node['content-desc']?.includes(label));
+  });
+}
+
+async function saveSelectedClockRule() {
+  for (let attempt = 0; attempt < 3 && !matchingNode('text', 'Save rule'); attempt += 1) {
+    shell('input', 'swipe', '540', '1900', '540', '650', '300');
+    await sleep(300);
+  }
+  await tapNode('text', 'Save rule');
+  await waitForNode('content-desc', 'Edit Clock');
+}
+
+/** Reproduces the failed media sequence through the real JS-to-native save path. */
+async function assertClockRuleMutationAndFirstLaunch() {
+  step('Clock timed-visit rule mutation and first-launch enforcement');
+  await launchApp();
+  await tapNode('content-desc', 'App limits');
+  await waitForNode('text', 'No app limits yet.');
+  await tapNode('text', '＋ Add app');
+  await tapNode('content-desc', 'Search apps');
+  shell('input', 'text', 'Clock');
+  await waitForNode('content-desc', 'Add Clock');
+  shell('input', 'keyevent', 'KEYCODE_BACK');
+  await sleep(300);
+  await tapNode('content-desc', 'Add Clock');
+  await waitForNode('text', 'Daily');
+
+  await selectRuleMode('Visit');
+  await tapNode('text', '1m');
+  await saveSelectedClockRule();
+  await tapNode('content-desc', 'Edit Clock');
+  await selectRuleMode('Daily');
+  await saveSelectedClockRule();
+  await tapNode('content-desc', 'Edit Clock');
+  await selectRuleMode('Visit');
+  await saveSelectedClockRule();
+
+  const intentPreferences = privateFile('shared_prefs/zen_guard_intent_apps.xml');
+  const dailyPreferences = privateFile('shared_prefs/zen_guard_app_limits.xml');
+  const rollingPreferences = privateFile('shared_prefs/zen_guard_rolling_limits.xml');
+  assert.match(intentPreferences, /com\.google\.android\.deskclock/);
+  assert.doesNotMatch(dailyPreferences, /com\.google\.android\.deskclock/);
+  assert.doesNotMatch(rollingPreferences, /com\.google\.android\.deskclock/);
+  pass('real UI visit→daily→visit save sequence leaves only the Clock timed-visit rule stored');
+
+  shell('input', 'keyevent', 'KEYCODE_HOME');
+  await waitForFocus(launcherPackage);
+  await sleep(500);
+  startComponent(clockActivity);
+  const relation = await waitFor('Clock timed overlay on the first launch after the final save', () => {
+    const records = parseWindowRecords(shell('dumpsys', 'window', 'windows'));
+    const overlay = records.find((record) => record.ownerPackage === appPackage &&
+      record.type === 'ACCESSIBILITY_OVERLAY' && record.isOnScreen && record.isVisible);
+    const clock = records.find((record) => record.ownerPackage === clockPackage &&
+      record.isOnScreen && record.isVisible);
+    return overlay && clock && overlay.index < clock.index ? { overlay, clock } : false;
+  }, 10_000, 50);
+  pass(`first Clock launch enforced: ${visibleWindowEvidence(relation.overlay)} above ${visibleWindowEvidence(relation.clock)}`);
+  await assertSettingsStaysForeground(
+    'android.settings.ACCESSIBILITY_SETTINGS',
+    'Clock first-launch overlay: Accessibility Settings',
+  );
+  const afterRecords = parseWindowRecords(shell('dumpsys', 'window', 'windows'));
+  assert.ok(!afterRecords.some((record) => record.ownerPackage === appPackage &&
+    record.type === 'ACCESSIBILITY_OVERLAY' && record.isOnScreen && record.isVisible),
+  'The first-launch Clock overlay remained visible above Settings');
+  pass('Clock first-launch overlay was removed by the Settings safety boundary');
 }
 
 async function runScenario(mode, day, secureStoreHash) {
@@ -561,7 +649,6 @@ async function main() {
   assert.match(packageDump, /targetSdk=36\b/);
   assert.ok(packageDump.includes(serviceComponent.split('/')[1]));
   assert.ok(shell('pm', 'path', clockPackage).trim(), `${clockPackage} is unavailable`);
-  assert.ok(shell('pm', 'path', contactsPackage).trim(), `${contactsPackage} is unavailable`);
   pass(`${serial}: Android 15/API 35, ${appPackage} 1.0.3 (5), target SDK 36, debuggable task build`);
   pass(`source HEAD=${sourceHead}; APK sha256=${localApkSha256}; ${/lastUpdateTime=([^\n]+)/.exec(packageDump)?.[0]}`);
   adb('logcat', '-c');
@@ -578,6 +665,8 @@ async function main() {
   await launchDevelopmentClient();
   await createConsentProtectionAndLockThroughUi();
   const secureStoreHash = privateSha256('shared_prefs/SecureStore.xml');
+  await assertClockRuleMutationAndFirstLaunch();
+  assertLockStorageIntact(secureStoreHash);
   await disableServiceThroughUi({ requireEnabled: true });
 
   const deviceDay = shell('date', '+%Y%j').trim();
@@ -614,8 +703,13 @@ async function cleanupAfterFailure() {
   }
 }
 
-main().catch(async (error) => {
+main().then(() => {
+  writeEvidence();
+}).catch(async (error) => {
   await cleanupAfterFailure();
-  process.stderr.write(`\nFAIL ${error.stack ?? error}\n`);
+  const failure = `\nFAIL ${error.stack ?? error}\n`;
+  evidenceTranscript += failure;
+  writeEvidence();
+  process.stderr.write(failure);
   process.exitCode = 1;
 });

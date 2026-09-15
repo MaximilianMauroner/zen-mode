@@ -143,6 +143,16 @@ internal class InstagramGuardStateMachine(
 
   fun homeElapsedMs(): Long = homeElapsedMs
 
+  /** Snapshot for presentation only; enforcement continues to use the private state above. */
+  fun homeRuntimeState(nowMs: Long): HomeFeedRuntimeState {
+    val pendingMs = if (homeBlockedUntil == null) {
+      homeLastActiveAt?.let { (nowMs - it).coerceAtLeast(0L) } ?: 0L
+    } else {
+      0L
+    }
+    return HomeFeedRuntimeState(homeElapsedMs + pendingMs, homeBlockedUntil)
+  }
+
   /** Clears enforcement state when the service loses the Instagram app or a known surface. */
   fun onSurfaceLost() {
     blocker = null
@@ -165,7 +175,13 @@ internal class InstagramGuardStateMachine(
    * Pauses foreground accounting and drops blockers while Android is backgrounded or interrupted.
    * The active Home allowance is kept so only foreground time is charged on resume.
    */
-  fun onAppBackground() {
+  fun onAppBackground(nowMs: Long? = null, settings: InstagramGuardSettings? = null) {
+    if (homeBlockedUntil == null && nowMs != null) {
+      homeLastActiveAt?.let { homeElapsedMs += (nowMs - it).coerceAtLeast(0L) }
+      if (settings != null && homeElapsedMs >= settings.homeAllowanceMs) {
+        homeBlockedUntil = nowMs + settings.homeLockoutMs
+      }
+    }
     blocker = null
     blockedSurface = null
     homeLastActiveAt = null

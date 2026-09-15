@@ -28,10 +28,14 @@ export function useGuardStatus() {
 
   useFocusEffect(useCallback(() => {
     void refresh();
+    const timer = setInterval(() => void refresh(), 30_000);
     const listener = AppState.addEventListener('change', (state) => {
       if (state === 'active') void refresh();
     });
-    return () => listener.remove();
+    return () => {
+      clearInterval(timer);
+      listener.remove();
+    };
   }, [refresh]));
 
   return { status, loading, readError, refresh };

@@ -12,6 +12,7 @@ import { ErrorNote, Screen } from '@/components/ui/screen';
 import { formatRemaining, readLockState, type LockState } from '@/features/protection/lock';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { getFeedStatus } from '@/features/protection/feed-status';
+import { getHomeFeedTimeLabel } from '@/features/protection/home-feed-time';
 import { getAdultSitePresentation } from '@/features/protection/adult-site-presentation';
 import { useSharedGuardStatus } from '@/features/protection/guard-status-context';
 import { hasCompletedSetup } from '@/features/protection/setup';
@@ -62,6 +63,8 @@ export default function FeedsScreen() {
   const state = getFeedStatus(status);
   const editable = Boolean(status?.available) && !loading && !busy;
   const adultSites = getAdultSitePresentation(status, loading);
+  const instagramHomeTime = getHomeFeedTimeLabel(status, 'instagram');
+  const xHomeTime = getHomeFeedTimeLabel(status, 'x');
 
   const nextAction = (() => {
     if (readError) return { title: 'Try again', run: refresh };
@@ -95,8 +98,8 @@ export default function FeedsScreen() {
       <View className="gap-3">
         <RowGroup>
           <Row icon={Play} label="YouTube" {...getFeedPresentation(status, 'shorts', loading)} onPress={() => setDrawer('youtube')} disabled={!editable} />
-          <Row icon={Clapperboard} label="Instagram" detail={`Reels: ${getFeedPresentation(status, 'reels', loading).statusLabel} · Home: ${getFeedPresentation(status, 'home', loading).statusLabel} · Explore: ${getFeedPresentation(status, 'explore', loading).statusLabel}`} onPress={() => setDrawer('instagram')} disabled={!editable} />
-          <Row icon={House} label="X" detail={`Home: ${getFeedPresentation(status, 'xHome', loading).statusLabel} · Videos: ${getFeedPresentation(status, 'xVideos', loading).statusLabel}`} onPress={() => setDrawer('x')} disabled={!editable} />
+          <Row icon={Clapperboard} label="Instagram" detail={`Reels: ${getFeedPresentation(status, 'reels', loading).statusLabel} · Home: ${instagramHomeTime ?? getFeedPresentation(status, 'home', loading).statusLabel} · Explore: ${getFeedPresentation(status, 'explore', loading).statusLabel}`} onPress={() => setDrawer('instagram')} disabled={!editable} />
+          <Row icon={House} label="X" detail={`Home: ${xHomeTime ?? getFeedPresentation(status, 'xHome', loading).statusLabel} · Videos: ${getFeedPresentation(status, 'xVideos', loading).statusLabel}`} onPress={() => setDrawer('x')} disabled={!editable} />
           <Row
             icon={Globe2}
             label="Sites"

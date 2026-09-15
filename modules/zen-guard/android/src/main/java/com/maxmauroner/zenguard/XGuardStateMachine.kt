@@ -50,9 +50,27 @@ internal class XGuardStateMachine {
     return XAction.NONE
   }
 
-  fun pause() { lastHomeAt = null }
+  fun pause(nowMs: Long? = null, settings: XSettings? = null) {
+    if (homeBlockedUntil == null && nowMs != null) {
+      lastHomeAt?.let { homeElapsedMs += (nowMs - it).coerceAtLeast(0L) }
+      if (settings != null && homeElapsedMs >= settings.homeAllowanceMs) {
+        homeBlockedUntil = nowMs + settings.homeLockoutMs
+      }
+    }
+    lastHomeAt = null
+  }
   fun leaveBlockedSurface() { lastHomeAt = null }
   fun reset() { resetHomeSession(); homeBlockedUntil = null; lastVideoExitAt = null }
+
+  /** Snapshot for presentation only; enforcement continues to use the private state above. */
+  fun homeRuntimeState(nowMs: Long): HomeFeedRuntimeState {
+    val pendingMs = if (homeBlockedUntil == null) {
+      lastHomeAt?.let { (nowMs - it).coerceAtLeast(0L) } ?: 0L
+    } else {
+      0L
+    }
+    return HomeFeedRuntimeState(homeElapsedMs + pendingMs, homeBlockedUntil)
+  }
 
   private fun resetHomeSession() {
     homeElapsedMs = 0L

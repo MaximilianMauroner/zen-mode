@@ -1,6 +1,7 @@
 package com.maxmauroner.zenguard
 
 import android.content.Context
+import android.provider.Settings
 
 /** Last authoritative Home-feed policy snapshot published by the accessibility service. */
 internal data class HomeFeedStatus(val usedMs: Long, val blockedUntilElapsedMs: Long?)
@@ -13,6 +14,11 @@ internal data class HomeFeedStatus(val usedMs: Long, val blockedUntilElapsedMs: 
  */
 internal class HomeFeedStatusStore(context: Context) {
   private val preferences = context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
+  private val bootCount = try {
+    Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, UNKNOWN_BOOT)
+  } catch (_: SecurityException) {
+    UNKNOWN_BOOT
+  }
 
   fun instagram(): HomeFeedStatus = read(INSTAGRAM_PREFIX)
   fun x(): HomeFeedStatus = read(X_PREFIX)
@@ -21,6 +27,9 @@ internal class HomeFeedStatusStore(context: Context) {
   fun recordX(usedMs: Long, blockedUntilElapsedMs: Long?) = write(X_PREFIX, usedMs, blockedUntilElapsedMs)
 
   private fun read(prefix: String): HomeFeedStatus {
+    if (bootCount == UNKNOWN_BOOT || preferences.getInt("${prefix}_boot_count", UNKNOWN_BOOT) != bootCount) {
+      return EMPTY_STATUS
+    }
     val blockedUntil = preferences.getLong("${prefix}_blocked_until_elapsed", 0L).takeIf { it > 0L }
     return HomeFeedStatus(
       usedMs = preferences.getLong("${prefix}_used_ms", 0L).coerceAtLeast(0L),
@@ -30,8 +39,10 @@ internal class HomeFeedStatusStore(context: Context) {
 
   private fun write(prefix: String, usedMs: Long, blockedUntilElapsedMs: Long?) {
     val next = HomeFeedStatus(usedMs.coerceAtLeast(0L), blockedUntilElapsedMs)
-    if (read(prefix) == next) return
+    val isCurrentBoot = bootCount != UNKNOWN_BOOT && preferences.getInt("${prefix}_boot_count", UNKNOWN_BOOT) == bootCount
+    if (isCurrentBoot && read(prefix) == next) return
     preferences.edit()
+      .putInt("${prefix}_boot_count", bootCount)
       .putLong("${prefix}_used_ms", next.usedMs)
       .putLong("${prefix}_blocked_until_elapsed", blockedUntilElapsedMs ?: 0L)
       .apply()
@@ -41,5 +52,7 @@ internal class HomeFeedStatusStore(context: Context) {
     private const val FILE_NAME = "zen_guard_home_feed_status"
     private const val INSTAGRAM_PREFIX = "instagram"
     private const val X_PREFIX = "x"
+    private const val UNKNOWN_BOOT = -1
+    private val EMPTY_STATUS = HomeFeedStatus(0L, null)
   }
 }

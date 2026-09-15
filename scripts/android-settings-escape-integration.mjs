@@ -586,6 +586,18 @@ async function assertClockRuleMutationAndFirstLaunch() {
     return overlay && clock && overlay.index < clock.index ? { overlay, clock } : false;
   }, 10_000, 50);
   pass(`first Clock launch enforced: ${visibleWindowEvidence(relation.overlay)} above ${visibleWindowEvidence(relation.clock)}`);
+  shell('cmd', 'statusbar', 'expand-notifications');
+  await sleep(1_000);
+  shell('cmd', 'statusbar', 'collapse');
+  await waitFor('Clock timed overlay after a transient SystemUI window', () => {
+    const records = parseWindowRecords(shell('dumpsys', 'window', 'windows'));
+    const overlay = records.find((record) => record.ownerPackage === appPackage &&
+      record.type === 'ACCESSIBILITY_OVERLAY' && record.isOnScreen && record.isVisible);
+    const clock = records.find((record) => record.ownerPackage === clockPackage &&
+      record.isOnScreen && record.isVisible);
+    return overlay && clock && overlay.index < clock.index;
+  }, 5_000, 50);
+  pass('Clock timed overlay survived a transient SystemUI notification window');
   await assertSettingsStaysForeground(
     'android.settings.ACCESSIBILITY_SETTINGS',
     'Clock first-launch overlay: Accessibility Settings',

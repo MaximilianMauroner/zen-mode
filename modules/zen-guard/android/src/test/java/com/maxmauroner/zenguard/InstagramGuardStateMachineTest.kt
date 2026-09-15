@@ -379,6 +379,16 @@ class InstagramGuardStateMachineTest {
   }
 
   @Test
+  fun backgroundingStartsTheHomeLockoutWhenTheFinalSliceExhaustsTheAllowance() {
+    val shortSettings = settings.copy(homeAllowanceMs = 60_000L)
+    val state = InstagramGuardStateMachine()
+    state.next(InstagramSurface.HOME_FEED, false, 1_000, shortSettings)
+    state.onAppBackground(61_000, shortSettings)
+
+    assertEquals(3_661_000L, state.homeRuntimeState(61_000).blockedUntilElapsedMs)
+  }
+
+  @Test
   fun homeStaysBlockedForOneHourAfterLeavingAndReopening() {
     val state = InstagramGuardStateMachine()
     state.next(InstagramSurface.HOME_FEED, false, 1_000, settings)

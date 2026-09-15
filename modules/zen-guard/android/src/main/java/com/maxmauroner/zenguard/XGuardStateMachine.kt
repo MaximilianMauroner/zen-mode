@@ -50,9 +50,12 @@ internal class XGuardStateMachine {
     return XAction.NONE
   }
 
-  fun pause(nowMs: Long? = null) {
+  fun pause(nowMs: Long? = null, settings: XSettings? = null) {
     if (homeBlockedUntil == null && nowMs != null) {
       lastHomeAt?.let { homeElapsedMs += (nowMs - it).coerceAtLeast(0L) }
+      if (settings != null && homeElapsedMs >= settings.homeAllowanceMs) {
+        homeBlockedUntil = nowMs + settings.homeLockoutMs
+      }
     }
     lastHomeAt = null
   }

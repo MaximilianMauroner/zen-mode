@@ -175,9 +175,12 @@ internal class InstagramGuardStateMachine(
    * Pauses foreground accounting and drops blockers while Android is backgrounded or interrupted.
    * The active Home allowance is kept so only foreground time is charged on resume.
    */
-  fun onAppBackground(nowMs: Long? = null) {
+  fun onAppBackground(nowMs: Long? = null, settings: InstagramGuardSettings? = null) {
     if (homeBlockedUntil == null && nowMs != null) {
       homeLastActiveAt?.let { homeElapsedMs += (nowMs - it).coerceAtLeast(0L) }
+      if (settings != null && homeElapsedMs >= settings.homeAllowanceMs) {
+        homeBlockedUntil = nowMs + settings.homeLockoutMs
+      }
     }
     blocker = null
     blockedSurface = null

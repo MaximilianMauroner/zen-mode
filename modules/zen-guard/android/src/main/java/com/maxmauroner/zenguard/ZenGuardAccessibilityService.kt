@@ -1,7 +1,12 @@
 package com.maxmauroner.zenguard
 
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -48,6 +53,17 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   private val usageHandler = Handler(Looper.getMainLooper())
   private var lastLimitToastAtMs = 0L
   private var currentForegroundPackage: String? = null
+  private var screenReceiverRegistered = false
+  private val screenStateReceiver = object : BroadcastReceiver() {
+    override fun onReceive(context: Context?, intent: Intent?) {
+      if (intent?.action != Intent.ACTION_SCREEN_OFF || !hasActiveProtection()) return
+      val nowMs = SystemClock.elapsedRealtime()
+      xStateMachine.pause(nowMs, xSettings())
+      instagramStateMachine.onAppBackground(nowMs, preferences.instagramSettings())
+      publishXHomeStatus()
+      publishInstagramHomeStatus()
+    }
+  }
 
   /**
    * Banks foreground time every [USAGE_TICK_MS] so a long uninterrupted session
@@ -81,6 +97,14 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     homeFeedStatusStore = HomeFeedStatusStore(this)
     publishXHomeStatus()
     publishInstagramHomeStatus()
+    val screenFilter = IntentFilter(Intent.ACTION_SCREEN_OFF)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      registerReceiver(screenStateReceiver, screenFilter, Context.RECEIVER_NOT_EXPORTED)
+    } else {
+      @Suppress("DEPRECATION")
+      registerReceiver(screenStateReceiver, screenFilter)
+    }
+    screenReceiverRegistered = true
     usageHandler.postDelayed(usageTicker, USAGE_TICK_MS)
     xOverlay = XBreakOverlay(this) {
       if (hasActiveProtection()) {
@@ -379,7 +403,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   }
 
   private fun clearXEnforcement(preserveHomeLockout: Boolean = false) {
-    if (preserveHomeLockout) xStateMachine.pause(SystemClock.elapsedRealtime()) else xStateMachine.reset()
+    if (preserveHomeLockout) xStateMachine.pause(SystemClock.elapsedRealtime(), xSettings()) else xStateMachine.reset()
     if (::xOverlay.isInitialized) xOverlay.hide()
     publishXHomeStatus()
   }
@@ -402,9 +426,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     val source = event?.source
     val advanced = pager != null && event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED &&
       source != null && isXVideoPager(source) && event.scrollY > 0
-    val action = xStateMachine.next(surface, SystemClock.elapsedRealtime(), XSettings(
-      preferences.xHomeEnabled, preferences.xVideosEnabled, preferences.xHomeMinutes * 60_000L,
-    ), advanced)
+    val action = xStateMachine.next(surface, SystemClock.elapsedRealtime(), xSettings(), advanced)
     when (action) {
       XAction.HOME_BREAK -> xOverlay.show(preferences.xHomeMinutes)
       XAction.LEAVE_VIDEO -> {
@@ -622,6 +644,10 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     usageHandler.removeCallbacksAndMessages(null)
     if (::intentOverlay.isInitialized) intentOverlay.hide()
     clearInstagramEnforcement()
+    if (screenReceiverRegistered) {
+      unregisterReceiver(screenStateReceiver)
+      screenReceiverRegistered = false
+    }
     super.onDestroy()
   }
 
@@ -630,7 +656,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
 
   private fun clearInstagramEnforcement(preserveHomeSession: Boolean = false) {
     if (preserveHomeSession) {
-      instagramStateMachine.onAppBackground(SystemClock.elapsedRealtime())
+      instagramStateMachine.onAppBackground(SystemClock.elapsedRealtime(), preferences.instagramSettings())
     } else {
       instagramStateMachine.onSurfaceLost()
     }
@@ -645,9 +671,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     val runtime = instagramStateMachine.homeRuntimeState(nowElapsedMs)
     homeFeedStatusStore.recordInstagram(
       usedMs = runtime.usedMs,
-      availableAtWallMs = runtime.blockedUntilElapsedMs?.let {
-        System.currentTimeMillis() + (it - nowElapsedMs).coerceAtLeast(0L)
-      },
+      blockedUntilElapsedMs = runtime.blockedUntilElapsedMs,
     )
   }
 
@@ -657,11 +681,15 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     val runtime = xStateMachine.homeRuntimeState(nowElapsedMs)
     homeFeedStatusStore.recordX(
       usedMs = runtime.usedMs,
-      availableAtWallMs = runtime.blockedUntilElapsedMs?.let {
-        System.currentTimeMillis() + (it - nowElapsedMs).coerceAtLeast(0L)
-      },
+      blockedUntilElapsedMs = runtime.blockedUntilElapsedMs,
     )
   }
+
+  private fun xSettings() = XSettings(
+    homeEnabled = preferences.xHomeEnabled,
+    videosEnabled = preferences.xVideosEnabled,
+    homeAllowanceMs = preferences.xHomeMinutes * 60_000L,
+  )
 
   private fun hasActiveProtection(): Boolean =
     ::preferences.isInitialized && preferences.hasCurrentConsent && preferences.protectionEnabled

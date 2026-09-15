@@ -11,7 +11,7 @@ export type ZenGuardStatus = {
   xVideosEnabled: boolean;
   xHomeMinutes: number;
   xHomeUsedMs: number;
-  xHomeAvailableAt: number;
+  xHomeBreakRemainingMs: number;
   xObservationMode: boolean;
   xSignalMask: number;
   lastEventAt: number;
@@ -23,7 +23,7 @@ export type ZenGuardStatus = {
   instagramReelsMinutes: number;
   instagramHomeMinutes: number;
   instagramHomeUsedMs: number;
-  instagramHomeAvailableAt: number;
+  instagramHomeBreakRemainingMs: number;
   instagramExploreBlocked: boolean;
   instagramLastDetectionAt: number;
   instagramDetectionCount: number;

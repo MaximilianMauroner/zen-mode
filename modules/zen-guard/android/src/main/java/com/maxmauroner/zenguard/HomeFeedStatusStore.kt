@@ -3,7 +3,7 @@ package com.maxmauroner.zenguard
 import android.content.Context
 
 /** Last authoritative Home-feed policy snapshot published by the accessibility service. */
-internal data class HomeFeedStatus(val usedMs: Long, val availableAtWallMs: Long?)
+internal data class HomeFeedStatus(val usedMs: Long, val blockedUntilElapsedMs: Long?)
 
 /**
  * Small service-to-module bridge for Home-feed timers.
@@ -17,23 +17,23 @@ internal class HomeFeedStatusStore(context: Context) {
   fun instagram(): HomeFeedStatus = read(INSTAGRAM_PREFIX)
   fun x(): HomeFeedStatus = read(X_PREFIX)
 
-  fun recordInstagram(usedMs: Long, availableAtWallMs: Long?) = write(INSTAGRAM_PREFIX, usedMs, availableAtWallMs)
-  fun recordX(usedMs: Long, availableAtWallMs: Long?) = write(X_PREFIX, usedMs, availableAtWallMs)
+  fun recordInstagram(usedMs: Long, blockedUntilElapsedMs: Long?) = write(INSTAGRAM_PREFIX, usedMs, blockedUntilElapsedMs)
+  fun recordX(usedMs: Long, blockedUntilElapsedMs: Long?) = write(X_PREFIX, usedMs, blockedUntilElapsedMs)
 
   private fun read(prefix: String): HomeFeedStatus {
-    val availableAt = preferences.getLong("${prefix}_available_at", 0L).takeIf { it > 0L }
+    val blockedUntil = preferences.getLong("${prefix}_blocked_until_elapsed", 0L).takeIf { it > 0L }
     return HomeFeedStatus(
       usedMs = preferences.getLong("${prefix}_used_ms", 0L).coerceAtLeast(0L),
-      availableAtWallMs = availableAt,
+      blockedUntilElapsedMs = blockedUntil,
     )
   }
 
-  private fun write(prefix: String, usedMs: Long, availableAtWallMs: Long?) {
-    val next = HomeFeedStatus(usedMs.coerceAtLeast(0L), availableAtWallMs)
+  private fun write(prefix: String, usedMs: Long, blockedUntilElapsedMs: Long?) {
+    val next = HomeFeedStatus(usedMs.coerceAtLeast(0L), blockedUntilElapsedMs)
     if (read(prefix) == next) return
     preferences.edit()
       .putLong("${prefix}_used_ms", next.usedMs)
-      .putLong("${prefix}_available_at", availableAtWallMs ?: 0L)
+      .putLong("${prefix}_blocked_until_elapsed", blockedUntilElapsedMs ?: 0L)
       .apply()
   }
 

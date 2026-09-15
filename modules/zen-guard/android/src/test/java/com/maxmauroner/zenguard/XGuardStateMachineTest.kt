@@ -15,6 +15,15 @@ class XGuardStateMachineTest {
     assertEquals(180_000L, guard.homeRuntimeState(560_000L).usedMs)
   }
 
+  @Test fun `backgrounding starts the Home lockout when the final slice exhausts the allowance`() {
+    val guard = XGuardStateMachine()
+    val settings = XSettings(homeAllowanceMs = 60_000L)
+    guard.next(XSurface.HOME, 1_000L, settings)
+    guard.pause(61_000L, settings)
+
+    assertEquals(3_661_000L, guard.homeRuntimeState(61_000L).blockedUntilElapsedMs)
+  }
+
   @Test fun `Home remains blocked for one hour after leaving and reopening X`() {
     val guard = XGuardStateMachine()
     val settings = XSettings(homeAllowanceMs = 60_000L)

@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.Settings
 import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
@@ -20,6 +21,11 @@ class ZenGuardModule : Module() {
       val homeFeedStatus = HomeFeedStatusStore(context)
       val instagramHome = homeFeedStatus.instagram()
       val xHome = homeFeedStatus.x()
+      val nowElapsedMs = SystemClock.elapsedRealtime()
+      val instagramBreakRemainingMs = instagramHome.blockedUntilElapsedMs?.let { (it - nowElapsedMs).coerceAtLeast(0L) } ?: 0L
+      val xBreakRemainingMs = xHome.blockedUntilElapsedMs?.let { (it - nowElapsedMs).coerceAtLeast(0L) } ?: 0L
+      val instagramUsedMs = if (instagramHome.blockedUntilElapsedMs != null && instagramBreakRemainingMs == 0L) 0L else instagramHome.usedMs
+      val xUsedMs = if (xHome.blockedUntilElapsedMs != null && xBreakRemainingMs == 0L) 0L else xHome.usedMs
       mapOf(
         "available" to true,
         "serviceEnabled" to isServiceEnabled(context),
@@ -30,8 +36,8 @@ class ZenGuardModule : Module() {
         "xHomeEnabled" to preferences.xHomeEnabled,
         "xVideosEnabled" to preferences.xVideosEnabled,
         "xHomeMinutes" to preferences.xHomeMinutes,
-        "xHomeUsedMs" to xHome.usedMs.toDouble(),
-        "xHomeAvailableAt" to (xHome.availableAtWallMs?.toDouble() ?: 0.0),
+        "xHomeUsedMs" to xUsedMs.toDouble(),
+        "xHomeBreakRemainingMs" to xBreakRemainingMs.toDouble(),
         "xObservationMode" to preferences.xObservationMode,
         "xSignalMask" to preferences.xSignalMask,
         "lastEventAt" to preferences.lastEventAt.toDouble(),
@@ -42,8 +48,8 @@ class ZenGuardModule : Module() {
         "instagramWaitSeconds" to preferences.instagramWaitSeconds,
         "instagramReelsMinutes" to preferences.instagramReelsMinutes,
         "instagramHomeMinutes" to preferences.instagramHomeMinutes,
-        "instagramHomeUsedMs" to instagramHome.usedMs.toDouble(),
-        "instagramHomeAvailableAt" to (instagramHome.availableAtWallMs?.toDouble() ?: 0.0),
+        "instagramHomeUsedMs" to instagramUsedMs.toDouble(),
+        "instagramHomeBreakRemainingMs" to instagramBreakRemainingMs.toDouble(),
         "instagramExploreBlocked" to preferences.instagramExploreBlocked,
         "instagramLastDetectionAt" to preferences.instagramLastDetectionAt.toDouble(),
         "instagramDetectionCount" to preferences.instagramDetectionCount,

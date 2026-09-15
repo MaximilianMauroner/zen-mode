@@ -6,6 +6,7 @@ import { PrimaryButton, SecondaryButton } from './button';
 import { ErrorNote } from './screen';
 import { useSharedGuardStatus } from '@/features/protection/guard-status-context';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
+import { getHomeFeedTimeLabel } from '@/features/protection/home-feed-time';
 import { isChangeBlocked } from '@/features/protection/lock';
 import { getZenGuardStatus, openInstagram, setInstagramObservationMode, setInstagramSettings, openX, openYouTube, setObservationMode, setShortsEnabled, setXObservationMode, setXSettings, type ZenGuardStatus } from '@/features/protection/native';
 
@@ -61,6 +62,7 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
   });
   const close = () => { if (!inFlight.current) onClose(); };
   const result = getFeedPresentation(status, isX ? 'xVideos' : 'shorts');
+  const homeTime = isInstagram ? getHomeFeedTimeLabel(status, 'instagram') : isX ? getHomeFeedTimeLabel(status, 'x') : null;
 
   return (
     <Modal visible={feed !== null} transparent animationType={reduceMotion ? 'none' : 'slide'} onRequestClose={close} onShow={() => { setError(''); void refresh(); }} statusBarTranslucent>
@@ -73,7 +75,7 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
           </View>
           <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
             {isX ? <View className="mb-5 gap-3">
-              <View className="flex-row items-center justify-between"><Text className="text-[15px] font-semibold text-copy">Home feed</Text><Text className="text-[12px] text-muted">{getFeedPresentation(status, 'xHome').statusLabel}</Text></View>
+              <View className="flex-row items-center justify-between"><Text className="text-[15px] font-semibold text-copy">Home feed</Text><Text className="text-[12px] text-muted">{homeTime ?? getFeedPresentation(status, 'xHome').statusLabel}</Text></View>
               <RuleChoice label="X Home rule" limitedLabel="Take breaks" allowedLabel="No breaks" enabled={status?.xHomeEnabled === true} disabled={disabled} onChange={(value) => change({ xHomeEnabled: value })} />
               <Text className="text-[13px] text-muted">Break after</Text>
               <PresetRow label="X Home break interval" values={HOME_MINUTES} selected={status?.xHomeMinutes} suffix="m" disabled={disabled || !status?.xHomeEnabled} onSelect={(value) => change({ xHomeMinutes: value })} />
@@ -89,7 +91,7 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
               </View>
               <View className="gap-3 border-t border-line pt-4">
                 <Text accessibilityRole="header" className="text-[15px] font-semibold text-copy">Home feed</Text>
-                <Text className="text-[13px] text-muted">{getFeedPresentation(status, 'home').statusLabel} · Break after</Text>
+                <Text className="text-[13px] text-muted">{homeTime ?? getFeedPresentation(status, 'home').statusLabel} · Break after</Text>
                 <PresetRow label="Instagram Home break interval" values={HOME_MINUTES} selected={status?.instagramHomeMinutes} suffix="m" disabled={disabled} onSelect={(value) => change({ instagramHomeMinutes: value })} />
               </View>
               <View className="gap-3 border-t border-line pt-4">

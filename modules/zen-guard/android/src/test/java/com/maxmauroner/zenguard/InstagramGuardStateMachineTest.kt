@@ -368,6 +368,17 @@ class InstagramGuardStateMachineTest {
   }
 
   @Test
+  fun homeRuntimeSnapshotIncludesTimeUntilTheAppBackgrounds() {
+    val state = InstagramGuardStateMachine()
+    state.next(InstagramSurface.HOME_FEED, false, 1_000, settings)
+    state.onAppBackground(121_000)
+
+    assertEquals(120_000L, state.homeRuntimeState(500_000).usedMs)
+    state.next(InstagramSurface.HOME_FEED, false, 500_000, settings)
+    assertEquals(180_000L, state.homeRuntimeState(560_000).usedMs)
+  }
+
+  @Test
   fun homeStaysBlockedForOneHourAfterLeavingAndReopening() {
     val state = InstagramGuardStateMachine()
     state.next(InstagramSurface.HOME_FEED, false, 1_000, settings)

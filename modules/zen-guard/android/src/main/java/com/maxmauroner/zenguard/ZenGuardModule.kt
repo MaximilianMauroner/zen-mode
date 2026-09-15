@@ -17,6 +17,9 @@ class ZenGuardModule : Module() {
       val context = requireNotNull(appContext.reactContext)
       val preferences = ZenGuardPreferences(context)
       val adultSites = AdultSiteRuleStore(context)
+      val homeFeedStatus = HomeFeedStatusStore(context)
+      val instagramHome = homeFeedStatus.instagram()
+      val xHome = homeFeedStatus.x()
       mapOf(
         "available" to true,
         "serviceEnabled" to isServiceEnabled(context),
@@ -27,6 +30,8 @@ class ZenGuardModule : Module() {
         "xHomeEnabled" to preferences.xHomeEnabled,
         "xVideosEnabled" to preferences.xVideosEnabled,
         "xHomeMinutes" to preferences.xHomeMinutes,
+        "xHomeUsedMs" to xHome.usedMs.toDouble(),
+        "xHomeAvailableAt" to (xHome.availableAtWallMs?.toDouble() ?: 0.0),
         "xObservationMode" to preferences.xObservationMode,
         "xSignalMask" to preferences.xSignalMask,
         "lastEventAt" to preferences.lastEventAt.toDouble(),
@@ -37,6 +42,8 @@ class ZenGuardModule : Module() {
         "instagramWaitSeconds" to preferences.instagramWaitSeconds,
         "instagramReelsMinutes" to preferences.instagramReelsMinutes,
         "instagramHomeMinutes" to preferences.instagramHomeMinutes,
+        "instagramHomeUsedMs" to instagramHome.usedMs.toDouble(),
+        "instagramHomeAvailableAt" to (instagramHome.availableAtWallMs?.toDouble() ?: 0.0),
         "instagramExploreBlocked" to preferences.instagramExploreBlocked,
         "instagramLastDetectionAt" to preferences.instagramLastDetectionAt.toDouble(),
         "instagramDetectionCount" to preferences.instagramDetectionCount,

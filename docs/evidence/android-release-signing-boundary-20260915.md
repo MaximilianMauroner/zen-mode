@@ -3,7 +3,8 @@
 ## Source and scope
 
 - Branch: `fix/android-settings-safety-package-id`
-- Signing safeguard commit: `5e12dc56331ac73f329e12ad5163b5a5b3237158`
+- Signing safeguard commits: `5e12dc56331ac73f329e12ad5163b5a5b3237158`
+  and `40be1e431b9945ed8ae350cef933368abb22e35d`
 - Application ID: `com.lab4code.zenmode`
 - No credential was created, replaced, copied into the repository, or printed.
 - No APK or AAB was uploaded or submitted to Play.
@@ -39,6 +40,7 @@ with `ANDROID_HOME=/home/codex/android-sdk`:
 | The same task with the four keystore variables but no approved fingerprint | Refused as partially configured; exit 1 |
 | The same task with the generated debug keystore and its real debug fingerprint | Refused: `Zen Mode release artifacts cannot use the Android debug certificate.`; exit 1 |
 | The same task with the generated debug keystore and a different well-formed fingerprint | Refused because the keystore certificate did not match; exit 1 |
+| The same task with `ZEN_MODE_UPLOAD_STORE_FILE=app/debug.keystore` | Refused because the keystore path was relative; exit 1 |
 | `npm run android:bundle:upload` with the generated debug keystore and its real fingerprint | Refused before Gradle: `the approved certificate is the Android debug certificate`; exit 1 |
 | `./gradlew :app:assembleDebug -PreactNativeArchitectures=x86_64 --console=plain` with upload variables unset | `BUILD SUCCESSFUL in 4m 45s` |
 
@@ -48,6 +50,10 @@ alias certificate in-process before any app release-artifact task executes.
 Passwords are not passed on a command line or logged. The repository has no CI
 workflow, so CI currently provides no separate signing rejection; the Gradle
 guard is the direct-command boundary.
+
+A clean `npm ci` completed and `patch-package` reported
+`react-native-screens@4.26.2 ✔`, confirming the accepted Fabric backport still
+applies reproducibly after the signing change.
 
 ## Non-candidate artifact
 
@@ -77,4 +83,3 @@ custodian/backup location for a new upload key. Until that decision is made,
 the build must remain blocked. Once supplied, run the documented verified AAB
 workflow and a guarded `assembleRelease`, then verify package, version, APK
 SHA-256, and `apksigner --print-certs` output before the file-upload workflow.
-

@@ -1,7 +1,7 @@
-# Store listing draft
+# Google Play store listing source
 
-Internal draft for the Android listing. Confirm the owner fields before using
-it in Play Console.
+Prepared source for app `4973526737842711493`. Console entry remains
+parent-managed; this file does not record a submission or rollout.
 
 ## Listing fields
 
@@ -10,7 +10,14 @@ it in Play Console.
 | App name | `Zen Mode` |
 | Android application ID | `com.lab4code.zenmode`; selected as the permanent Google Play package ID. |
 | Support email | `support@lab4code.com` |
-| Category, countries, price, support URL, and other contact details | Owner input required |
+| Developer | `Maximilian Mauroner (Lab4Code)`, Austria; personal Play developer `6468274858330069554` |
+| Website | `https://github.com/MaximilianMauroner/zen-mode` |
+| Privacy policy | `https://github.com/MaximilianMauroner/zen-mode/blob/privacy-policy/PRIVACY.md` |
+| Category and price | `Productivity`; free |
+| Target ages | `13–15`, `16–17`, and `18+`; explicitly approved |
+| Content ratings | IARC `PEGI 3` / `ESRB Everyone`, saved in Console |
+| Ads and app access | No ads or AD_ID; no account or reviewer credentials required |
+| Countries and initial release/testing track | Owner decision still required |
 
 ### Short description
 
@@ -59,9 +66,10 @@ X, and Android are third-party products and are not affiliated with Zen Mode.
 - Final phone screenshots from the signed Android candidate, with personal
   account data and notifications removed.
 - An optional promo video, if the owner chooses to provide one.
-- Use `support@lab4code.com` as the support email. Final support and privacy
-  policy URLs still require owner input.
-- Final category, content rating, target audience, countries, and pricing.
+- Use `support@lab4code.com`, the repository website, and the public privacy
+  policy URL above.
+- Confirm countries and the approved initial testing/release track before
+  making the listing available.
 
 See Google's [preview asset requirements](https://support.google.com/googleplay/android-developer/answer/9866151)
 for the current Play Console fields and file rules.

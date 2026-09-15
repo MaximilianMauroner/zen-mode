@@ -31,4 +31,11 @@ test('privacy copy discloses GitHub metadata and public submissions', () => {
   assert.match(privacyScreen, /sends the app version and platform to GitHub/);
   assert.match(privacyScreen, /Submitted issues and their contents are public/);
   assert.match(privacyScreen, /support@lab4code\.com/);
+  assert.match(privacyScreen, /Maximilian Mauroner \(Lab4Code\), Austria/);
+});
+
+test('privacy policy uses the approved public GitHub location', () => {
+  const policyLink = readFileSync(new URL('../src/features/privacy/policy.ts', import.meta.url), 'utf8');
+
+  assert.match(policyLink, /github\.com\/MaximilianMauroner\/zen-mode\/blob\/privacy-policy\/PRIVACY\.md/);
 });

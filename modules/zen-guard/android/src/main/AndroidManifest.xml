@@ -8,6 +8,16 @@
       <action android:name="android.intent.action.MAIN" />
       <category android:name="android.intent.category.LAUNCHER" />
     </intent>
+    <!-- Resolve only system handlers for the Settings escape path. -->
+    <intent>
+      <action android:name="android.settings.SETTINGS" />
+    </intent>
+    <intent>
+      <action android:name="android.settings.ACCESSIBILITY_SETTINGS" />
+    </intent>
+    <intent>
+      <action android:name="android.settings.ACCESSIBILITY_DETAILS_SETTINGS" />
+    </intent>
   </queries>
   <application>
     <service

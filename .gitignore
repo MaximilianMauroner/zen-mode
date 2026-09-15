@@ -30,8 +30,10 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# local environment files
+.env
+.env.*
+!.env.example
 
 # typescript
 *.tsbuildinfo
@@ -48,3 +50,6 @@ example
 
 # Image generation drafts and source exports
 /output/imagegen/
+
+# Reviewer recordings are external release artifacts, not source assets
+/docs/store-assets/**/*.mp4

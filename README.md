@@ -90,16 +90,17 @@ Expo Go cannot include this project's local Android module. Use `npm run
 android` for native development and testing. This repository has no EAS build
 profiles or release automation.
 
-## Standalone ARM64 preview
+## Standalone ARM64 debug preview
 
 This local build requires the Android SDK and a JDK.
 
 ```bash
 npx expo prebuild --platform android --no-install
 cd android
-./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a
+./gradlew :app:assembleDebug -PreactNativeArchitectures=arm64-v8a
 ```
 
-The generated release APK is signed with the default debug key. It is suitable
-for local preview only and is not ready to upload. Configure a release keystore
-and signing process before distribution.
+The generated debug APK is suitable for local preview only and must not be
+uploaded. Release builds fail closed unless external upload-key configuration
+is complete. See [Android release signing](docs/android-release-signing.md) for
+the verified App Bundle workflow.

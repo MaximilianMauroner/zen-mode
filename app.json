@@ -2,7 +2,7 @@
   "expo": {
     "name": "Zen Mode",
     "slug": "zen-mode",
-    "version": "1.0.3",
+    "version": "0.1.5",
     "orientation": "portrait",
     "icon": "./assets/images/refuge/icon.png",
     "scheme": "zenmode",
@@ -12,7 +12,7 @@
       "icon": "./assets/images/refuge/icon.png"
     },
     "android": {
-      "package": "com.maxmauroner.zenmode",
+      "package": "com.lab4code.zenmode",
       "versionCode": 5,
       "allowBackup": false,
       "blockedPermissions": [
@@ -42,7 +42,8 @@
       ],
       "expo-secure-store",
       "expo-image",
-      "expo-web-browser"
+      "expo-web-browser",
+      "./plugins/with-android-release-signing"
     ],
     "experiments": {
       "typedRoutes": true,

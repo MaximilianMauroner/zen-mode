@@ -1,7 +1,7 @@
 {
   "name": "zen-mode",
   "main": "expo-router/entry",
-  "version": "1.0.3",
+  "version": "0.1.5",
   "dependencies": {
     "@expo/ui": "~57.0.18",
     "expo": "~57.0.22",
@@ -39,6 +39,7 @@
     "babel-preset-expo": "^57.0.9",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.2",
+    "patch-package": "^8.0.1",
     "prettier-plugin-tailwindcss": "^0.5.14",
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.3"
@@ -46,11 +47,15 @@
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
+    "android:bundle:upload": "node scripts/build-android-upload-bundle.mjs",
     "phone:mirror": "bash ./scripts/watch-phone.sh",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "node --test tests/*.test.mjs"
+    "postinstall": "patch-package",
+    "test": "node --test tests/*.test.mjs",
+    "test:android-fabric-startup": "node scripts/android-fabric-cold-start-regression.mjs",
+    "test:android-settings-safety": "node scripts/android-settings-escape-integration.mjs"
   },
   "private": true
 }

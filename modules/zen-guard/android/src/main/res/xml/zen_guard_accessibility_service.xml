@@ -7,4 +7,4 @@
   android:description="@string/zen_guard_accessibility_service_description"
   android:isAccessibilityTool="false"
   android:notificationTimeout="100"
-  android:settingsActivity="com.maxmauroner.zenmode.MainActivity" />
+  android:settingsActivity="com.lab4code.zenmode.MainActivity" />

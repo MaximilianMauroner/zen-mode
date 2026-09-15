@@ -42,6 +42,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   private lateinit var dailyTally: DailyTally
   private lateinit var intentStore: IntentAppStore
   private lateinit var rollingLimits: RollingLimitStore
+  private lateinit var appRuleSafety: AppRuleSafety
   private val intentSessions = IntentSessionTracker()
   private lateinit var intentOverlay: IntentOverlay
   private lateinit var adultSiteStore: AdultSiteRuleStore
@@ -72,13 +73,11 @@ class ZenGuardAccessibilityService : AccessibilityService() {
    */
   private val usageTicker = object : Runnable {
     override fun run() {
-      if (hasActiveProtection()) {
+      if (canRunEnforcementAction()) {
         usageTracker.tick(SystemClock.elapsedRealtime())?.let(::bankUsage)
         enforceAppLimit(currentForegroundPackage)
         enforceRollingLimit(currentForegroundPackage)
         enforceIntentSession()
-      } else {
-        clearInactiveProtection()
       }
       usageHandler.postDelayed(this, USAGE_TICK_MS)
     }
@@ -91,6 +90,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     dailyTally = DailyTally(this)
     intentStore = IntentAppStore(this)
     rollingLimits = RollingLimitStore(this)
+    appRuleSafety = AppRuleSafety.resolve(this)
     intentOverlay = IntentOverlay(this)
     adultSiteStore = AdultSiteRuleStore(this)
     adultSiteOverlay = AdultSiteBlockerOverlay(this)
@@ -107,19 +107,17 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     screenReceiverRegistered = true
     usageHandler.postDelayed(usageTicker, USAGE_TICK_MS)
     xOverlay = XBreakOverlay(this) {
-      if (hasActiveProtection()) {
+      if (canRunEnforcementAction()) {
         xStateMachine.leaveBlockedSurface()
         xOverlay.hide()
         performGlobalAction(GLOBAL_ACTION_HOME)
-      } else {
-        clearInactiveProtection()
       }
     }
     xHandler.postDelayed(xTicker, 1_000L)
     instagramOverlay = InstagramBlockerOverlay(
       service = this,
       onLeave = {
-        if (hasActiveProtection()) {
+        if (canRunEnforcementAction()) {
           val reason = instagramBlockReason
           instagramStateMachine.leaveBlockedSurface()
           instagramBlockReason = null
@@ -133,29 +131,22 @@ class ZenGuardAccessibilityService : AccessibilityService() {
             -> openInstagramMessages()
             else -> performGlobalAction(GLOBAL_ACTION_BACK)
           }
-        } else {
-          clearInactiveProtection()
         }
       },
       onOpenMessages = {
-        if (hasActiveProtection()) {
+        if (canRunEnforcementAction()) {
           instagramStateMachine.leaveBlockedSurface()
           instagramBlockReason = null
           instagramOverlay.hide()
           openInstagramMessages()
-        } else {
-          clearInactiveProtection()
         }
       },
       onContinue = {
-        if (hasActiveProtection()) {
+        if (canRunEnforcementAction()) {
           val continued = instagramStateMachine.continueReels(SystemClock.elapsedRealtime(), preferences.instagramSettings())
           if (continued) dailyTally.recordContinue(System.currentTimeMillis())
           continued
-        } else {
-          clearInactiveProtection()
-          false
-        }
+        } else false
       },
     )
   }
@@ -167,10 +158,24 @@ class ZenGuardAccessibilityService : AccessibilityService() {
       return
     }
 
+    val eventPackage = event.packageName?.toString()
+    if (::appRuleSafety.isInitialized && appRuleSafety.hasSystemSettingsWindow(
+        activePackage = rootInActiveWindow?.packageName?.toString(),
+        windowPackages = windows.map { it.root?.packageName?.toString() } + eventPackage,
+      )
+    ) {
+      if (appRuleSafety.isSystemSettings(eventPackage) &&
+        event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+      ) {
+        usageTracker.onForeground(eventPackage!!, SystemClock.elapsedRealtime())?.let(::bankUsage)
+      }
+      enterSystemSettings()
+      return
+    }
+
     trackForegroundApp(event)
     // The blocker is an accessibility overlay owned by this package. Ignore its own focus and
     // content events; treating them as an external app would immediately remove the blocker.
-    val eventPackage = event.packageName?.toString()
     if (eventPackage == packageName) {
       if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
         if (windows.none { it.root?.packageName?.toString() == X_PACKAGE }) {
@@ -234,6 +239,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   /** Writes banked foreground time against today's total for that app. */
   private fun bankUsage(attribution: AppUsageTracker.Attribution) {
     if (!::appLimits.isInitialized || !::rollingLimits.isInitialized) return
+    if (::appRuleSafety.isInitialized && appRuleSafety.isExempt(attribution.packageName)) return
     val nowWallMs = System.currentTimeMillis()
     if (appLimits.limits().containsKey(attribution.packageName)) {
       appLimits.addUsage(attribution.packageName, attribution.durationMs, nowWallMs)
@@ -251,7 +257,8 @@ class ZenGuardAccessibilityService : AccessibilityService() {
    * the app and the number, so the budget applies from that moment.
    */
   private fun enforceAppLimit(packageName: String?) {
-    if (packageName == null || packageName == this.packageName) return
+    if (!canRunEnforcementAction()) return
+    if (packageName == null || !::appRuleSafety.isInitialized || !appRuleSafety.allowsDailyEnforcement(packageName)) return
     if (!appLimits.isOverBudget(packageName, System.currentTimeMillis())) return
 
     performGlobalAction(GLOBAL_ACTION_HOME)
@@ -270,7 +277,8 @@ class ZenGuardAccessibilityService : AccessibilityService() {
    * with nothing to reset.
    */
   private fun enforceRollingLimit(packageName: String?) {
-    if (packageName == null || packageName == this.packageName) return
+    if (!canRunEnforcementAction()) return
+    if (packageName == null || !::appRuleSafety.isInitialized || !appRuleSafety.allowsRollingEnforcement(packageName)) return
     if (!::rollingLimits.isInitialized) return
     if (!rollingLimits.isOver(packageName, System.currentTimeMillis())) return
 
@@ -292,6 +300,11 @@ class ZenGuardAccessibilityService : AccessibilityService() {
    */
   private fun handleIntentForeground(packageName: String) {
     if (!::intentStore.isInitialized || !::intentOverlay.isInitialized) return
+    if (!canRunEnforcementAction()) return
+    if (!::appRuleSafety.isInitialized || !appRuleSafety.allowsTimedVisitEnforcement(packageName)) {
+      if (intentOverlay.shownPackage() != null) intentOverlay.hide()
+      return
+    }
     val rule = intentStore.intents()[packageName]
     if (rule == null) {
       if (intentOverlay.shownPackage() != null) intentOverlay.hide()
@@ -329,10 +342,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
 
   /** Starts one timed visit and lets the app through. */
   private fun grantIntentSession(packageName: String, minutes: Int) {
-    if (!hasActiveProtection()) {
-      clearInactiveProtection()
-      return
-    }
+    if (!canRunEnforcementAction()) return
     intentSessions.grant(packageName, minutes, SystemClock.elapsedRealtime())
     if (intentOverlay.shownPackage() == packageName) intentOverlay.hide()
   }
@@ -340,10 +350,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   /** Leaves without starting a session. */
   private fun leaveIntent() {
     intentOverlay.hide()
-    if (!hasActiveProtection()) {
-      clearInactiveProtection()
-      return
-    }
+    if (!canRunEnforcementAction()) return
     performGlobalAction(GLOBAL_ACTION_HOME)
   }
 
@@ -354,7 +361,13 @@ class ZenGuardAccessibilityService : AccessibilityService() {
    */
   private fun enforceIntentSession() {
     if (!::intentStore.isInitialized || !::intentOverlay.isInitialized) return
+    if (!canRunEnforcementAction()) return
     val packageName = lastExternalPackage ?: return
+    if (!::appRuleSafety.isInitialized || !appRuleSafety.allowsTimedVisitEnforcement(packageName)) {
+      intentOverlay.hide()
+      lastExternalPackage = null
+      return
+    }
     if (intentSessions.isActive(packageName, SystemClock.elapsedRealtime())) return
     if (!intentSessions.end(packageName)) return
 
@@ -410,7 +423,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
 
   /** One-second ticks count a still Home feed; events identify only the full-screen video pager. */
   private fun handleXEvent(event: AccessibilityEvent?) {
-    if (!hasActiveProtection()) { clearInactiveProtection(); return }
+    if (!canRunEnforcementAction()) return
     if (!isScreenInteractive) { xStateMachine.pause(); return }
     val root = rootInActiveWindow ?: run { xStateMachine.pause(); return }
     if (root.packageName?.toString() != X_PACKAGE) {
@@ -623,10 +636,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   }
 
   private fun openInstagramMessages() {
-    if (!hasActiveProtection()) {
-      clearInactiveProtection()
-      return
-    }
+    if (!canRunEnforcementAction()) return
     navigationHandler.removeCallbacksAndMessages(null)
     instagramNavigationSuppressedUntilMs =
       SystemClock.elapsedRealtime() + NAVIGATION_SUPPRESSION_MS
@@ -709,9 +719,45 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     clearInstagramEnforcement()
   }
 
+  /**
+   * Android Settings is the user's unconditional escape path from this service. Clear overlays,
+   * delayed navigation, and tracked app-rule state without changing the in-app settings lock.
+   */
+  private fun enterSystemSettings() {
+    browserHandler.removeCallbacksAndMessages(null)
+    clearAdultSiteEnforcement()
+    stateMachine.reset()
+    clearXEnforcement(preserveHomeLockout = true)
+    usageTracker.reset()
+    currentForegroundPackage = null
+    lastExternalPackage = null
+    if (::intentOverlay.isInitialized) intentOverlay.hide()
+    navigationHandler.removeCallbacksAndMessages(null)
+    instagramNavigationSuppressedUntilMs = 0L
+    clearInstagramEnforcement(preserveHomeSession = true)
+  }
+
+  /** Re-check the live windows at execution time so queued callbacks cannot eject Settings. */
+  private fun canRunEnforcementAction(): Boolean {
+    if (!hasActiveProtection()) {
+      clearInactiveProtection()
+      return false
+    }
+    if (::appRuleSafety.isInitialized && appRuleSafety.hasSystemSettingsWindow(
+        activePackage = rootInActiveWindow?.packageName?.toString(),
+        windowPackages = windows.map { it.root?.packageName?.toString() },
+      )
+    ) {
+      enterSystemSettings()
+      return false
+    }
+    return true
+  }
+
   /** Reads text only from exact address-bar nodes; arbitrary browser page text is never copied. */
   private fun handleBrowserEvent(browserPackage: String) {
     if (!::adultSiteStore.isInitialized || !::adultSiteOverlay.isInitialized) return
+    if (!canRunEnforcementAction()) return
     if (!adultSiteStore.enabled) {
       clearAdultSiteEnforcement()
       return
@@ -757,7 +803,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   /** Keep the overlay in place until Back produces a verified non-blocked URL. */
   private fun leaveBlockedSiteBack() {
     val browserPackage = adultSiteOverlay.shownPackage() ?: return
-    if (!hasActiveProtection() || !adultSiteStore.enabled) {
+    if (!canRunEnforcementAction() || !adultSiteStore.enabled) {
       clearAdultSiteEnforcement()
       return
     }
@@ -772,7 +818,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
 
   private fun leaveBlockedSiteHome() {
     adultSiteOverlay.hide()
-    if (hasActiveProtection()) performGlobalAction(GLOBAL_ACTION_HOME) else clearInactiveProtection()
+    if (canRunEnforcementAction()) performGlobalAction(GLOBAL_ACTION_HOME)
   }
 
   private fun clearAdultSiteEnforcement() {
@@ -815,10 +861,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
    * after a package launch when the deep link did not produce the requested surface.
    */
   private fun ensureMessagesVisible(attempt: Int) {
-    if (!hasActiveProtection()) {
-      clearInactiveProtection()
-      return
-    }
+    if (!canRunEnforcementAction()) return
     if (!isScreenInteractive || attempt > MAX_NAVIGATION_ATTEMPTS) return
 
     val root = rootInActiveWindow

@@ -25,7 +25,7 @@ def normalizeUploadCertificateSha256 = { value ->
 }
 
 def verifyUploadSigningIdentity = {
-    def storePath = file(uploadSigningEnvironment.storeFile)
+    def storePath = new File(uploadSigningEnvironment.storeFile)
     if (!storePath.isAbsolute() || !storePath.isFile()) {
         throw new GradleException("ZEN_MODE_UPLOAD_STORE_FILE must be an absolute path to an existing keystore.")
     }

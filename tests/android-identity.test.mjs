@@ -42,6 +42,7 @@ android {
   assert.match(generated, /Debug signing is intentionally unavailable for release artifacts/);
   assert.match(generated, /ZEN_MODE_UPLOAD_STORE_FILE/);
   assert.match(generated, /ZEN_MODE_UPLOAD_CERT_SHA256/);
+  assert.match(generated, /new File\(uploadSigningEnvironment\.storeFile\)/);
   assert.match(generated, /release artifacts cannot use the Android debug certificate/);
   assert.match(generated, /getCertificate\(uploadSigningEnvironment\.keyAlias\)/);
   assert.match(generated, /configured keystore certificate does not match/);

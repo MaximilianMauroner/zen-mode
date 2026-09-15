@@ -2,7 +2,8 @@
 
 ## Source and scope
 
-- Branch: `fix/android-settings-safety-package-id`
+- Authoritative branch at final discovery: `main`
+- Source at final discovery: `9329c8039a7a1f5831e0eed60480ddb7fb1d7b8a`
 - Signing safeguard commits: `5e12dc56331ac73f329e12ad5163b5a5b3237158`
   and `40be1e431b9945ed8ae350cef933368abb22e35d`
 - Application ID: `com.lab4code.zenmode`
@@ -17,17 +18,22 @@ and the user EAS configuration directory were absent. GitHub Actions reported
 no repository secret names and no repository variables. The only repository
 keystore found was the generated, ignored `android/app/debug.keystore`.
 
-The authenticated EAS identity was `thearizztokrat` / `expo@relay.mauroner.eu`,
-but the read-only command ended with:
+The authenticated EAS identity is `thearizztokrat`. A read-only authenticated
+GraphQL query enumerated all three projects in that owner's account, with no
+pagination remaining:
 
-```text
-EAS project not configured. This command cannot configure it in non-interactive mode.
-```
+- `@thearizztokrat/moodinator`, whose Android credentials are associated with
+  `com.anonymous.moodinator`, `com.lab4code.moodinator`, and
+  `com.lab4code.moodinator.qa`;
+- `@thearizztokrat/orderly-mobile`, associated with `com.orderly.mobile`; and
+- `@thearizztokrat/voxtd-mobile`, associated with `com.voxtd.mobile`.
 
 Therefore approved Zen upload credentials are absent from the VM process,
-repository, and GitHub Actions configuration. Remote EAS credentials are not
-discoverable while this checkout has no project link; that is **not** evidence
-that no remote EAS project or credential exists.
+repository, GitHub Actions configuration, and the owner's complete EAS project
+inventory. There is no EAS project or Android credential associated with Zen
+Mode or `com.lab4code.zenmode`. The Moodinator keys are package-specific and
+must not be reused by assumption. The approved Fleet secrets reference contains
+Mauroner upload-service variables but no Zen or EAS signing values.
 
 ## Fail-closed checks
 
@@ -70,16 +76,19 @@ uploaded as the distributable APK.
 
 ## Exact remaining credential gate
 
-Before a production AAB or distributable APK can exist, the owner must do one
-of these through the approved secret/custody channel:
+Before a production AAB or distributable APK can exist, Max must explicitly
+authorize this app-specific EAS-managed setup:
 
-1. provide the already approved Zen upload keystore, alias, passwords, and
-   owner-verified SHA-256 certificate fingerprint; or
-2. provide an existing approved EAS project ID so it can be linked and its
-   existing Android credential inspected without creating a replacement.
+1. create `@thearizztokrat/zen-mode` and link it to this repository with the
+   exact Android application ID `com.lab4code.zenmode`;
+2. generate one new EAS-managed Android upload key for that package only, with
+   Max as custodian;
+3. export one owner-held encrypted recovery backup through a separately agreed
+   secure destination, never the repository or a public artifact service; and
+4. use that one credential for both the `0.1.5` AAB and matching APK, while
+   preserving version code `5` because no Play artifact has been uploaded.
 
-If neither exists, Max must explicitly authorize creation and name the
-custodian/backup location for a new upload key. Until that decision is made,
-the build must remain blocked. Once supplied, run the documented verified AAB
-workflow and a guarded `assembleRelease`, then verify package, version, APK
-SHA-256, and `apksigner --print-certs` output before the file-upload workflow.
+Creation, key export, and custody are intentionally blocked until that single
+approval is recorded. After approval, the build must still pass the repository's
+certificate verification plus package, version, debuggable, ABI, alignment,
+device-safety, source-correlation, and artifact-digest checks before upload.

@@ -12,7 +12,7 @@
       "icon": "./assets/images/refuge/icon.png"
     },
     "android": {
-      "package": "com.maxmauroner.zenmode",
+      "package": "com.lab4code.zenmode",
       "versionCode": 4,
       "allowBackup": false,
       "blockedPermissions": [

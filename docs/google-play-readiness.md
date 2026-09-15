@@ -8,7 +8,7 @@ current repository state. It does not publish or send anything externally.
 | Item | Evidence and implication |
 | --- | --- |
 | App name | `Zen Mode` in `app.json`. |
-| Android package | `com.maxmauroner.zenmode` in `app.json`; owner must confirm that this is the permanent Play package ID before the first upload. |
+| Android application ID | `com.lab4code.zenmode` in `app.json`; the owner selected it as the permanent Play package ID before the first upload. No Play app has been saved or created yet. |
 | Version | `1.0.3` with Android version code `4` in `app.json`; confirm code `4` exceeds every artifact previously uploaded, then increment it for each later upload. |
 | Protection target | Android only. Web checks the interface; iOS does not provide protection. |
 | Accessibility service | The native module declares `BIND_ACCESSIBILITY_SERVICE`, can retrieve window content, and receives window/content, click, and scroll events. The service is marked `isAccessibilityTool=false`. |
@@ -16,7 +16,7 @@ current repository state. It does not publish or send anything externally.
 | Supported browser probes | Chrome, Samsung Internet, Opera, and Firefox have package-specific address-bar adapters. Each remains unverified until its current stable normal/private modes pass on-device checks. |
 | Website rules | The adult-site switch is off by default. A small bundled hostname catalog and up to 100 user-added domains are matched locally. Visited addresses are not persisted. This is reactive accessibility enforcement, not network filtering. |
 | Other app rules | Launchable Android apps can receive daily, timed-visit, or rolling-window rules. Foreground package events are used to charge configured app rules. |
-| Package visibility | The module queries YouTube, Instagram, X, and launcher activities. `app.json` blocks unrelated storage and overlay permissions. Verify the merged release manifest. |
+| Package visibility | The module queries YouTube, Instagram, X, launcher activities, and exact Android Settings intents used to preserve the Accessibility escape path. Settings handlers are exempted only when Android identifies them as system or updated-system apps. `app.json` blocks unrelated storage and overlay permissions. Verify the merged release manifest. |
 | Build state | The generated release variant uses a debug key. Production upload signing and release automation are not configured. |
 
 ## Debug preview versus Play upload
@@ -31,6 +31,12 @@ release pipeline. Configure the release keystore or Play App Signing upload
 key, keep its recovery material with the owner, set a unique incrementing
 version code, and verify the final package and signature before upload. Do not
 upload an APK signed with the debug key.
+
+The new application ID does not replace an installed preview using
+`com.maxmauroner.zenmode`. Android treats `com.lab4code.zenmode` as a separate
+installation with separate local data. Do not uninstall or clear the old
+preview as part of release preparation; decide separately whether any local
+test data needs manual migration or retention.
 
 ## Release checklist
 
@@ -49,7 +55,7 @@ upload an APK signed with the debug key.
 - [ ] Decide who owns the keystore and Play upload key; back up recovery
       material securely.
 - [ ] Set the release version code and version name. Confirm the package in the
-      built manifest is `com.maxmauroner.zenmode`.
+      built manifest is `com.lab4code.zenmode`.
 - [ ] Inspect the merged release manifest. Confirm the accessibility service is
       present and no unwanted debug, storage, overlay, or broad package-query
       permissions were added.
@@ -65,6 +71,12 @@ upload an APK signed with the debug key.
       already enabled. The service now requires current native consent before
       event, timer, usage, overlay, or navigation processing; unit coverage is
       present, but the real upgrade journey is still required.
+- [ ] On a device with daily, timed-visit, and rolling rules saved for the
+      resolved Settings package, confirm Android Settings never appears in the
+      app picker and remains reachable without an overlay or Home navigation.
+      Repeat while the in-app settings lock is active, then disable the service
+      from Accessibility settings. Unit coverage is present; this native escape
+      path still requires device evidence.
 - [ ] When the accessibility disclosure changes, bump both
       `CONSENT_VERSION` in `src/features/protection/setup-policy.ts` and
       `CURRENT_VERSION` in the native `ConsentPolicy.kt` in the same release.
@@ -156,9 +168,14 @@ and 1 minute for timed visits where available.
     still work, while disabling a rule, removing a domain or app rule, or
     increasing an allowance is refused. Request unlock and confirm the UI says
     it cannot open before the cooling-off period and lock expiry.
-12. Disable the Accessibility service or pause protection in Android settings.
-    Confirm saved rules remain visible but no longer enforce. Re-enable access
-    and protection, then repeat one feed check.
+12. Confirm Android Settings is absent from the app picker. Seed or retain stale
+    daily, timed-visit, and rolling rules for its resolved package, then open
+    Accessibility settings while protection and the in-app settings lock are
+    active. Confirm no overlay, timer, or navigation sends the user Home, and
+    disable the service successfully.
+13. Return to Zen Mode and confirm saved rules remain visible but no longer
+    enforce. Re-enable Accessibility access and protection, then repeat one
+    feed check.
 
 ### Capture procedure
 
@@ -182,11 +199,11 @@ for final store media.
 
 These items cannot be completed from the repository:
 
-- permanent package ID and Play developer account identity;
+- Play developer account identity and completion of the unsaved app-creation form;
 - owner approval of the bundled adult-site catalog, its review source, and its
   release update policy;
 - support URL and public privacy policy URL (support email is
-  `lab4code.dev@gmail.com`);
+  `support@lab4code.com`);
 - Accessibility API and Data safety declarations approved by the owner;
 - release keystore, Play App Signing/upload-key ownership, and build pipeline;
 - supported Android API/device and third-party app-version matrix;

@@ -9,7 +9,7 @@ approve the wording before publication.
 
 - Developer or legal entity: `[OWNER INPUT]`
 - Privacy policy effective date: `[OWNER INPUT]`
-- Privacy contact and support email: `lab4code.dev@gmail.com`
+- Privacy contact and support email: `support@lab4code.com`
 - Public support URL: `[OWNER INPUT]`
 - Applicable jurisdiction and controller details: `[OWNER INPUT]`
 
@@ -52,6 +52,12 @@ usage, and detection summaries are stored instead of visited addresses or screen
 text. The owner must confirm that this remains true for the final binary and all
 included SDKs.
 
+If the user opens Send feedback, Zen Mode opens an editable issue draft on
+GitHub with the app version and platform in the URL. GitHub receives those
+details when the draft opens. Nothing is submitted automatically; if the user
+submits the issue, its contents are public. The owner must review GitHub's role
+and the final disclosure before approving this policy.
+
 ## How the information is used
 
 Zen Mode uses this information only to:
@@ -74,6 +80,9 @@ No app-owned service receives the information listed above in the audited
 source, and the source has no sale or sharing path. The owner must confirm the
 business practice, final SDK list, Android platform behavior, and any Play
 Console declarations before publishing this section.
+
+The optional feedback action sends the app version and platform to GitHub when
+the issue draft opens. A submitted issue and any text the user adds are public.
 
 ## Local storage and retention
 
@@ -133,7 +142,7 @@ signing settings before publication.
 
 ## Contact and changes
 
-For privacy questions or requests, contact `lab4code.dev@gmail.com`. For policy
+For privacy questions or requests, contact `support@lab4code.com`. For policy
 updates, the owner should publish the new effective date and explain the change
 at the public privacy policy URL.
 

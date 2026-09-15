@@ -19,7 +19,8 @@ export default function PrivacyScreen() {
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-[18px] font-semibold text-copy">Your controls</Text>
         <Text className="text-[14px] leading-[21px] text-muted">You can turn off Zen Mode in Android Accessibility settings at any time. Clear storage for Zen Mode in Android settings or uninstall it to remove its local data. Zen Mode opts out of Android cloud backup. Device-to-device transfer behavior can still depend on the device manufacturer.</Text>
-        <Text className="text-[14px] leading-[21px] text-muted">Privacy and support: lab4code.dev@gmail.com</Text>
+        <Text className="text-[14px] leading-[21px] text-muted">Opening Send feedback creates an editable GitHub issue draft and sends the app version and platform to GitHub. Nothing is submitted until you choose to submit it. Submitted issues and their contents are public.</Text>
+        <Text className="text-[14px] leading-[21px] text-muted">Privacy and support: support@lab4code.com</Text>
       </View>
     </Screen>
   );

@@ -8,8 +8,8 @@ it in Play Console.
 | Field | Draft or status |
 | --- | --- |
 | App name | `Zen Mode` |
-| Current Android package | `com.maxmauroner.zenmode`; owner must confirm this is the permanent package ID. |
-| Support email | `lab4code.dev@gmail.com` |
+| Android application ID | `com.lab4code.zenmode`; selected as the permanent Google Play package ID. |
+| Support email | `support@lab4code.com` |
 | Category, countries, price, support URL, and other contact details | Owner input required |
 
 ### Short description
@@ -59,7 +59,7 @@ X, and Android are third-party products and are not affiliated with Zen Mode.
 - Final phone screenshots from the signed Android candidate, with personal
   account data and notifications removed.
 - An optional promo video, if the owner chooses to provide one.
-- Use `lab4code.dev@gmail.com` as the support email. Final support and privacy
+- Use `support@lab4code.com` as the support email. Final support and privacy
   policy URLs still require owner input.
 - Final category, content rating, target audience, countries, and pricing.
 

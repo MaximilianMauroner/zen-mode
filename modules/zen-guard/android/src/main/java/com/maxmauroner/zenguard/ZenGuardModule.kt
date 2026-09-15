@@ -78,16 +78,17 @@ class ZenGuardModule : Module() {
       context.startActivity(intent)
     }
 
-    /** Launchable apps, so the limiter can offer a picker. Excludes Zen Mode itself. */
+    /** Launchable apps, excluding Zen Mode and the system Settings escape path. */
     AsyncFunction("getInstalledApps") {
       val context = requireNotNull(appContext.reactContext)
       val packageManager = context.packageManager
+      val appRuleSafety = AppRuleSafety.resolve(context)
       val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
       packageManager.queryIntentActivities(launcher, 0)
         .asSequence()
         .map { it.activityInfo.packageName }
         .distinct()
-        .filter { it != context.packageName }
+        .filterNot(appRuleSafety::isExempt)
         .map { packageName ->
           mapOf(
             "packageName" to packageName,
@@ -116,6 +117,7 @@ class ZenGuardModule : Module() {
     AsyncFunction("setAppLimit") { packageName: String, minutes: Int ->
       require(minutes in 1..480) { "A daily limit must be between 1 and 480 minutes" }
       val context = requireNotNull(appContext.reactContext)
+      require(!AppRuleSafety.resolve(context).isExempt(packageName)) { RULE_EXEMPT_MESSAGE }
       AppLimitStore(context).setLimit(packageName, minutes)
     }
 
@@ -140,6 +142,7 @@ class ZenGuardModule : Module() {
 
     AsyncFunction("setIntentApp") { packageName: String, sessionMinutes: Int, cooldownMinutes: Int ->
       val context = requireNotNull(appContext.reactContext)
+      require(!AppRuleSafety.resolve(context).isExempt(packageName)) { RULE_EXEMPT_MESSAGE }
       IntentAppStore(context).setIntent(packageName, sessionMinutes, cooldownMinutes)
     }
 
@@ -166,6 +169,7 @@ class ZenGuardModule : Module() {
 
     AsyncFunction("setRollingLimit") { packageName: String, allowanceMinutes: Int, windowMinutes: Int ->
       val context = requireNotNull(appContext.reactContext)
+      require(!AppRuleSafety.resolve(context).isExempt(packageName)) { RULE_EXEMPT_MESSAGE }
       RollingLimitStore(context).setRule(packageName, allowanceMinutes, windowMinutes)
     }
 
@@ -301,6 +305,7 @@ class ZenGuardModule : Module() {
   }
 
   companion object {
+    private const val RULE_EXEMPT_MESSAGE = "Zen Mode and Android Settings cannot have app rules"
     private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
     private const val REQUIRED_INSTAGRAM_SIGNALS = 3
     private const val BROWSER_CHECK_URL = "https://example.com"

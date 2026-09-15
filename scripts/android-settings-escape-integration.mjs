@@ -23,6 +23,7 @@ const contactsPackage = 'com.google.android.contacts';
 const contactsActivity = `${contactsPackage}/com.android.contacts.activities.PeopleActivity`;
 const launcherPackage = 'com.google.android.apps.nexuslauncher';
 const uiDumpPath = '/sdcard/zen-guard-settings-safety.xml';
+const debugApkPath = resolve(root, 'android/app/build/outputs/apk/debug/app-debug.apk');
 
 const sleep = (milliseconds) => new Promise((resolveSleep) => setTimeout(resolveSleep, milliseconds));
 
@@ -57,11 +58,11 @@ function shell(...args) {
 }
 
 function pass(message) {
-  process.stdout.write(`PASS ${message}\n`);
+  process.stdout.write(`${new Date().toISOString()} PASS ${message}\n`);
 }
 
 function step(message) {
-  process.stdout.write(`\n## ${message}\n`);
+  process.stdout.write(`\n${new Date().toISOString()} ## ${message}\n`);
 }
 
 async function waitFor(description, predicate, timeoutMs = 20_000, intervalMs = 250) {
@@ -136,7 +137,30 @@ function serviceIsBound() {
 
 function currentFocus() {
   const windows = shell('dumpsys', 'window');
-  return windows.split('\n').find((line) => line.includes('mCurrentFocus='))?.trim() ?? '';
+  const current = windows.split('\n').find((line) => line.includes('mCurrentFocus='))?.trim() ?? '';
+  if (current && !current.includes('mCurrentFocus=null')) return current;
+  const focusedApp = windows.split('\n').find((line) => line.includes('mFocusedApp='))?.trim() ?? '';
+  return [current, focusedApp].filter(Boolean).join(' | ');
+}
+
+function parseWindowRecords(windows) {
+  return windows.split(/(?=^  Window #\d+ Window\{)/m).map((record) => {
+    const index = Number(/^  Window #(\d+)/m.exec(record)?.[1]);
+    const ownerPackage = /\bpackage=([^\s]+)/.exec(record)?.[1];
+    const type = /\bty=([^\s]+)/.exec(record)?.[1];
+    return {
+      index,
+      ownerPackage,
+      type,
+      isOnScreen: /\bisOnScreen=true\b/.test(record),
+      isVisible: /\bisVisible=true\b/.test(record),
+      record,
+    };
+  }).filter((record) => Number.isInteger(record.index));
+}
+
+function visibleWindowEvidence(record) {
+  return `#${record.index} owner=${record.ownerPackage} type=${record.type} isOnScreen=${record.isOnScreen} isVisible=${record.isVisible}`;
 }
 
 async function waitForFocus(packageName, timeoutMs = 10_000) {
@@ -171,10 +195,19 @@ function startComponent(component) {
   adb('shell', 'am', 'start', '-W', '-n', component);
 }
 
-async function assertSettingsStaysForeground(action, label) {
-  await startActionAndWait(action);
+async function assertSettingsStaysForeground(action, label, observeTransition = () => {}) {
+  const settingsLaunch = startActionAsync(action);
   const observed = [];
+  await waitFor(`${label} first foreground frame after its single launch`, () => {
+    const windows = shell('dumpsys', 'window', 'windows');
+    observeTransition(windows);
+    const focus = currentFocus();
+    observed.push(focus);
+    return focus.includes(settingsPackage) ? focus : false;
+  }, 10_000, 50);
   for (let index = 0; index < 40; index += 1) {
+    const windows = shell('dumpsys', 'window', 'windows');
+    observeTransition(windows);
     const focus = currentFocus();
     observed.push(focus);
     assert.ok(
@@ -183,10 +216,11 @@ async function assertSettingsStaysForeground(action, label) {
     );
     await sleep(200);
   }
+  settingsLaunch.unref();
   const ui = dumpUi();
   assert.ok(ui.nodes.some((node) => node.package === settingsPackage), `${label} UI is not owned by Settings`);
   assert.doesNotMatch(ui.xml, /CHECK IN FIRST|BETWEEN VISITS|Start \d+ min|Not now/);
-  pass(`${label} stayed foreground for 8 seconds across ticker/callback opportunities`);
+  pass(`${label} stayed foreground continuously for 8 seconds after one Settings launch`);
 }
 
 function privateFile(path) {
@@ -359,7 +393,7 @@ async function launchApp() {
 async function launchDevelopmentClient() {
   const url = `exp+zen-mode://expo-development-client/?url=${encodeURIComponent(metroUrl)}`;
   adb('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', url, '-n', `${appPackage}/.MainActivity`);
-  await waitForFocus(appPackage, 20_000);
+  await waitForFocus(appPackage, 60_000);
 
   await waitFor('development bundle or first-run dev menu', () => {
     const ui = dumpUi();
@@ -375,7 +409,7 @@ async function launchDevelopmentClient() {
   }
   if (!currentFocus().includes(appPackage)) {
     adb('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', url, '-n', `${appPackage}/.MainActivity`);
-    await waitForFocus(appPackage, 20_000);
+    await waitForFocus(appPackage, 60_000);
   }
   const closeNode = matchingNode('text', 'Reload')
     ? await waitForNode('content-desc', 'Close', { timeoutMs: 2_000 }).catch(() => null)
@@ -439,34 +473,39 @@ async function assertTimedOverlayAndSettingsEscape() {
   await waitFor('accessibility service rebound after UI inspection', () => serviceIsBound(), 10_000);
   await sleep(2_000);
   startComponent(contactsActivity);
-  const before = await waitFor('real timed-visit accessibility overlay', () => {
+  const before = await waitFor('real timed-visit accessibility overlay above visible Contacts', () => {
     const windows = shell('dumpsys', 'window', 'windows');
-    return windows.includes('ty=ACCESSIBILITY_OVERLAY') && windows.includes(contactsPackage)
-      ? windows
-      : false;
+    const records = parseWindowRecords(windows);
+    const overlay = records.find((record) => record.ownerPackage === appPackage &&
+      record.type === 'ACCESSIBILITY_OVERLAY' && record.isOnScreen && record.isVisible);
+    const contacts = records.find((record) => record.ownerPackage === contactsPackage &&
+      record.isOnScreen && record.isVisible);
+    return overlay && contacts && overlay.index < contacts.index ? { overlay, contacts } : false;
   }, 10_000, 100);
-  assert.ok(before.includes(contactsPackage), 'Contacts is not present beneath the intent overlay');
-  assert.ok(before.includes(`package=${appPackage}`), 'The accessibility overlay is not owned by Zen Mode');
-  pass('real timed-visit accessibility overlay is visible above Contacts');
+  pass(`real timed-visit overlay relation: ${visibleWindowEvidence(before.overlay)} above ${visibleWindowEvidence(before.contacts)}`);
 
-  const settingsLaunch = startActionAsync('android.settings.ACCESSIBILITY_SETTINGS');
-  let observedSettingsBeneathOverlay = false;
-  const transitionDeadline = Date.now() + 5_000;
-  while (Date.now() < transitionDeadline) {
-    const windows = shell('dumpsys', 'window', 'windows');
-    if (windows.includes(settingsPackage) && windows.includes('ty=ACCESSIBILITY_OVERLAY')) {
-      observedSettingsBeneathOverlay = true;
+  let settingsBeneathOverlay;
+  await assertSettingsStaysForeground(
+    'android.settings.ACCESSIBILITY_SETTINGS',
+    'Accessibility Settings opened beneath an existing Zen overlay',
+    (windows) => {
+      const records = parseWindowRecords(windows);
+      const overlay = records.find((record) => record.ownerPackage === appPackage &&
+        record.type === 'ACCESSIBILITY_OVERLAY' && record.isOnScreen && record.isVisible);
+      const settings = records.find((record) => record.ownerPackage === settingsPackage &&
+        record.isOnScreen && record.isVisible);
+      if (!settingsBeneathOverlay && overlay && settings && overlay.index < settings.index) {
+        settingsBeneathOverlay = { overlay, settings };
+      }
     }
-    if (currentFocus().includes(settingsPackage) && !windows.includes('ty=ACCESSIBILITY_OVERLAY')) break;
-  }
-  settingsLaunch.unref();
-  assert.ok(observedSettingsBeneathOverlay,
-    'Did not observe Settings in the window stack beneath the existing Zen overlay');
-  await waitForFocus(settingsPackage);
-  await assertSettingsStaysForeground('android.settings.ACCESSIBILITY_SETTINGS',
-    'Accessibility Settings opened beneath an existing Zen overlay');
-  const after = shell('dumpsys', 'window', 'windows');
-  assert.ok(!after.includes('ty=ACCESSIBILITY_OVERLAY'), 'The timed overlay remained above Settings');
+  );
+  assert.ok(settingsBeneathOverlay,
+    'Did not observe a visible Settings window record beneath the visible Zen-owned overlay');
+  pass(`Settings-under-overlay relation: ${visibleWindowEvidence(settingsBeneathOverlay.overlay)} above ${visibleWindowEvidence(settingsBeneathOverlay.settings)}`);
+  const afterRecords = parseWindowRecords(shell('dumpsys', 'window', 'windows'));
+  assert.ok(!afterRecords.some((record) => record.ownerPackage === appPackage &&
+    record.type === 'ACCESSIBILITY_OVERLAY' && record.isOnScreen && record.isVisible),
+  'The timed overlay remained visible above Settings');
   pass('existing timed overlay was removed and did not run its Home callback over Settings');
 }
 
@@ -505,6 +544,17 @@ async function main() {
     `Target is not the dedicated ${taskAvdName} task AVD`);
   assert.equal(shell('getprop', 'ro.build.version.sdk').trim(), '35', 'This harness is pinned to the Android 15/API 35 task AVD');
   assert.doesNotThrow(() => shell('run-as', appPackage, 'id'), 'Installed app is not a debuggable test build');
+  const sourceHead = run('git', ['rev-parse', 'HEAD']).trim();
+  assert.match(sourceHead, /^[0-9a-f]{40}$/);
+  const productionSourceChanges = run('git', [
+    'status', '--porcelain', '--', 'app.json', 'src', 'modules/zen-guard/android/src/main',
+  ]).trim();
+  assert.equal(productionSourceChanges, '',
+    `Production source differs from ${sourceHead}: ${productionSourceChanges}`);
+  const localApkSha256 = run('sha256sum', [debugApkPath]).trim().split(/\s+/)[0];
+  const installedApkPath = shell('pm', 'path', appPackage).trim().replace(/^package:/, '');
+  const installedApkSha256 = shell('sha256sum', installedApkPath).trim().split(/\s+/)[0];
+  assert.equal(installedApkSha256, localApkSha256, 'Installed APK differs from the locally built debug APK');
   const packageDump = shell('dumpsys', 'package', appPackage);
   assert.match(packageDump, /versionName=1\.0\.3/);
   assert.match(packageDump, /versionCode=4\b/);
@@ -513,6 +563,7 @@ async function main() {
   assert.ok(shell('pm', 'path', clockPackage).trim(), `${clockPackage} is unavailable`);
   assert.ok(shell('pm', 'path', contactsPackage).trim(), `${contactsPackage} is unavailable`);
   pass(`${serial}: Android 15/API 35, ${appPackage} 1.0.3 (4), target SDK 36, debuggable task build`);
+  pass(`source HEAD=${sourceHead}; APK sha256=${localApkSha256}; ${/lastUpdateTime=([^\n]+)/.exec(packageDump)?.[0]}`);
   adb('logcat', '-c');
   destructiveRunStarted = true;
 

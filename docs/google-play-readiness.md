@@ -62,6 +62,11 @@ test data needs manual migration or retention.
 - [ ] Install and test the exact signed candidate. Check that debug-only
       diagnostics are absent; Instagram trace and blocker diagnostics are gated
       by the debug build flag.
+- [ ] Retest the unattributed React Native/Fabric SIGSEGV seen during repeated
+      force-stop/relaunch cycles of the API 35 development client. It reproduced
+      during one bounded attempt on 2026-09-15 before a subsequent run passed;
+      that does not establish a cause or prove it harmless in a release
+      candidate.
 - [ ] Verify the AAB signature and contents with the release toolchain. Keep the
       debug APK and preview APK out of Play uploads.
 

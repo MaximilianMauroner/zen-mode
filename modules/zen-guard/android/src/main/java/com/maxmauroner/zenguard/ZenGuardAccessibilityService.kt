@@ -1,7 +1,12 @@
 package com.maxmauroner.zenguard
 
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -41,12 +46,24 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   private lateinit var intentOverlay: IntentOverlay
   private lateinit var adultSiteStore: AdultSiteRuleStore
   private lateinit var adultSiteOverlay: AdultSiteBlockerOverlay
+  private lateinit var homeFeedStatusStore: HomeFeedStatusStore
   private val browserHandler = Handler(Looper.getMainLooper())
   private var lastExternalPackage: String? = null
   private val usageTracker = AppUsageTracker()
   private val usageHandler = Handler(Looper.getMainLooper())
   private var lastLimitToastAtMs = 0L
   private var currentForegroundPackage: String? = null
+  private var screenReceiverRegistered = false
+  private val screenStateReceiver = object : BroadcastReceiver() {
+    override fun onReceive(context: Context?, intent: Intent?) {
+      if (intent?.action != Intent.ACTION_SCREEN_OFF || !hasActiveProtection()) return
+      val nowMs = SystemClock.elapsedRealtime()
+      xStateMachine.pause(nowMs, xSettings())
+      instagramStateMachine.onAppBackground(nowMs, preferences.instagramSettings())
+      publishXHomeStatus()
+      publishInstagramHomeStatus()
+    }
+  }
 
   /**
    * Banks foreground time every [USAGE_TICK_MS] so a long uninterrupted session
@@ -77,6 +94,17 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     intentOverlay = IntentOverlay(this)
     adultSiteStore = AdultSiteRuleStore(this)
     adultSiteOverlay = AdultSiteBlockerOverlay(this)
+    homeFeedStatusStore = HomeFeedStatusStore(this)
+    publishXHomeStatus()
+    publishInstagramHomeStatus()
+    val screenFilter = IntentFilter(Intent.ACTION_SCREEN_OFF)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      registerReceiver(screenStateReceiver, screenFilter, Context.RECEIVER_NOT_EXPORTED)
+    } else {
+      @Suppress("DEPRECATION")
+      registerReceiver(screenStateReceiver, screenFilter)
+    }
+    screenReceiverRegistered = true
     usageHandler.postDelayed(usageTicker, USAGE_TICK_MS)
     xOverlay = XBreakOverlay(this) {
       if (hasActiveProtection()) {
@@ -144,6 +172,14 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     // content events; treating them as an external app would immediately remove the blocker.
     val eventPackage = event.packageName?.toString()
     if (eventPackage == packageName) {
+      if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+        if (windows.none { it.root?.packageName?.toString() == X_PACKAGE }) {
+          clearXEnforcement(preserveHomeLockout = true)
+        }
+        if (windows.none { it.root?.packageName?.toString() == INSTAGRAM_PACKAGE }) {
+          clearInstagramEnforcement(preserveHomeSession = true)
+        }
+      }
       if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
         windows.none { BrowserUrlDetector.supports(it.root?.packageName?.toString()) }
       ) clearAdultSiteEnforcement()
@@ -163,12 +199,12 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     when (eventPackage) {
       YOUTUBE_PACKAGE -> {
         instagramNavigationSuppressedUntilMs = 0L
-        clearInstagramEnforcement()
+        clearInstagramEnforcement(preserveHomeSession = true)
         handleYouTubeEvent()
       }
       INSTAGRAM_PACKAGE -> handleInstagramEvent(event)
       X_PACKAGE -> {
-        clearInstagramEnforcement()
+        clearInstagramEnforcement(preserveHomeSession = true)
         handleXEvent(event)
       }
       else -> handleNonInstagramEvent(event)
@@ -367,8 +403,9 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   }
 
   private fun clearXEnforcement(preserveHomeLockout: Boolean = false) {
-    if (preserveHomeLockout) xStateMachine.pause() else xStateMachine.reset()
+    if (preserveHomeLockout) xStateMachine.pause(SystemClock.elapsedRealtime(), xSettings()) else xStateMachine.reset()
     if (::xOverlay.isInitialized) xOverlay.hide()
+    publishXHomeStatus()
   }
 
   /** One-second ticks count a still Home feed; events identify only the full-screen video pager. */
@@ -389,9 +426,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     val source = event?.source
     val advanced = pager != null && event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED &&
       source != null && isXVideoPager(source) && event.scrollY > 0
-    val action = xStateMachine.next(surface, SystemClock.elapsedRealtime(), XSettings(
-      preferences.xHomeEnabled, preferences.xVideosEnabled, preferences.xHomeMinutes * 60_000L,
-    ), advanced)
+    val action = xStateMachine.next(surface, SystemClock.elapsedRealtime(), xSettings(), advanced)
     when (action) {
       XAction.HOME_BREAK -> xOverlay.show(preferences.xHomeMinutes)
       XAction.LEAVE_VIDEO -> {
@@ -410,6 +445,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
       }
       XAction.NONE -> if (surface != XSurface.UNKNOWN) xOverlay.hide()
     }
+    if (action == XAction.HOME_BREAK) publishXHomeStatus()
   }
 
   /** X's observed pager is the full-screen scroll node two levels under VideoTab. */
@@ -446,7 +482,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     }
     if (!instagramWindowVisible) {
       instagramNavigationSuppressedUntilMs = 0L
-      clearInstagramEnforcement()
+      clearInstagramEnforcement(preserveHomeSession = true)
     }
   }
 
@@ -576,6 +612,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
         }
       }
     }
+    if (action is InstagramGuardAction.ShowBlocker) publishInstagramHomeStatus()
   }
 
   override fun onInterrupt() {
@@ -607,6 +644,10 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     usageHandler.removeCallbacksAndMessages(null)
     if (::intentOverlay.isInitialized) intentOverlay.hide()
     clearInstagramEnforcement()
+    if (screenReceiverRegistered) {
+      unregisterReceiver(screenStateReceiver)
+      screenReceiverRegistered = false
+    }
     super.onDestroy()
   }
 
@@ -615,13 +656,40 @@ class ZenGuardAccessibilityService : AccessibilityService() {
 
   private fun clearInstagramEnforcement(preserveHomeSession: Boolean = false) {
     if (preserveHomeSession) {
-      instagramStateMachine.onAppBackground()
+      instagramStateMachine.onAppBackground(SystemClock.elapsedRealtime(), preferences.instagramSettings())
     } else {
       instagramStateMachine.onSurfaceLost()
     }
     instagramBlockReason = null
     if (::instagramOverlay.isInitialized) instagramOverlay.hide()
+    publishInstagramHomeStatus()
   }
+
+  private fun publishInstagramHomeStatus() {
+    if (!::homeFeedStatusStore.isInitialized) return
+    val nowElapsedMs = SystemClock.elapsedRealtime()
+    val runtime = instagramStateMachine.homeRuntimeState(nowElapsedMs)
+    homeFeedStatusStore.recordInstagram(
+      usedMs = runtime.usedMs,
+      blockedUntilElapsedMs = runtime.blockedUntilElapsedMs,
+    )
+  }
+
+  private fun publishXHomeStatus() {
+    if (!::homeFeedStatusStore.isInitialized) return
+    val nowElapsedMs = SystemClock.elapsedRealtime()
+    val runtime = xStateMachine.homeRuntimeState(nowElapsedMs)
+    homeFeedStatusStore.recordX(
+      usedMs = runtime.usedMs,
+      blockedUntilElapsedMs = runtime.blockedUntilElapsedMs,
+    )
+  }
+
+  private fun xSettings() = XSettings(
+    homeEnabled = preferences.xHomeEnabled,
+    videosEnabled = preferences.xVideosEnabled,
+    homeAllowanceMs = preferences.xHomeMinutes * 60_000L,
+  )
 
   private fun hasActiveProtection(): Boolean =
     ::preferences.isInitialized && preferences.hasCurrentConsent && preferences.protectionEnabled

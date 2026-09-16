@@ -105,5 +105,8 @@ The repository environment-variable names above describe the fields needed by
 the fail-closed local build. Secret values remain exclusively in approved
 secret storage.
 
-The first verified 0.1.5 artifacts and signed-candidate device evidence are
-recorded in `docs/evidence/android-release-candidate-0.1.5-20260916.md`.
+The first verified 0.1.5/code-5 artifacts and device evidence are recorded in
+`docs/evidence/android-release-candidate-0.1.5-20260916.md`. The corrected
+Italy-wording code-6 artifacts and their source/build audit are recorded in
+`docs/evidence/android-release-candidate-0.1.5-vc6-20260916.md`; exact code-6
+device testing remains an owner task.

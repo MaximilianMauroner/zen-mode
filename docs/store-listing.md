@@ -17,7 +17,7 @@ parent-managed; this file does not record a submission or rollout.
 | Target ages | `13–15`, `16–17`, and `18+`; explicitly approved |
 | Content ratings | IARC `PEGI 3` / `ESRB Everyone`, saved in Console |
 | Ads and app access | No ads or AD_ID; no account or reviewer credentials required |
-| Countries and initial release/testing track | Owner decision still required |
+| Countries and initial release/testing track | Internal testing draft release 1 is saved on track `4700894893507986209`; countries and any rollout remain owner decisions. |
 
 ### Short description
 
@@ -68,8 +68,8 @@ X, and Android are third-party products and are not affiliated with Zen Mode.
 - An optional promo video, if the owner chooses to provide one.
 - Use `support@lab4code.com`, the repository website, and the public privacy
   policy URL above.
-- Confirm countries and the approved initial testing/release track before
-  making the listing available.
+- Confirm countries and explicitly authorize any rollout before making the
+  listing available. The saved Internal draft is not a rollout authorization.
 
 See Google's [preview asset requirements](https://support.google.com/googleplay/android-developer/answer/9866151)
 for the current Play Console fields and file rules.

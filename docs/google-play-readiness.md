@@ -10,7 +10,7 @@ current repository state. It does not publish or send anything externally.
 | App name | `Zen Mode` in `app.json`. |
 | Play app | Console app `4973526737842711493`, personal developer `6468274858330069554`; Console changes are maintained separately from this repository. |
 | Android application ID | `com.lab4code.zenmode` in `app.json`; the owner selected it as the permanent Play package ID and the Console app has been created with it. |
-| Version | `0.1.5` with Android version code `5` in `app.json`; its AAB upload to the Play Internal draft is processing, but is not yet confirmed accepted or saved. Increment the code for every later upload. |
+| Version | `0.1.5` with Android version code `5` in `app.json`; Google Play accepted and saved its AAB as Internal testing draft release 1 on track `4700894893507986209`. No rollout was started. Increment the code for every later upload. |
 | Protection target | Android only. Web checks the interface; iOS does not provide protection. |
 | Accessibility service | The native module declares `BIND_ACCESSIBILITY_SERVICE`, can retrieve window content, and receives window/content, click, and scroll events. The service is marked `isAccessibilityTool=false`. |
 | Supported feed surfaces | YouTube Shorts; Instagram Reels, Home, Explore, and Direct Messages for setup/provenance; X Home and video viewer. X support is for the Android app package, not the browser. |
@@ -61,8 +61,10 @@ test data needs manual migration or retention.
       `.aab` only when all external upload-key values and its approved
       certificate fingerprint are supplied.
 - [ ] Export the approved owner-held encrypted recovery backup for the
-      EAS-managed Zen upload key through a secure owner destination. Max is the
-      approved custodian; EAS currently holds the managed primary copy.
+      EAS-managed Zen upload key to the parent's Proton Pass destination using
+      [the recovery procedure](android-release-signing.md#proton-pass-recovery-backup).
+      Max is the approved custodian; EAS currently holds the managed primary
+      copy. Do not export until the parent has the private destination ready.
 - [x] Set the release version code and version name. Confirm the package in the
       built manifest is `com.lab4code.zenmode`.
 - [x] Inspect the merged release manifest. Confirm the accessibility service is
@@ -239,13 +241,12 @@ These items cannot be completed from the repository:
   release update policy;
 - final Data safety classification of the optional GitHub feedback URL and
   submission of Data safety/Accessibility forms by the Console operator;
-- owner-held encrypted upload-key recovery backup and Play App Signing
-  enrollment/verification in Console; the app-specific EAS-managed upload key,
-  Max custody decision, and approved certificate fingerprint are complete;
-- confirmation that the processing Internal draft upload was accepted and
-  saved, followed by installation of a Play-generated split APK set and
-  verification of its Play App Signing identity and restricted-settings
-  behavior;
+- export of the owner-held encrypted upload-key recovery backup to the parent's
+  prepared Proton Pass destination and Play App Signing verification in
+  Console; the app-specific EAS-managed upload key, Max custody decision,
+  approved certificate fingerprint, and saved Internal draft are complete;
+- installation of a Play-generated split APK set and verification of its Play
+  App Signing identity and restricted-settings behavior;
 - supported Android API/device and third-party app-version matrix;
 - reviewer setup or test-account instructions, if required;
 - exact production-signed candidate correlation for the reported physical-device

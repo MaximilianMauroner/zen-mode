@@ -59,9 +59,39 @@ After owner approval, the app-specific `@thearizztokrat/zen-mode` EAS project
 was created and linked with one new EAS-managed upload key used only for
 `com.lab4code.zenmode`. Max is the approved custodian. The managed primary copy
 exists in EAS; the separate owner-held encrypted recovery backup remains
-pending an approved secure destination. Never send that backup through the
-public artifact uploader or chat. A debug APK or any older test-signed release
-APK is not a substitute for this workflow and must not be uploaded.
+pending export to the owner's Proton Pass destination. Never send that backup
+through the public artifact uploader or chat. A debug APK or any older
+test-signed release APK is not a substitute for this workflow and must not be
+uploaded.
+
+## Proton Pass recovery backup
+
+The parent owns the Proton Pass and EAS credential UI. Do not export until the
+parent has created the intended private Proton Pass vault/item and confirmed
+that file attachments are available there. On the parent's trusted workstation:
+
+1. Open the linked `@thearizztokrat/zen-mode` Android credentials with
+   `eas credentials -p android` and choose the existing production keystore.
+   Select the download/export action; do not generate, replace, or rotate it.
+2. Write the keystore only to a newly created, owner-readable temporary
+   directory. Do not print passwords, shell-trace the command, paste its output
+   into chat, or use the public file uploader.
+3. Create a dedicated Proton Pass item for Zen Mode and attach the keystore.
+   Record the package, EAS owner/project slug and project ID, credential and
+   keystore IDs, keystore password, key alias, key password, upload-certificate
+   SHA-256 and SHA-1 fingerprints, export date, custodian, and recovery notes.
+4. Compare the exported alias certificate fingerprint with the independently
+   approved upload-certificate fingerprint already recorded in the candidate
+   evidence. A mismatch stops the procedure; it is not permission to replace a
+   credential.
+5. After the parent confirms the Proton Pass attachment and fields can be
+   recovered, securely delete the temporary keystore and any secret-bearing
+   terminal transcript. Keep only non-secret verification metadata in release
+   records.
+
+The repository environment-variable names above describe the fields needed by
+the fail-closed local build. Secret values remain exclusively in approved
+secret storage.
 
 The first verified 0.1.5 artifacts and signed-candidate device evidence are
 recorded in `docs/evidence/android-release-candidate-0.1.5-20260916.md`.

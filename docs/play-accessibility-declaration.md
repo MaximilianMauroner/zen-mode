@@ -4,6 +4,13 @@ Prepared for Play app `4973526737842711493`, package
 `com.lab4code.zenmode`. This text is reviewer material, not a declaration that
 has been submitted or accepted by Google Play.
 
+Candidate correlation: the uploaded artifact is Zen Mode `0.1.5` (version code
+`5`), built from packaged source
+`2134dc8e4743925751501e1fdaa28f5ac8599d77`. Its AAB SHA-256 is
+`150d5504e0af96ccf4534cdeb7a16abeca5fc900ef44f99be52967cf179a4387`.
+Google Play accepted and saved it as Internal testing draft release 1 on track
+`4700894893507986209`; no rollout was started.
+
 ## Is this an accessibility tool?
 
 No. Zen Mode declares `android:isAccessibilityTool="false"`. It is a
@@ -13,7 +20,9 @@ user-configured focus and screen-time tool, not a disability-support service.
 
 Zen Mode uses Android AccessibilityService after prominent in-app disclosure,
 affirmative consent, and the user's separate approval in Android Settings. The
-service enables these user-selected features:
+uploaded candidate records disclosure/consent version `3`; its native service
+refuses protection and event, timer, usage, overlay, and navigation processing
+without current consent. The service enables these user-selected features:
 
 - recognize supported YouTube Shorts, Instagram Reels/Home/Explore, and X
   Home/video surfaces and apply the configured feed boundary;

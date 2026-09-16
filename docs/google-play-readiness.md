@@ -10,7 +10,7 @@ current repository state. It does not publish or send anything externally.
 | App name | `Zen Mode` in `app.json`. |
 | Play app | Console app `4973526737842711493`, personal developer `6468274858330069554`; Console changes are maintained separately from this repository. |
 | Android application ID | `com.lab4code.zenmode` in `app.json`; the owner selected it as the permanent Play package ID and the Console app has been created with it. |
-| Version | `0.1.5` with Android version code `5` in `app.json`; no Play artifact has been uploaded. Increment the code for every later upload. |
+| Version | `0.1.5` with Android version code `5` in `app.json`; its AAB upload to the Play Internal draft is processing, but is not yet confirmed accepted or saved. Increment the code for every later upload. |
 | Protection target | Android only. Web checks the interface; iOS does not provide protection. |
 | Accessibility service | The native module declares `BIND_ACCESSIBILITY_SERVICE`, can retrieve window content, and receives window/content, click, and scroll events. The service is marked `isAccessibilityTool=false`. |
 | Supported feed surfaces | YouTube Shorts; Instagram Reels, Home, Explore, and Direct Messages for setup/provenance; X Home and video viewer. X support is for the Android app package, not the browser. |
@@ -70,7 +70,10 @@ test data needs manual migration or retention.
       permissions were added.
 - [x] Install and test the exact signed candidate. Check that debug-only
       diagnostics are absent; Instagram trace and blocker diagnostics are gated
-      by the debug build flag.
+      by the debug build flag. The API-35 harness used
+      `adb -i com.android.vending`, which assigns synthetic installer-package
+      metadata only; it was not Play delivery and does not verify Play
+      installation or restricted-settings behavior.
 - [x] Backport the exact merged `react-native-screens` listener-lifetime fix
       and run bounded API-35 regression samples: 100/100 valid debug cold starts
       and 100/100 valid test-signed release-mode cold starts, with no Zen Mode
@@ -239,6 +242,10 @@ These items cannot be completed from the repository:
 - owner-held encrypted upload-key recovery backup and Play App Signing
   enrollment/verification in Console; the app-specific EAS-managed upload key,
   Max custody decision, and approved certificate fingerprint are complete;
+- confirmation that the processing Internal draft upload was accepted and
+  saved, followed by installation of a Play-generated split APK set and
+  verification of its Play App Signing identity and restricted-settings
+  behavior;
 - supported Android API/device and third-party app-version matrix;
 - reviewer setup or test-account instructions, if required;
 - exact production-signed candidate correlation for the reported physical-device

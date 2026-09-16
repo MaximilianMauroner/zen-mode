@@ -31,7 +31,7 @@ test('privacy copy discloses GitHub metadata and public submissions', () => {
   assert.match(privacyScreen, /sends the app version and platform to GitHub/);
   assert.match(privacyScreen, /Submitted issues and their contents are public/);
   assert.match(privacyScreen, /support@lab4code\.com/);
-  assert.match(privacyScreen, /Maximilian Mauroner \(Lab4Code\), Austria/);
+  assert.match(privacyScreen, /Maximilian Mauroner \(Lab4Code\), Italy/);
 });
 
 test('privacy policy uses the approved public GitHub location', () => {

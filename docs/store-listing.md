@@ -11,7 +11,7 @@ as a draft; this file does not record a rollout.
 | App name | `Zen Mode` |
 | Android application ID | `com.lab4code.zenmode`; selected as the permanent Google Play package ID. |
 | Support email | `support@lab4code.com` |
-| Developer | `Maximilian Mauroner (Lab4Code)`, Austria; personal Play developer `6468274858330069554` |
+| Developer | `Maximilian Mauroner (Lab4Code)`, Italy; personal Play developer `6468274858330069554`; no street address is published here. |
 | Website | `https://github.com/MaximilianMauroner/zen-mode` |
 | Privacy policy | `https://github.com/MaximilianMauroner/zen-mode/blob/privacy-policy/PRIVACY.md` |
 | Category and price | `Productivity`; free |
@@ -64,7 +64,8 @@ X, and Android are third-party products and are not affiliated with Zen Mode.
 
 - The parent reports the app icon is saved in the Console draft. Its uploaded
   file is not stored or hash-correlated in this repository.
-- A 1024 × 500 feature graphic. This is required to publish the store listing.
+- The parent reports the 1024 × 500 feature graphic is saved in the Console
+  draft. Its uploaded file is not hash-correlated in this repository.
 - Final phone screenshots from the signed Android candidate, with personal
   account data and notifications removed.
 - An optional promo video, if the owner chooses to provide one.

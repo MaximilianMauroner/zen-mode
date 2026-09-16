@@ -140,6 +140,9 @@ AVD was shut down.
   device, OEM Android build, or 16 KiB page-size runtime.
 - The earlier owner-reported physical-device tests are not correlated to these
   exact artifact hashes.
+- This version-code-5 artifact packages the former in-app legal-operator country
+  `Austria`. The public policy and source were corrected to `Italy` afterward;
+  a corrected uploaded candidate must use a version code greater than 5.
 - EAS holds the managed primary key. The owner-held recovery archive is saved
   as a private encrypted attachment in the Proton Pass Dev vault. The parent
   independently verified archive SHA-256

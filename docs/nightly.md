@@ -47,10 +47,11 @@ Set these paths in the scheduler's environment:
 - `ANDROID_BUNDLETOOL_JAR`: the official Google bundletool JAR.
 - `JAVA_HOME`: the installed supported JDK, if the default Java is different.
 - `PLAY_SERVICE_ACCOUNT_KEY_PATH`: an existing Google Play release service-account
-  JSON key. If omitted, EAS Submit uses its existing managed Play key.
+  JSON key. The file stays on the build host. It is never sent to Expo.
 
-The app's EAS submit profile must use `track: internal` and
-`releaseStatus: completed`. `nightly` builds an AAB; `nightly-apk` builds an APK.
+`nightly` builds an AAB; `nightly-apk` builds an APK.
+`scripts/upload-play-internal.mjs` sends the AAB directly to Google Play and
+sets one `completed` release on the fixed `internal` track.
 Both must explicitly set `autoIncrement: false`. The runner changes
 `cli.appVersionSource` to `local` only in the isolated worktree. It stamps the
 reserved version into app and package metadata after project checks pass.
@@ -59,8 +60,11 @@ Mode's `android:bundle:upload` command use this same entrypoint. The obsolete
 remote increment and standalone version-bump paths have been removed.
 
 Before enabling the schedule, verify that an authorized Play API key exists.
-An Expo signing key does not grant Play API upload access. Missing upload access
-will fail the attempt and consume its number, as other failures do.
+An Expo signing key does not grant Play API upload access. Missing local
+credentials stop the runner before it reserves a version or starts a build.
+A configured key that Google rejects will fail the attempted release and consume
+its number, as other build or upload failures do. Live API publishing remains
+unverified until the authorized credential is available.
 
 After the initial 0.1.5 releases are available to Internal testers, seed each
 ledger once with its actual versionCode and source SHA:
@@ -116,7 +120,8 @@ so that APK may not update an app installed through Play.
 Before submission, the runner checks both artifacts' package name, marketing
 version, versionCode, and signature against the existing approved certificate.
 
-EAS logs are private files with mode 0600 in that directory. They can contain
+EAS logs are private files with mode 0600 under
+`~/.local/state/lab4code-releases/logs/<app>/<reservation-id>/`. They can contain
 credential-bearing job output. Share the APK, AAB, and release record only.
 Scheduler summaries are in `~/Library/Logs/lab4code-nightlies/`.
 
@@ -136,14 +141,25 @@ No automatic retry runs for submission failures, including ambiguous outcomes.
 ## Checks
 
 ```sh
-node --test tests/nightly-version.test.mjs
+node --test tests/nightly-version.test.mjs tests/upload-play-internal.test.mjs
 python3 tests/nightly-ledger.test.py
 ```
 
 The tests cover stale artifacts and wrong certificates, invalid versions,
 failed-SHA retry prevention, daily gates, Vienna dates, versionCode exhaustion,
-and simultaneous reservations by two processes.
+simultaneous reservations by two processes, uploaded versionCode mismatches,
+Internal-only track changes, signed Google OAuth assertions, and safe API errors.
 
 Local builds use the official [EAS local build command](https://docs.expo.dev/build-reference/local-builds/).
-The existing artifact is submitted with
-[EAS Submit's path option](https://docs.expo.dev/submit/android/).
+The uploader signs a short-lived [service-account OAuth assertion](https://developers.google.com/identity/protocols/oauth2/service-account)
+locally. It sends that assertion only to `oauth2.googleapis.com`. It streams the
+verified AAB to Google's [bundle upload API](https://developers.google.com/android-publisher/api-ref/rest/v3/edits.bundles/upload).
+It checks the returned versionCode before changing Internal. It commits with
+`changesNotSentForReview=true` and `changesInReviewBehavior=ERROR_IF_IN_REVIEW`,
+which protects an existing review from Google's default cancellation behavior.
+See the [commit API](https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit).
+No request retries run, and an API error does not fall back to a draft release.
+
+The uploader's direct command accepts an already verified, reserved AAB:
+`node scripts/upload-play-internal.mjs AAB_PATH VERSION VERSION_CODE`.
+Use the coordinated release runner for normal nightly and manual releases.

@@ -42,14 +42,5 @@
     "local-release-apk": {
       "extends": "nightly-apk"
     }
-  },
-  "submit": {
-    "nightly": {
-      "android": {
-        "track": "internal",
-        "releaseStatus": "completed",
-        "changesNotSentForReview": true
-      }
-    }
   }
 }

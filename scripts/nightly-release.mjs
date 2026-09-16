@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
-import { copyFileSync, chmodSync, closeSync, existsSync, openSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, openSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stampRelease } from './stamp-nightly-version.mjs';
 import { verifyReleaseArtifacts } from './verify-release-artifacts.mjs';
+import { uploadPlayInternal } from './upload-play-internal.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const app = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name;
@@ -71,15 +72,14 @@ function assertProfiles(sourceRoot) {
       throw new Error(`${name} must explicitly disable autoIncrement`);
     }
   }
-  const submit = config.submit?.nightly?.android;
-  if (submit?.track !== 'internal' || submit.releaseStatus !== 'completed') {
-    throw new Error('nightly submit must release to Internal');
-  }
+
 }
 
 async function buildRelease() {
   run('git', ['fetch', 'origin', 'main']);
   const sha = run('git', ['rev-parse', 'origin/main'], root, true);
+  const credentialPath = process.env.PLAY_SERVICE_ACCOUNT_KEY_PATH;
+  if (!credentialPath || !existsSync(credentialPath)) throw new Error('Set PLAY_SERVICE_ACCOUNT_KEY_PATH to the Google Play service-account JSON key before starting a release');
   const reservation = ledger('reserve', [sha]);
   console.log(JSON.stringify({ app, ...reservation }));
   if (!reservation.build) return;
@@ -89,8 +89,6 @@ async function buildRelease() {
   let output;
   let outcome = 'failed';
   try {
-    const credentialPath = process.env.PLAY_SERVICE_ACCOUNT_KEY_PATH;
-    if (credentialPath && !existsSync(credentialPath)) throw new Error('PLAY_SERVICE_ACCOUNT_KEY_PATH does not exist');
     output = resolve(process.env.RELEASE_ARTIFACTS_DIR ?? join(homedir(), 'Downloads/lab4code-releases'), app,
       `${reservation.version}-${reservation.versionCode}-${sha.slice(0, 12)}`);
     mkdirSync(output, { recursive: true });
@@ -118,15 +116,6 @@ async function buildRelease() {
     const easPath = join(sourceRoot, 'eas.json');
     const config = JSON.parse(readFileSync(easPath, 'utf8'));
     config.cli = { ...config.cli, appVersionSource: 'local' };
-    if (credentialPath) {
-      const key = join(sourceRoot, 'google-service-account.json');
-      copyFileSync(credentialPath, key);
-      chmodSync(key, 0o600);
-      config.submit.nightly.android.serviceAccountKeyPath = './google-service-account.json';
-    } else {
-      // EAS Submit uses the existing managed Play key when no local path is supplied.
-      delete config.submit.nightly.android.serviceAccountKeyPath;
-    }
     writeFileSync(easPath, `${JSON.stringify(config, null, 2)}\n`);
     assertProfiles(sourceRoot);
     const logs = join(homedir(), '.local/state/lab4code-releases/logs', app, reservation.id);
@@ -139,7 +128,7 @@ async function buildRelease() {
     await runEas(['build', '--platform', 'android', '--profile', 'nightly', '--local', '--non-interactive', '--freeze-credentials', '--output', aab], sourceRoot, join(logs, 'aab-build.log'));
     const stamped = JSON.parse(readFileSync(join(sourceRoot, 'app.json'), 'utf8')).expo;
     verifyReleaseArtifacts(apk, aab, { package: stamped.android.package, version: reservation.version, versionCode: reservation.versionCode }, app);
-    await runEas(['submit', '--platform', 'android', '--profile', 'nightly', '--path', aab, '--non-interactive', '--wait'], sourceRoot, join(logs, 'submit.log'));
+    await uploadPlayInternal({ app, aabPath: aab, version: reservation.version, versionCode: reservation.versionCode, keyPath: credentialPath });
     outcome = 'succeeded';
     console.log(`Internal release ready: ${output}`);
   } finally {

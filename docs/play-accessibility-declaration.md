@@ -4,12 +4,17 @@ Prepared for Play app `4973526737842711493`, package
 `com.lab4code.zenmode`. This text is reviewer material, not a declaration that
 has been submitted or accepted by Google Play.
 
-Candidate correlation: the uploaded artifact is Zen Mode `0.1.5` (version code
-`5`), built from packaged source
+Console correlation: the artifact currently saved in the Internal draft is Zen
+Mode `0.1.5` (version code `5`), built from packaged source
 `2134dc8e4743925751501e1fdaa28f5ac8599d77`. Its AAB SHA-256 is
 `150d5504e0af96ccf4534cdeb7a16abeca5fc900ef44f99be52967cf179a4387`.
 Google Play accepted and saved it as Internal testing draft release 1 on track
-`4700894893507986209`; no rollout was started.
+`4700894893507986209`; no rollout was started. That artifact contains the old
+operator-country wording and is not final. The corrected, not-yet-uploaded
+code-6 candidate is built from
+`25547c880f022c59b298aa3e8f621162387b2c80`, has AAB SHA-256
+`6e85ec913c7e36c0be762667f8039488b8a969f6cc688c45904799084cad2cff`,
+and packages Italy. Exact code-6 device/reviewer evidence remains pending.
 
 ## Is this an accessibility tool?
 

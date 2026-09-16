@@ -10,7 +10,7 @@ current repository state. It does not publish or send anything externally.
 | App name | `Zen Mode` in `app.json`. |
 | Play app | Console app `4973526737842711493`, personal developer `6468274858330069554`; Console changes are maintained separately from this repository. |
 | Android application ID | `com.lab4code.zenmode` in `app.json`; the owner selected it as the permanent Play package ID and the Console app has been created with it. |
-| Version | `0.1.5` with Android version code `6` in `app.json`. Code 6 is reserved for the Italy-wording correction and has not been uploaded. Google Play accepted and saved code 5 as Internal testing draft release 1 on track `4700894893507986209`, but it cannot be final because it packages the former `Austria` wording. No rollout was started. Every later upload must use a code greater than 6. |
+| Version | `0.1.5` with Android version code `6` in `app.json`. The signed code-6 Italy-wording candidate has been built and audited but not uploaded. Google Play accepted and saved code 5 as Internal testing draft release 1 on track `4700894893507986209`, but it cannot be final because it packages the former `Austria` wording. No rollout was started. After code 6 is accepted by Play, every later upload must use a higher code. |
 | Protection target | Android only. Web checks the interface; iOS does not provide protection. |
 | Accessibility service | The native module declares `BIND_ACCESSIBILITY_SERVICE`, can retrieve window content, and receives window/content, click, and scroll events. The service is marked `isAccessibilityTool=false`. |
 | Supported feed surfaces | YouTube Shorts; Instagram Reels, Home, Explore, and Direct Messages for setup/provenance; X Home and video viewer. X support is for the Android app package, not the browser. |
@@ -20,7 +20,7 @@ current repository state. It does not publish or send anything externally.
 | Package visibility | The module queries YouTube, Instagram, X, launcher activities, and exact Android Settings intents used to preserve the Accessibility escape path. Settings handlers are exempted only when Android identifies them as system or updated-system apps. `app.json` blocks unrelated storage and overlay permissions. Verify the merged release manifest. |
 | Listing decisions | Free, Productivity, support@lab4code.com, repository website, no ads/AD_ID, no account requirement, target ages 13–15/16–17/18+, IARC PEGI 3 / ESRB Everyone. Console operator reports these plus the listing text, icon, and public policy URL saved as a draft. |
 | Public policy identity | Maximilian Mauroner (Lab4Code), Italy, support@lab4code.com; explicitly approved for publication. No street address is published. |
-| Build state | Release signing is fail-closed. EAS holds an app-specific Zen upload key, and the upload-key-signed 0.1.5 AAB/APK identified in `docs/evidence/android-release-candidate-0.1.5-20260916.md` have been built and audited. The key was used ephemerally and is not stored in this repository or VM workspace. |
+| Build state | Release signing is fail-closed. EAS holds an app-specific Zen upload key. The corrected upload-key-signed 0.1.5/code-6 AAB and universal APK are identified in `docs/evidence/android-release-candidate-0.1.5-vc6-20260916.md`; neither was installed or uploaded in that build task. Code-5 build/device evidence remains separately preserved in `docs/evidence/android-release-candidate-0.1.5-20260916.md`. The key is not stored in this repository or VM workspace. |
 
 The repeatable build, signer verification, and key-custody boundary are in
 [android-release-signing.md](android-release-signing.md).
@@ -73,9 +73,9 @@ test data needs manual migration or retention.
 - [x] Inspect the merged release manifest. Confirm the accessibility service is
       present and no unwanted debug, storage, overlay, or broad package-query
       permissions were added.
-- [x] Install and test the exact signed candidate. Check that debug-only
+- [ ] Install and test the exact code-6 signed candidate. Check that debug-only
       diagnostics are absent; Instagram trace and blocker diagnostics are gated
-      by the debug build flag. The API-35 harness used
+      by the debug build flag. The earlier code-5 API-35 harness used
       `adb -i com.android.vending`, which assigns synthetic installer-package
       metadata only; it was not Play delivery and does not verify Play
       installation or restricted-settings behavior.
@@ -139,8 +139,10 @@ test data needs manual migration or retention.
 - [x] Finalize the owner-approved [privacy policy](../PRIVACY.md) and align the
       in-app privacy screen. The parent saved the public GitHub URL in Console.
       The saved AAB version code 5 still packages the former `Austria` wording.
-      Source code 6 now says `Italy`; it remains unuploaded until its signed
-      candidate is built, verified, and separately handed to the Console owner.
+      The signed code-6 candidate packages `Italy` and is audited in
+      `docs/evidence/android-release-candidate-0.1.5-vc6-20260916.md`; it remains
+      unuploaded and untested pending the owner's separate Console and device
+      work.
 - [ ] Ensure the listing and review notes say that protection needs Android
       Accessibility access, an installed native Android build, and observation
       setup. Do not describe the web preview or iOS as enforcement targets.

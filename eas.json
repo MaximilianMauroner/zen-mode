@@ -19,15 +19,33 @@
     },
     "nightly": {
       "extends": "production",
+      "autoIncrement": false,
+      "env": {
+        "CMAKE_BUILD_PARALLEL_LEVEL": "2",
+        "GRADLE_OPTS": "-Dorg.gradle.workers.max=2 -Dorg.gradle.parallel=false -Dorg.gradle.jvmargs=-Xmx2048m -Dkotlin.daemon.jvm.options=-Xmx768m",
+        "NODE_OPTIONS": "--max-old-space-size=1536"
+      },
       "android": {
         "buildType": "app-bundle"
       }
+    },
+    "nightly-apk": {
+      "extends": "nightly",
+      "android": {
+        "buildType": "apk"
+      },
+      "autoIncrement": false
+    },
+    "local-release": {
+      "extends": "nightly"
+    },
+    "local-release-apk": {
+      "extends": "nightly-apk"
     }
   },
   "submit": {
     "nightly": {
       "android": {
-        "serviceAccountKeyPath": "./google-service-account.json",
         "track": "internal",
         "releaseStatus": "completed",
         "changesNotSentForReview": true

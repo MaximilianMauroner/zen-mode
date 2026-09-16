@@ -104,3 +104,12 @@ The generated debug APK is suitable for local preview only and must not be
 uploaded. Release builds fail closed unless external upload-key configuration
 is complete. See [Android release signing](docs/android-release-signing.md) for
 the verified App Bundle workflow.
+
+## Internal testing releases
+
+Use `npm run release:internal` (Zen Mode) or `bun run release:internal`
+(Moodinator) for a changed, committed `origin/main`. The shared release ledger
+reserves the next patch version and Android version code, builds locally,
+and submits to Google Play Internal testing. Run `release:status` to see
+the latest attempt. See [nightly releases](docs/nightly.md) for setup and
+the daily limit. Do not upload a separately numbered build outside this flow.

@@ -47,7 +47,7 @@
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
-    "android:bundle:upload": "node scripts/build-android-upload-bundle.mjs",
+    "android:bundle:upload": "node scripts/nightly-release.mjs run",
     "phone:mirror": "bash ./scripts/watch-phone.sh",
     "ios": "expo run:ios",
     "web": "expo start --web",
@@ -55,7 +55,10 @@
     "postinstall": "patch-package",
     "test": "node --test tests/*.test.mjs",
     "test:android-fabric-startup": "node scripts/android-fabric-cold-start-regression.mjs",
-    "test:android-settings-safety": "node scripts/android-settings-escape-integration.mjs"
+    "test:android-settings-safety": "node scripts/android-settings-escape-integration.mjs",
+    "release:internal": "node scripts/nightly-release.mjs run",
+    "release:status": "node scripts/nightly-release.mjs status",
+    "test:nightly": "node --test tests/nightly-version.test.mjs && python3 tests/nightly-ledger.test.py"
   },
   "private": true
 }

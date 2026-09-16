@@ -28,26 +28,17 @@ terminal output into an issue.
 
 ## Build and verify
 
-From a clean checkout at the reviewed candidate commit:
+Use `npm run release:internal` from the synced release checkout. The shared
+ledger reserves one patch version and Android version code for both artifacts.
+EAS local builds use the existing remote credential with `--freeze-credentials`.
+The release runner checks the APK and AAB package, version, signatures, and
+pinned upload certificate before submitting the AAB to Internal testing.
+See [nightly releases](nightly.md) for setup and the daily attempt rule.
 
-```bash
-npm ci
-npm run android:bundle:upload
-```
-
-The command refuses missing/partial values, relative or absent keystore paths,
-malformed fingerprints, the repository's known Android debug certificate, and
-certificate mismatches. Raw Gradle release artifact tasks enforce the same
-five-value requirement, reject the known Android debug certificate, and verify
-the selected alias certificate before any release task runs. There is no CI
-workflow in this repository, so this Gradle boundary—not CI—is the fail-closed
-backstop for direct `assembleRelease` and `bundleRelease` invocations.
-
-The documented command then builds `app-release.aab`, verifies its JAR
-signature, checks that its signer is the approved certificate, optionally
-audits its manifest with bundletool, and prints the AAB and signer SHA-256
-values. Gradle itself also refuses partial signing configuration and never
-assigns `signingConfigs.debug` to the release build type.
+The local `ZEN_MODE_UPLOAD_*` values remain supported by the native Gradle
+signing guard for direct native diagnostics. They are not needed by the EAS
+local release runner. Direct diagnostic builds must not be uploaded outside
+the shared release ledger.
 
 Remote EAS builds use the linked project's managed credential rather than the
 local environment variables. The guard accepts that path only when EAS has

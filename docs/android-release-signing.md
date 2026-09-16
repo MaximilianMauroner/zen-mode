@@ -49,6 +49,14 @@ audits its manifest with bundletool, and prints the AAB and signer SHA-256
 values. Gradle itself also refuses partial signing configuration and never
 assigns `signingConfigs.debug` to the release build type.
 
+Remote EAS builds use the linked project's managed credential rather than the
+local environment variables. The guard accepts that path only when EAS has
+added its generated `eas-build-inject-android-credentials.gradle` file and set
+`EAS_BUILD_WORKINGDIR`; it then verifies the resulting release signing config
+against Zen Mode's pinned, approved upload-certificate SHA-256 before any
+release artifact task runs. Merely setting the EAS environment variable, or
+providing an arbitrary non-debug certificate, does not satisfy the guard.
+
 Record the candidate commit, AAB SHA-256, signer SHA-256, build timestamp, Java,
 Android Gradle Plugin, Gradle, bundletool, and SDK identities in release issue
 #8. Install a Play-generated APK set from that exact AAB on the candidate device

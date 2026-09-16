@@ -1,0 +1,12 @@
+
+2026-09-16T06:09:00.316Z ## Isolated device and installed-build identity
+2026-09-16T06:09:01.086Z PASS emulator-5554: Android 15/API 35, com.lab4code.zenmode 0.1.5 (5), target SDK 36, non-debuggable release candidate with emulator-root test seeding
+2026-09-16T06:09:01.086Z PASS source HEAD=d722d167c4fb907e20474684f7044989d8ec8de5; APK sha256=dccacc5be6db38ebabe011f88bc9162eaad1ffa897b021ec9749a459d650a3a1; lastUpdateTime=2026-09-16 06:08:36
+
+2026-09-16T06:09:01.209Z ## Real consent, protection, service confirmation, and settings lock setup
+
+FAIL Error: Could not reach the Zen Mode accessibility control; focus=mCurrentFocus=Window{a8cc566 u0 com.android.settings/com.android.settings.Settings$AccessibilitySettingsActivity}
+    at openAccessibilityControl (file:///home/codex/work/zen-mode/scripts/android-settings-escape-integration.mjs:381:9)
+    at async enableServiceThroughUi (file:///home/codex/work/zen-mode/scripts/android-settings-escape-integration.mjs:385:3)
+    at async createConsentProtectionAndLockThroughUi (file:///home/codex/work/zen-mode/scripts/android-settings-escape-integration.mjs:471:3)
+    at async main (file:///home/codex/work/zen-mode/scripts/android-settings-escape-integration.mjs:719:3)

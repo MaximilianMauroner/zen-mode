@@ -9,6 +9,7 @@ test('Android application ID and accessibility settings activity stay aligned', 
   const appConfig = JSON.parse(readFileSync(new URL('../app.json', import.meta.url), 'utf8'));
   const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   const packageLock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+  const easConfig = JSON.parse(readFileSync(new URL('../eas.json', import.meta.url), 'utf8'));
   const settingsScreen = readFileSync(new URL('../src/app/settings.tsx', import.meta.url), 'utf8');
   const accessibilityConfig = readFileSync(
     new URL('../modules/zen-guard/android/src/main/res/xml/zen_guard_accessibility_service.xml', import.meta.url),
@@ -18,6 +19,12 @@ test('Android application ID and accessibility settings activity stay aligned', 
   assert.equal(appConfig.expo.android.package, 'com.lab4code.zenmode');
   assert.equal(appConfig.expo.version, '0.1.5');
   assert.equal(appConfig.expo.android.versionCode, 5);
+  assert.equal(appConfig.expo.owner, 'thearizztokrat');
+  assert.equal(appConfig.expo.extra.eas.projectId, '7ffa0a46-ef47-46e6-9765-697c9da8ba63');
+  assert.equal(easConfig.cli.appVersionSource, 'local');
+  assert.equal(easConfig.build.production.credentialsSource, 'remote');
+  assert.equal(easConfig.build.production.android.buildType, 'app-bundle');
+  assert.equal(easConfig.build['production-apk'].android.buildType, 'apk');
   assert.equal(packageJson.version, appConfig.expo.version);
   assert.equal(packageLock.version, appConfig.expo.version);
   assert.equal(packageLock.packages[''].version, appConfig.expo.version);

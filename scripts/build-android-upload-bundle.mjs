@@ -75,7 +75,9 @@ if (!keystoreMatch) fail('keytool did not report a SHA-256 certificate fingerpri
 const keystoreFingerprint = normalizeFingerprint(keystoreMatch[1]);
 if (keystoreFingerprint !== expectedFingerprint) fail('keystore certificate does not match ZEN_MODE_UPLOAD_CERT_SHA256');
 
-run(resolve(root, 'android/gradlew'), [':app:bundleRelease'], { stdio: 'inherit' });
+run(resolve(root, 'android/gradlew'), ['-p', resolve(root, 'android'), ':app:bundleRelease'], {
+  stdio: 'inherit',
+});
 if (!existsSync(output)) fail('Gradle completed without producing app-release.aab');
 
 const signatureVerification = run('jarsigner', ['-J-Duser.language=en', '-verify', output]);

@@ -1,8 +1,9 @@
 # Android 0.1.5 upload candidate evidence — 2026-09-16
 
 This records the first upload-key-signed Zen Mode 0.1.5 Android App Bundle and
-matching APK. The AAB upload to the Play Internal testing draft is processing,
-but is not yet confirmed accepted or saved. No Play track was published.
+matching APK. Google Play accepted and saved this AAB as Internal testing draft
+release 1 on track `4700894893507986209`. No test or public rollout was
+started.
 
 ## Identity
 
@@ -129,10 +130,9 @@ AVD was shut down.
 
 ## Limits and remaining handoff
 
-- The AAB upload to the Play Internal testing draft is processing, but is not
-  yet confirmed accepted or saved. No Play-generated split APK set was
-  installed, and Play App Signing identity and processing have not been
-  verified.
+- Google Play accepted and saved the AAB as Internal testing draft release 1 on
+  track `4700894893507986209`; no rollout was started. No Play-generated split
+  APK set was installed, and Play App Signing identity has not been verified.
 - The `adb -i com.android.vending` harness setup was synthetic installer
   metadata, not Play delivery or evidence of Play installation and
   restricted-settings behavior.

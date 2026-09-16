@@ -5,6 +5,13 @@ Prepared for Play app `4973526737842711493` and package
 not a submitted declaration. Review it against the exact production-signed
 candidate before accepting the form.
 
+Candidate correlation: the uploaded artifact is Zen Mode `0.1.5` (version code
+`5`), package `com.lab4code.zenmode`, built from packaged source
+`2134dc8e4743925751501e1fdaa28f5ac8599d77`. Its AAB SHA-256 is
+`150d5504e0af96ccf4534cdeb7a16abeca5fc900ef44f99be52967cf179a4387`.
+Google Play accepted and saved it as Internal testing draft release 1 on track
+`4700894893507986209`; no rollout was started.
+
 ## Release audit facts
 
 - Zen Mode has no account, advertising SDK, AD_ID permission, analytics SDK,
@@ -26,6 +33,14 @@ candidate before accepting the form.
   contains the app version and platform. GitHub receives those two fields when
   the draft opens. Nothing is submitted automatically; a submitted issue and
   user-entered content are public.
+- Selecting the privacy-policy link opens the public policy on GitHub. Selecting
+  the browser-readiness check opens `https://example.com` in an external
+  browser. Those are user-directed external navigations; the external handler,
+  not a Zen Mode backend, makes the resulting request. The latter carries no
+  Zen Mode data in its URL.
+- The audited release source has no app-owned API client, analytics, or
+  telemetry uploader. Launching YouTube, Instagram, or X hands control to the
+  selected third-party app without uploading guard data.
 - The merged release manifest currently contains `INTERNET`,
   `ACCESS_NETWORK_STATE`, `VIBRATE`, `USE_BIOMETRIC`, and `USE_FINGERPRINT`
   through the Expo/framework dependency set. It does not contain AD_ID,
@@ -61,10 +76,12 @@ also resolving this GitHub-feedback classification. Do not mark accessibility,
 browser, app inventory, rules, or usage as transmitted: the audited source has
 no such path.
 
-## Final verification before submission
+## Console handoff
 
-- Compare this worksheet with the production-signed AAB dependency inventory,
-  merged manifest, and runtime network capture.
-- Confirm the public policy URL and in-app disclosure use the same facts.
+- The permission inventory and release-source paths above were correlated to
+  the exact uploaded candidate. Runtime network testing remains owner-reserved
+  and is not claimed here.
+- The public policy URL and in-app disclosure use the same local-processing,
+  retention, consent, and optional GitHub-feedback facts.
 - Record the exact candidate commit, AAB SHA-256, review date, and final Console
   answers in issue #10 without secrets or private account screenshots.

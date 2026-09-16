@@ -2,7 +2,8 @@ import { Card } from '@/components/ui/card';
 import { PrimaryButton, SecondaryButton } from '@/components/ui/button';
 import { ErrorNote, IconTile, Screen, ScreenTitle } from '@/components/ui/screen';
 import { acceptSetupConsent, hasCompletedSetup, markSetupComplete } from '@/features/protection/setup';
-import { openAccessibilitySettings, setInstagramObservationMode, setNativeProtectionEnabled, setObservationMode } from '@/features/protection/native';
+import { RECOMMENDED_DEFAULTS_SUMMARY, applyRecommendedDefaults } from '@/features/protection/recommended-defaults';
+import { openAccessibilitySettings } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
 import { Check, Eye, ShieldCheck } from 'lucide-react-native';
 import { router } from 'expo-router';
@@ -52,9 +53,7 @@ export default function SetupScreen() {
     setSaving(true);
     try {
       await acceptSetupConsent();
-      await setNativeProtectionEnabled(true);
-      await setObservationMode(true);
-      await setInstagramObservationMode(true);
+      await applyRecommendedDefaults();
       await openAccessibilitySettings();
       await markSetupComplete();
       router.replace('/');
@@ -71,9 +70,22 @@ export default function SetupScreen() {
     <Screen>
       <IconTile icon={ShieldCheck} />
       <ScreenTitle
-        title="Set up the guard"
-        description="Zen Mode watches YouTube Shorts, Instagram Reels, Home and Explore, and X Home and videos. It can also close blocked websites in supported Android browsers. Whole-app limits apply to the apps and times you choose."
+        title="Quick setup"
+        description="One tap applies the recommended guard. Open each feed once afterwards so Zen Mode can verify it before blocking starts."
       />
+
+      <Card>
+        <Text className="text-[15px] font-semibold text-copy">Recommended defaults</Text>
+        {RECOMMENDED_DEFAULTS_SUMMARY.map((line) => (
+          <Text key={line} className="mt-1.5 text-[14px] leading-[20px] text-muted">
+            {'· '}
+            {line}
+          </Text>
+        ))}
+        <Text className="mt-2.5 text-[13px] leading-[19px] text-faint">
+          You can change every rule later in Feeds and Sites.
+        </Text>
+      </Card>
 
       <Card className="border-dangerLine">
         <View className="flex-row items-center">
@@ -102,7 +114,7 @@ export default function SetupScreen() {
       <ErrorNote message={error} />
       <SecondaryButton title="Privacy" disabled={busy} onPress={() => router.navigate('/privacy')} />
       <PrimaryButton
-        title={setupReadState === 'loading' ? 'Checking…' : saving ? 'Saving…' : setupReadState === 'error' ? 'Try again' : 'Turn on the guard'}
+        title={setupReadState === 'loading' ? 'Checking…' : saving ? 'Applying defaults…' : setupReadState === 'error' ? 'Try again' : 'Quick setup — use recommended'}
         disabled={busy}
         onPress={setupReadState === 'error' ? retrySetupCheck : finishSetup}
       />

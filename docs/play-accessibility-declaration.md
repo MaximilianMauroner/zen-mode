@@ -10,8 +10,9 @@ Console correlation: the sole bundle currently saved in Internal draft release
 `6e85ec913c7e36c0be762667f8039488b8a969f6cc688c45904799084cad2cff`,
 and packages Italy. Google Play accepted and saved it at 08:02 UTC on
 2026-09-16 on track `4700894893507986209`, retaining the original release
-notes; no rollout was started. Code 7 replaces it to incorporate Expo 57.0.23.
-Exact replacement-candidate device/reviewer evidence remains pending.
+notes; no rollout was started. The built, not-uploaded code-7 replacement
+incorporates Expo 57.0.23. Exact replacement-candidate device/reviewer evidence
+remains pending.
 
 ## Is this an accessibility tool?
 

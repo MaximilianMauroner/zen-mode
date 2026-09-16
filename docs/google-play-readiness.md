@@ -10,7 +10,7 @@ current repository state. It does not publish or send anything externally.
 | App name | `Zen Mode` in `app.json`. |
 | Play app | Console app `4973526737842711493`, personal developer `6468274858330069554`; Console changes are maintained separately from this repository. |
 | Android application ID | `com.lab4code.zenmode` in `app.json`; the owner selected it as the permanent Play package ID and the Console app has been created with it. |
-| Version | `0.1.5` with Android version code `7` in `app.json`. Google Play accepted code 6 as the sole bundle in Internal draft release 1 on track `4700894893507986209` at 08:02 UTC on 2026-09-16, with its original release notes; its AAB SHA-256 is `6e85ec913c7e36c0be762667f8039488b8a969f6cc688c45904799084cad2cff`. No rollout was started. Code 7 is reserved for the Expo 57.0.23 replacement while the displayed version remains `0.1.5`. |
+| Version | `0.1.5` with Android version code `7` in `app.json`. Google Play accepted code 6 as the sole bundle in Internal draft release 1 on track `4700894893507986209` at 08:02 UTC on 2026-09-16, with its original release notes; its AAB SHA-256 is `6e85ec913c7e36c0be762667f8039488b8a969f6cc688c45904799084cad2cff`. No rollout was started. The built code-7 Expo 57.0.23 replacement retains displayed version `0.1.5` and is not uploaded. |
 | Protection target | Android only. Web checks the interface; iOS does not provide protection. |
 | Accessibility service | The native module declares `BIND_ACCESSIBILITY_SERVICE`, can retrieve window content, and receives window/content, click, and scroll events. The service is marked `isAccessibilityTool=false`. |
 | Supported feed surfaces | YouTube Shorts; Instagram Reels, Home, Explore, and Direct Messages for setup/provenance; X Home and video viewer. X support is for the Android app package, not the browser. |
@@ -20,7 +20,7 @@ current repository state. It does not publish or send anything externally.
 | Package visibility | The module queries YouTube, Instagram, X, launcher activities, and exact Android Settings intents used to preserve the Accessibility escape path. Settings handlers are exempted only when Android identifies them as system or updated-system apps. `app.json` blocks unrelated storage and overlay permissions. Verify the merged release manifest. |
 | Listing decisions | Free, Productivity, support@lab4code.com, repository website, no ads/AD_ID, no account requirement, target ages 13–15/16–17/18+, IARC PEGI 3 / ESRB Everyone. Console operator reports these plus the listing text, icon, and public policy URL saved as a draft. |
 | Public policy identity | Maximilian Mauroner (Lab4Code), Italy, support@lab4code.com; explicitly approved for publication. No street address is published. |
-| Build state | Release signing is fail-closed. EAS holds an app-specific Zen upload key. The signed 0.1.5/code-6 artifacts are identified in `docs/evidence/android-release-candidate-0.1.5-vc6-20260916.md`; the AAB is now the saved Internal-draft bundle. Code 7 replaces it solely to incorporate Expo 57.0.23. Code-5 build/device evidence remains separately preserved in `docs/evidence/android-release-candidate-0.1.5-20260916.md`. The key is not stored in this repository or VM workspace. |
+| Build state | Release signing is fail-closed. EAS holds an app-specific Zen upload key. The code-6 AAB in `docs/evidence/android-release-candidate-0.1.5-vc6-20260916.md` is the saved Internal-draft bundle. The signed code-7 Expo replacement is audited in `docs/evidence/android-release-candidate-0.1.5-vc7-20260916.md` and is not uploaded or device-tested. Code-5 build/device evidence remains separately preserved in `docs/evidence/android-release-candidate-0.1.5-20260916.md`. The key is not stored in this repository or VM workspace. |
 
 The repeatable build, signer verification, and key-custody boundary are in
 [android-release-signing.md](android-release-signing.md).
@@ -69,7 +69,8 @@ test data needs manual migration or retention.
       staging directory were removed. EAS retains the managed primary copy.
 - [x] Set the release version code and version name. Confirm the package in the
       built manifest is `com.lab4code.zenmode`. Code 6 is already saved in the
-      Internal draft; code 7 is reserved for the Expo 57.0.23 replacement. The
+      Internal draft; the built code-7 Expo 57.0.23 replacement is audited in
+      `docs/evidence/android-release-candidate-0.1.5-vc7-20260916.md`. The
       displayed version remains `0.1.5`.
 - [x] Inspect the merged release manifest. Confirm the accessibility service is
       present and no unwanted debug, storage, overlay, or broad package-query
@@ -141,9 +142,9 @@ test data needs manual migration or retention.
       in-app privacy screen. The parent saved the public GitHub URL in Console.
       The signed code-6 candidate packages `Italy` and is audited in
       `docs/evidence/android-release-candidate-0.1.5-vc6-20260916.md`; its AAB
-      is saved in the Internal draft with no rollout. Code 7 will replace it
-      after the Expo 57.0.23 patch and remains subject to the owner's separate
-      Console and device work.
+      is saved in the Internal draft with no rollout. The built code-7 Expo
+      57.0.23 replacement remains subject to the owner's separate Console and
+      device work.
 - [ ] Ensure the listing and review notes say that protection needs Android
       Accessibility access, an installed native Android build, and observation
       setup. Do not describe the web preview or iOS as enforcement targets.

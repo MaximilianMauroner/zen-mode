@@ -1,9 +1,8 @@
 # Zen Mode Data safety worksheet
 
 Prepared for Play app `4973526737842711493` and package
-`com.lab4code.zenmode`. This is source material for the parent-managed Console,
-not a submitted declaration. Review it against the exact production-signed
-candidate before accepting the form.
+`com.lab4code.zenmode`. This records the source audit and the parent-managed
+Console draft; it does not authorize a rollout.
 
 Candidate correlation: the uploaded artifact is Zen Mode `0.1.5` (version code
 `5`), package `com.lab4code.zenmode`, built from packaged source
@@ -61,20 +60,19 @@ are not "collected" under Play's off-device transmission definition:
 | Device or other IDs | No advertising ID, hardware ID, Android ID, or generated user ID is read by app code | Not collected or shared |
 | Location, personal information, financial information, health and fitness, messages, photos/videos, audio, files/documents, calendar, contacts | No corresponding app behavior or permission | Not collected or shared |
 
-## Console decision requiring approval
+## Console classification saved
 
-The owner/Console operator must decide how Google's current form classifies the
-optional app-version/platform query sent to GitHub. The conservative option is
-to declare the closest available **App info and performance** subtype as
-optional collection for app functionality/developer communications and name
-GitHub's processing. If the current form and counsel treat this explicit,
-user-initiated external navigation as outside collection or within the
-user-initiated-transfer exception, record that basis with the submitted form.
+The parent saved **No required collection or sharing** in Console using the
+current Google guidance distinction for explicit external/user-initiated
+sharing. The audited guard data is processed locally. The optional feedback
+action opens an external GitHub draft containing only app version and platform;
+those fields are not diagnostics, performance data, or an identifier, and
+nothing is submitted automatically. Accessibility data, browser addresses, app
+inventory, rules, and usage are not transmitted.
 
-Do not answer "no data collected" merely because guard data stays local without
-also resolving this GitHub-feedback classification. Do not mark accessibility,
-browser, app inventory, rules, or usage as transmitted: the audited source has
-no such path.
+This records the exact source facts and saved Console rationale. Re-evaluate the
+answer if Google changes the form guidance or the app later adds any automatic
+network transfer, analytics, diagnostics, identifier, or backend path.
 
 ## Console handoff
 
@@ -83,5 +81,5 @@ no such path.
   and is not claimed here.
 - The public policy URL and in-app disclosure use the same local-processing,
   retention, consent, and optional GitHub-feedback facts.
-- Record the exact candidate commit, AAB SHA-256, review date, and final Console
-  answers in issue #10 without secrets or private account screenshots.
+- The parent saved the public policy URL and the classification above in
+  Console. No rollout was started.

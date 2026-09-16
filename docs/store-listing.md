@@ -1,7 +1,8 @@
 # Google Play store listing source
 
 Prepared source for app `4973526737842711493`. Console entry remains
-parent-managed; this file does not record a submission or rollout.
+parent-managed. The parent saved the listing text, icon, and public policy URL
+as a draft; this file does not record a rollout.
 
 ## Listing fields
 
@@ -61,7 +62,8 @@ X, and Android are third-party products and are not affiliated with Zen Mode.
 
 ## Required listing assets
 
-- A 512 × 512 app icon from the final artwork.
+- The parent reports the app icon is saved in the Console draft. Its uploaded
+  file is not stored or hash-correlated in this repository.
 - A 1024 × 500 feature graphic. This is required to publish the store listing.
 - Final phone screenshots from the signed Android candidate, with personal
   account data and notifications removed.

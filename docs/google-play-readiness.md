@@ -18,7 +18,7 @@ current repository state. It does not publish or send anything externally.
 | Website rules | The adult-site switch is off by default. A small bundled hostname catalog and up to 100 user-added domains are matched locally. Visited addresses are not persisted. This is reactive accessibility enforcement, not network filtering. |
 | Other app rules | Launchable Android apps can receive daily, timed-visit, or rolling-window rules. Foreground package events are used to charge configured app rules. |
 | Package visibility | The module queries YouTube, Instagram, X, launcher activities, and exact Android Settings intents used to preserve the Accessibility escape path. Settings handlers are exempted only when Android identifies them as system or updated-system apps. `app.json` blocks unrelated storage and overlay permissions. Verify the merged release manifest. |
-| Listing decisions | Free, Productivity, support@lab4code.com, repository website, no ads/AD_ID, no account requirement, target ages 13–15/16–17/18+, IARC PEGI 3 / ESRB Everyone. Console operator reports these saved. |
+| Listing decisions | Free, Productivity, support@lab4code.com, repository website, no ads/AD_ID, no account requirement, target ages 13–15/16–17/18+, IARC PEGI 3 / ESRB Everyone. Console operator reports these plus the listing text, icon, and public policy URL saved as a draft. |
 | Public policy identity | Maximilian Mauroner (Lab4Code), Austria, support@lab4code.com; explicitly approved for publication. |
 | Build state | Release signing is fail-closed. EAS holds an app-specific Zen upload key, and the upload-key-signed 0.1.5 AAB/APK identified in `docs/evidence/android-release-candidate-0.1.5-20260916.md` have been built and audited. The key was used ephemerally and is not stored in this repository or VM workspace. |
 
@@ -50,8 +50,10 @@ test data needs manual migration or retention.
 
 - [ ] Resolve every item in [Remaining human gates](#remaining-human-gates)
       before starting a test/public rollout or making the listing available.
-- [ ] Prepare the required 512 × 512 app icon, 1024 × 500 feature graphic, and
-      final screenshots. A promo video is optional.
+- [x] Save the listing text and app icon as a Console draft. The uploaded icon
+      is not stored or hash-correlated in this repository.
+- [ ] Prepare the required 1024 × 500 feature graphic and final candidate
+      screenshots. A promo video is optional.
 - [x] Use Play Internal testing for the initial AAB upload. This does not
       authorize publication or a production rollout.
 
@@ -60,11 +62,10 @@ test data needs manual migration or retention.
 - [x] Configure a repeatable fail-closed release build that creates a signed
       `.aab` only when all external upload-key values and its approved
       certificate fingerprint are supplied.
-- [ ] Export the approved owner-held encrypted recovery backup for the
-      EAS-managed Zen upload key to the parent's Proton Pass destination using
-      [the recovery procedure](android-release-signing.md#proton-pass-recovery-backup).
-      Max is the approved custodian; EAS currently holds the managed primary
-      copy. Do not export until the parent has the private destination ready.
+- [x] Save the owner-held recovery archive as the private encrypted Proton Pass
+      Dev-vault attachment `Zen Mode - Android upload-key recovery`. The parent
+      independently verified its complete SHA-256; parent Mac copies and the VM
+      staging directory were removed. EAS retains the managed primary copy.
 - [x] Set the release version code and version name. Confirm the package in the
       built manifest is `com.lab4code.zenmode`.
 - [x] Inspect the merged release manifest. Confirm the accessibility service is
@@ -130,11 +131,11 @@ test data needs manual migration or retention.
       browser addresses, and installed-app inventory are not sent off this device.
       The owner must approve that wording and keep it aligned with the shipped behavior.
 - [x] Prepare the current Data safety evidence and category worksheet in
-      [play-data-safety.md](play-data-safety.md). The Console operator must
-      resolve the documented GitHub-feedback classification and submit it.
+      [play-data-safety.md](play-data-safety.md). The parent saved **No required
+      collection or sharing** using the documented local-processing and
+      explicit external/user-initiated-sharing distinction.
 - [x] Finalize the owner-approved [privacy policy](../PRIVACY.md) and align the
-      in-app privacy screen. Verify the public GitHub URL before entering it in
-      Console.
+      in-app privacy screen. The parent saved the public GitHub URL in Console.
 - [ ] Ensure the listing and review notes say that protection needs Android
       Accessibility access, an installed native Android build, and observation
       setup. Do not describe the web preview or iOS as enforcement targets.
@@ -239,12 +240,11 @@ These items cannot be completed from the repository:
 
 - owner approval of the bundled adult-site catalog, its review source, and its
   release update policy;
-- final Data safety classification of the optional GitHub feedback URL and
-  submission of Data safety/Accessibility forms by the Console operator;
-- export of the owner-held encrypted upload-key recovery backup to the parent's
-  prepared Proton Pass destination and Play App Signing verification in
-  Console; the app-specific EAS-managed upload key, Max custody decision,
-  approved certificate fingerprint, and saved Internal draft are complete;
+- submission of the Accessibility form by the Console operator; the Data
+  Safety classification is saved with its source rationale;
+- Play App Signing verification in Console; the app-specific EAS-managed upload
+  key, private Proton Pass recovery backup, Max custody decision, approved
+  certificate fingerprint, and saved Internal draft are complete;
 - installation of a Play-generated split APK set and verification of its Play
   App Signing identity and restricted-settings behavior;
 - supported Android API/device and third-party app-version matrix;

@@ -10,7 +10,7 @@ current repository state. It does not publish or send anything externally.
 | App name | `Zen Mode` in `app.json`. |
 | Play app | Console app `4973526737842711493`, personal developer `6468274858330069554`; Console changes are maintained separately from this repository. |
 | Android application ID | `com.lab4code.zenmode` in `app.json`; the owner selected it as the permanent Play package ID and the Console app has been created with it. |
-| Version | `0.1.5` with Android version code `5` in `app.json`; Google Play accepted and saved its AAB as Internal testing draft release 1 on track `4700894893507986209`. No rollout was started. Increment the code for every later upload. |
+| Version | `0.1.5` with Android version code `6` in `app.json`. Code 6 is reserved for the Italy-wording correction and has not been uploaded. Google Play accepted and saved code 5 as Internal testing draft release 1 on track `4700894893507986209`, but it cannot be final because it packages the former `Austria` wording. No rollout was started. Every later upload must use a code greater than 6. |
 | Protection target | Android only. Web checks the interface; iOS does not provide protection. |
 | Accessibility service | The native module declares `BIND_ACCESSIBILITY_SERVICE`, can retrieve window content, and receives window/content, click, and scroll events. The service is marked `isAccessibilityTool=false`. |
 | Supported feed surfaces | YouTube Shorts; Instagram Reels, Home, Explore, and Direct Messages for setup/provenance; X Home and video viewer. X support is for the Android app package, not the browser. |
@@ -68,7 +68,8 @@ test data needs manual migration or retention.
       independently verified its complete SHA-256; parent Mac copies and the VM
       staging directory were removed. EAS retains the managed primary copy.
 - [x] Set the release version code and version name. Confirm the package in the
-      built manifest is `com.lab4code.zenmode`.
+      built manifest is `com.lab4code.zenmode`. Code 6 is reserved for the
+      corrected `Italy` candidate; the displayed version remains `0.1.5`.
 - [x] Inspect the merged release manifest. Confirm the accessibility service is
       present and no unwanted debug, storage, overlay, or broad package-query
       permissions were added.
@@ -137,9 +138,9 @@ test data needs manual migration or retention.
       explicit external/user-initiated-sharing distinction.
 - [x] Finalize the owner-approved [privacy policy](../PRIVACY.md) and align the
       in-app privacy screen. The parent saved the public GitHub URL in Console.
-      The saved AAB version code 5 still packages the former `Austria` wording;
-      source now says `Italy`, so a later corrected candidate must use a version
-      code greater than 5. No rebuild or replacement upload was authorized here.
+      The saved AAB version code 5 still packages the former `Austria` wording.
+      Source code 6 now says `Italy`; it remains unuploaded until its signed
+      candidate is built, verified, and separately handed to the Console owner.
 - [ ] Ensure the listing and review notes say that protection needs Android
       Accessibility access, an installed native Android build, and observation
       setup. Do not describe the web preview or iOS as enforcement targets.

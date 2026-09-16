@@ -19,7 +19,7 @@ current repository state. It does not publish or send anything externally.
 | Other app rules | Launchable Android apps can receive daily, timed-visit, or rolling-window rules. Foreground package events are used to charge configured app rules. |
 | Package visibility | The module queries YouTube, Instagram, X, launcher activities, and exact Android Settings intents used to preserve the Accessibility escape path. Settings handlers are exempted only when Android identifies them as system or updated-system apps. `app.json` blocks unrelated storage and overlay permissions. Verify the merged release manifest. |
 | Listing decisions | Free, Productivity, support@lab4code.com, repository website, no ads/AD_ID, no account requirement, target ages 13–15/16–17/18+, IARC PEGI 3 / ESRB Everyone. Console operator reports these plus the listing text, icon, and public policy URL saved as a draft. |
-| Public policy identity | Maximilian Mauroner (Lab4Code), Austria, support@lab4code.com; explicitly approved for publication. |
+| Public policy identity | Maximilian Mauroner (Lab4Code), Italy, support@lab4code.com; explicitly approved for publication. No street address is published. |
 | Build state | Release signing is fail-closed. EAS holds an app-specific Zen upload key, and the upload-key-signed 0.1.5 AAB/APK identified in `docs/evidence/android-release-candidate-0.1.5-20260916.md` have been built and audited. The key was used ephemerally and is not stored in this repository or VM workspace. |
 
 The repeatable build, signer verification, and key-custody boundary are in
@@ -52,8 +52,9 @@ test data needs manual migration or retention.
       before starting a test/public rollout or making the listing available.
 - [x] Save the listing text and app icon as a Console draft. The uploaded icon
       is not stored or hash-correlated in this repository.
-- [ ] Prepare the required 1024 × 500 feature graphic and final candidate
-      screenshots. A promo video is optional.
+- [x] Save the 1024 × 500 feature graphic as a Console draft. Its uploaded file
+      is not hash-correlated in this repository.
+- [ ] Capture final candidate screenshots. A promo video is optional.
 - [x] Use Play Internal testing for the initial AAB upload. This does not
       authorize publication or a production rollout.
 
@@ -136,6 +137,9 @@ test data needs manual migration or retention.
       explicit external/user-initiated-sharing distinction.
 - [x] Finalize the owner-approved [privacy policy](../PRIVACY.md) and align the
       in-app privacy screen. The parent saved the public GitHub URL in Console.
+      The saved AAB version code 5 still packages the former `Austria` wording;
+      source now says `Italy`, so a later corrected candidate must use a version
+      code greater than 5. No rebuild or replacement upload was authorized here.
 - [ ] Ensure the listing and review notes say that protection needs Android
       Accessibility access, an installed native Android build, and observation
       setup. Do not describe the web preview or iOS as enforcement targets.

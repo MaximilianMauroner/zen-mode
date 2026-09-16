@@ -4,19 +4,16 @@ Prepared for Play app `4973526737842711493` and package
 `com.lab4code.zenmode`. This records the source audit and the parent-managed
 Console draft; it does not authorize a rollout.
 
-Console correlation: the artifact currently saved in the Internal draft is Zen
-Mode `0.1.5` (version code `5`), package `com.lab4code.zenmode`, built from
-packaged source
-`2134dc8e4743925751501e1fdaa28f5ac8599d77`. Its AAB SHA-256 is
-`150d5504e0af96ccf4534cdeb7a16abeca5fc900ef44f99be52967cf179a4387`.
-Google Play accepted and saved it as Internal testing draft release 1 on track
-`4700894893507986209`; no rollout was started. That artifact contains the old
-operator-country wording and is not final. The corrected, not-yet-uploaded
-code-6 candidate is built from
+Console correlation: the sole bundle currently saved in Internal draft release
+1 is Zen Mode `0.1.5` (version code `6`), package
+`com.lab4code.zenmode`, built from packaged source
 `25547c880f022c59b298aa3e8f621162387b2c80`, has AAB SHA-256
 `6e85ec913c7e36c0be762667f8039488b8a969f6cc688c45904799084cad2cff`,
-and packages Italy. The runtime/data behavior relevant to this worksheet is
-unchanged; exact code-6 device evidence remains pending.
+and packages Italy. Google Play accepted and saved it at 08:02 UTC on
+2026-09-16 on track `4700894893507986209`, retaining the original release
+notes; no rollout was started. Code 7 replaces it to incorporate Expo 57.0.23.
+The runtime/data behavior relevant to this worksheet is unchanged; exact
+replacement-candidate device evidence remains pending.
 
 ## Release audit facts
 

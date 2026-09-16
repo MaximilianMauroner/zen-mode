@@ -18,7 +18,7 @@ test('Android application ID and accessibility settings activity stay aligned', 
 
   assert.equal(appConfig.expo.android.package, 'com.lab4code.zenmode');
   assert.equal(appConfig.expo.version, '0.1.5');
-  assert.equal(appConfig.expo.android.versionCode, 6);
+  assert.equal(appConfig.expo.android.versionCode, 7);
   assert.equal(appConfig.expo.owner, 'thearizztokrat');
   assert.equal(appConfig.expo.extra.eas.projectId, '7ffa0a46-ef47-46e6-9765-697c9da8ba63');
   assert.equal(easConfig.cli.appVersionSource, 'local');

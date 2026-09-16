@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.lab4code.zenmode",
-      "versionCode": 6,
+      "versionCode": 7,
       "allowBackup": false,
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",

@@ -1,8 +1,10 @@
 # Android 0.1.5 version-code-6 candidate evidence — 2026-09-16
 
 This records the upload-key-signed candidate that corrects the packaged legal
-operator country to Italy. It was built and audited but was not uploaded to
-Google Play, installed, or device-tested in this task.
+operator country to Italy. It was built and audited without a device install in
+that task. Google Play later accepted this AAB as the sole bundle in Internal
+draft release 1 on track `4700894893507986209` at 08:02 UTC on 2026-09-16,
+retaining the original release notes. No rollout was started.
 
 ## Identity and provenance
 
@@ -89,10 +91,11 @@ debug-certificate rejection remain fail-closed.
 An earlier local EAS diagnostic attempt also failed before compilation because
 `ANDROID_HOME` was not inherited. EAS CLI then included its credential payload
 in an internal failed-child-command diagnostic. No secret value is reproduced
-here. The temporary workspace was absent afterward, but the internal diagnostic
-exposure remains a credential incident; the owner should decide whether to
-reset the Play upload key before relying on it for later uploads. No credential
-rotation or Console change was authorized or performed here.
+here. The temporary workspace was absent afterward. The owner confirms nobody
+else can access those internal diagnostics and has chosen to retain the existing
+key; that access assertion was not independently audited. Resetting the upload
+key is therefore not treated as a release blocker. No credential rotation or
+replacement was performed here.
 
 Max reserved all emulator/device testing. This task did not install either
 artifact. The code-5 Settings safety and Fabric evidence remains relevant to

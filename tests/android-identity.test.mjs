@@ -61,10 +61,24 @@ android {
   assert.match(generated, /Debug signing is intentionally unavailable for release artifacts/);
   assert.match(generated, /ZEN_MODE_UPLOAD_STORE_FILE/);
   assert.match(generated, /ZEN_MODE_UPLOAD_CERT_SHA256/);
-  assert.match(generated, /new File\(uploadSigningEnvironment\.storeFile\)/);
+  assert.match(generated, /eas-build-inject-android-credentials\.gradle/);
+  assert.match(generated, /System\.getenv\("EAS_BUILD_WORKINGDIR"\)\?\.trim\(\)/);
+  assert.match(
+    generated,
+    /46ab4a5bdb4b5e57ccf0c35570076eb58c3adf02db04aa04bbbcfd1eda082d59/,
+  );
+  assert.match(generated, /def storePath = signingConfig\.storeFile/);
   assert.match(generated, /release artifacts cannot use the Android debug certificate/);
-  assert.match(generated, /getCertificate\(uploadSigningEnvironment\.keyAlias\)/);
+  assert.match(generated, /getCertificate\(signingConfig\.keyAlias\)/);
   assert.match(generated, /configured keystore certificate does not match/);
+  assert.match(
+    generated,
+    /easSigningInjected && android\.buildTypes\.release\.signingConfig != null/,
+  );
+  assert.match(
+    generated,
+    /verifyUploadSigningIdentity\(\s*android\.buildTypes\.release\.signingConfig,\s*uploadSigningEnvironment\.certificateSha256,/,
+  );
   assert.match(
     generated,
     /storePassword: System\.getenv\("ZEN_MODE_UPLOAD_STORE_PASSWORD"\),/,
@@ -162,7 +176,7 @@ ${oldTaskGuardBlock}
     );
 
   assert.match(upgraded, /all five ZEN_MODE_UPLOAD_\* signing variables/);
-  assert.match(upgraded, /verifyUploadSigningIdentity\(\)/);
+  assert.match(upgraded, /verifyUploadSigningIdentity\(/);
   assert.match(upgraded, /release artifacts cannot use the Android debug certificate/);
   assert.doesNotMatch(upgraded, /all four ZEN_MODE_UPLOAD_\*/);
   assert.doesNotMatch(upgraded, /STORE_PASSWORD"\)\?\.trim/);

@@ -10,7 +10,7 @@ current repository state. It does not publish or send anything externally.
 | App name | `Zen Mode` in `app.json`. |
 | Play app | Console app `4973526737842711493`, personal developer `6468274858330069554`; Console changes are maintained separately from this repository. |
 | Android application ID | `com.lab4code.zenmode` in `app.json`; the owner selected it as the permanent Play package ID and the Console app has been created with it. |
-| Version | `0.1.5` with Android version code `7` in `app.json`. Google Play accepted code 6 as the sole bundle in Internal draft release 1 on track `4700894893507986209` at 08:02 UTC on 2026-09-16, with its original release notes; its AAB SHA-256 is `6e85ec913c7e36c0be762667f8039488b8a969f6cc688c45904799084cad2cff`. No rollout was started. The built code-7 Expo 57.0.23 replacement retains displayed version `0.1.5` and is not uploaded. |
+| Version | `0.1.5` with Android version code `7` in `app.json`. The parent independently matched the code-7 AAB SHA-256, replaced code 6 in Internal release 1, and saved the release name exactly as `0.1.5`. At 08:54 UTC on 2026-09-16 Console reported the release Active, available to internal testers, and Not reviewed on track `4700894893507986209`. No production release exists. |
 | Protection target | Android only. Web checks the interface; iOS does not provide protection. |
 | Accessibility service | The native module declares `BIND_ACCESSIBILITY_SERVICE`, can retrieve window content, and receives window/content, click, and scroll events. The service is marked `isAccessibilityTool=false`. |
 | Supported feed surfaces | YouTube Shorts; Instagram Reels, Home, Explore, and Direct Messages for setup/provenance; X Home and video viewer. X support is for the Android app package, not the browser. |
@@ -20,7 +20,8 @@ current repository state. It does not publish or send anything externally.
 | Package visibility | The module queries YouTube, Instagram, X, launcher activities, and exact Android Settings intents used to preserve the Accessibility escape path. Settings handlers are exempted only when Android identifies them as system or updated-system apps. `app.json` blocks unrelated storage and overlay permissions. Verify the merged release manifest. |
 | Listing decisions | Free, Productivity, support@lab4code.com, repository website, no ads/AD_ID, no account requirement, target ages 13–15/16–17/18+, IARC PEGI 3 / ESRB Everyone. Console operator reports these plus the listing text, icon, and public policy URL saved as a draft. |
 | Public policy identity | Maximilian Mauroner (Lab4Code), Italy, support@lab4code.com; explicitly approved for publication. No street address is published. |
-| Build state | Release signing is fail-closed. EAS holds an app-specific Zen upload key. The code-6 AAB in `docs/evidence/android-release-candidate-0.1.5-vc6-20260916.md` is the saved Internal-draft bundle. The signed code-7 Expo replacement is audited in `docs/evidence/android-release-candidate-0.1.5-vc7-20260916.md` and is not uploaded or device-tested. Code-5 build/device evidence remains separately preserved in `docs/evidence/android-release-candidate-0.1.5-20260916.md`. The key is not stored in this repository or VM workspace. |
+| Build state | Release signing is fail-closed. EAS holds an app-specific Zen upload key. The signed code-7 Expo replacement audited in `docs/evidence/android-release-candidate-0.1.5-vc7-20260916.md` is the active Internal artifact; Play-installed testing remains pending. Code-5 build/device and code-6 superseded-candidate evidence remain preserved separately. The key is not stored in this repository or VM workspace. |
+| Internal access | Opt-in: <https://play.google.com/apps/internaltest/4700894893507986209>. The sole selected list is `Max internal testing`, containing only `maximilian.mauroner@gmail.com`; a second mistyped address was never added. |
 
 The repeatable build, signer verification, and key-custody boundary are in
 [android-release-signing.md](android-release-signing.md).
@@ -49,7 +50,7 @@ test data needs manual migration or retention.
 ### Console and listing
 
 - [ ] Resolve every item in [Remaining human gates](#remaining-human-gates)
-      before starting a test/public rollout or making the listing available.
+      before any public-review, production, or broader-track rollout.
 - [x] Save the listing text and app icon as a Console draft. The uploaded icon
       is not stored or hash-correlated in this repository.
 - [x] Save the 1024 × 500 feature graphic as a Console draft. Its uploaded file
@@ -57,6 +58,9 @@ test data needs manual migration or retention.
 - [ ] Capture final candidate screenshots. A promo video is optional.
 - [x] Use Play Internal testing for the initial AAB upload. This does not
       authorize publication or a production rollout.
+- [x] Publish code 7 to the owner-approved one-person Internal testing list.
+      Console reports Active and Not reviewed. The optional missing
+      deobfuscation-file warning remains; no production release was created.
 
 ### Build and signing
 
@@ -68,8 +72,8 @@ test data needs manual migration or retention.
       independently verified its complete SHA-256; parent Mac copies and the VM
       staging directory were removed. EAS retains the managed primary copy.
 - [x] Set the release version code and version name. Confirm the package in the
-      built manifest is `com.lab4code.zenmode`. Code 6 is already saved in the
-      Internal draft; the built code-7 Expo 57.0.23 replacement is audited in
+      built manifest is `com.lab4code.zenmode`. Code 7 replaced code 6 in the
+      active Internal release; the Expo 57.0.23 artifact is audited in
       `docs/evidence/android-release-candidate-0.1.5-vc7-20260916.md`. The
       displayed version remains `0.1.5`.
 - [x] Inspect the merged release manifest. Confirm the accessibility service is
@@ -140,11 +144,10 @@ test data needs manual migration or retention.
       explicit external/user-initiated-sharing distinction.
 - [x] Finalize the owner-approved [privacy policy](../PRIVACY.md) and align the
       in-app privacy screen. The parent saved the public GitHub URL in Console.
-      The signed code-6 candidate packages `Italy` and is audited in
-      `docs/evidence/android-release-candidate-0.1.5-vc6-20260916.md`; its AAB
-      is saved in the Internal draft with no rollout. The built code-7 Expo
-      57.0.23 replacement remains subject to the owner's separate Console and
-      device work.
+      The superseded code-6 candidate and the active code-7 Expo 57.0.23
+      artifact both package `Italy` and are recorded in their respective
+      candidate evidence. Play-installed code-7 testing remains the owner's
+      separate work.
 - [ ] Ensure the listing and review notes say that protection needs Android
       Accessibility access, an installed native Android build, and observation
       setup. Do not describe the web preview or iOS as enforcement targets.
@@ -251,15 +254,14 @@ These items cannot be completed from the repository:
   release update policy;
 - submission of the Accessibility form by the Console operator; the Data
   Safety classification is saved with its source rationale;
-- Play App Signing verification in Console; the app-specific EAS-managed upload
-  key, private Proton Pass recovery backup, Max custody decision, approved
-  certificate fingerprint, and saved Internal draft are complete;
-- installation of a Play-generated split APK set and verification of its Play
-  App Signing identity and restricted-settings behavior;
+- installation from the active Internal release and verification of its
+  Play-generated split set, Play App Signing identity, and restricted-settings
+  behavior; the app-specific EAS-managed upload key, private Proton Pass backup,
+  Max custody decision, and approved upload-key fingerprint are complete;
 - supported Android API/device and third-party app-version matrix;
 - reviewer setup or test-account instructions, if required;
 - exact production-signed candidate correlation for the reported physical-device
   testing, plus candidate-specific screenshots and reviewer video;
-- countries and any later release track or rollout beyond the approved Internal
-  testing draft; and
+- countries and any later release track, public review, or rollout beyond the
+  active one-person Internal test; and
 - any final legal/trademark review of the YouTube, Instagram, and X references.

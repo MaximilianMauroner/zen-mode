@@ -1,8 +1,9 @@
 # Android 0.1.5 version-code-7 candidate evidence — 2026-09-16
 
-This records the Expo 57.0.23 replacement for the code-6 bundle saved in the
-Google Play Internal draft. The code-7 artifacts were built and audited, but
-were not uploaded to Play, installed, or device-tested in this task.
+This records the Expo 57.0.23 replacement for the former code-6 bundle. The
+code-7 artifacts were built and audited without a device install in that task.
+The parent independently verified the local AAB hash, replaced code 6 with this
+code-7 AAB in Internal release 1, and set the release name exactly to `0.1.5`.
 
 ## Identity and provenance
 
@@ -70,6 +71,17 @@ contain the approved `Italy` operator wording once and no `Austria` match.
 Max reserved testing. No device/emulator installation, Play-generated split,
 Play App Signing certificate, Play delivery, restricted-settings behavior,
 runtime 16 KiB device, screenshot, or reviewer-media claim is made for these
-hashes. The parent owns any replacement of code 6 in the Internal draft and
-any later tester rollout; neither occurred here.
+hashes by the build task.
 
+At 08:54 UTC on 2026-09-16 the parent saved and published Internal release 1.
+Play Console reports it **Active**, with latest release `0.1.5`, available to
+internal testers, and **Not reviewed**. Track `4700894893507986209` has one
+selected list, `Max internal testing`, containing only
+`maximilian.mauroner@gmail.com`; a second mistyped address was never added. The
+opt-in URL is <https://play.google.com/apps/internaltest/4700894893507986209>.
+No production release was created. Console showed only the optional missing
+deobfuscation-file warning.
+
+Play-installed testing, Play-generated split and Play App Signing correlation,
+restricted-settings behavior, screenshots, reviewer media, Accessibility form
+submission/review, and every public-review or production gate remain open.

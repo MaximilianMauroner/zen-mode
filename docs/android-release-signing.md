@@ -58,17 +58,21 @@ the same identity before calling it a release candidate.
 After owner approval, the app-specific `@thearizztokrat/zen-mode` EAS project
 was created and linked with one new EAS-managed upload key used only for
 `com.lab4code.zenmode`. Max is the approved custodian. The managed primary copy
-exists in EAS; the separate owner-held encrypted recovery backup remains
-pending export to the owner's Proton Pass destination. Never send that backup
-through the public artifact uploader or chat. A debug APK or any older
-test-signed release APK is not a substitute for this workflow and must not be
-uploaded.
+exists in EAS. The separate owner-held recovery archive is saved as the private
+encrypted Proton Pass Dev-vault attachment `Zen Mode - Android upload-key
+recovery`. The parent independently downloaded it through Proton Pass and
+matched SHA-256
+`19967000e4d6460f7e713342510601a1c0a140802566003e39c7e1475827a2f5`.
+The parent Mac copies and the VM staging directory were then removed. Never
+send this backup through the public artifact uploader or chat. A debug APK or
+any older test-signed release APK is not a substitute for this workflow and
+must not be uploaded.
 
 ## Proton Pass recovery backup
 
-The parent owns the Proton Pass and EAS credential UI. Do not export until the
-parent has created the intended private Proton Pass vault/item and confirmed
-that file attachments are available there. On the parent's trusted workstation:
+The backup is complete. The following is the recovery procedure retained for
+future custody audits; it must not be repeated merely to test the backup. The
+parent owns the Proton Pass and EAS credential UI:
 
 1. Open the linked `@thearizztokrat/zen-mode` Android credentials with
    `eas credentials -p android` and choose the existing production keystore.

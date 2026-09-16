@@ -140,6 +140,8 @@ AVD was shut down.
   device, OEM Android build, or 16 KiB page-size runtime.
 - The earlier owner-reported physical-device tests are not correlated to these
   exact artifact hashes.
-- EAS holds the managed primary key. The approved owner-held encrypted recovery
-  backup is still pending a secure owner destination and must not use the public
-  file uploader or chat.
+- EAS holds the managed primary key. The owner-held recovery archive is saved
+  as a private encrypted attachment in the Proton Pass Dev vault. The parent
+  independently verified archive SHA-256
+  `19967000e4d6460f7e713342510601a1c0a140802566003e39c7e1475827a2f5`;
+  parent Mac copies and the VM staging directory were removed afterward.

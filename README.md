@@ -87,8 +87,8 @@ Web export checks routing and the interface. It cannot enforce Android app or
 feed limits. iOS is not a supported protection target.
 
 Expo Go cannot include this project's local Android module. Use `npm run
-android` for native development and testing. This repository has no EAS build
-profiles or release automation.
+android` for native development and testing. The scheduled nightly build to
+the Play Internal track is described in [nightly](docs/nightly.md).
 
 ## Standalone ARM64 debug preview
 

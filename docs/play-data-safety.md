@@ -2,18 +2,17 @@
 
 Prepared for Play app `4973526737842711493` and package
 `com.lab4code.zenmode`. This records the source audit and the parent-managed
-Console draft; it does not authorize a rollout.
+Console state; it does not authorize any broader rollout.
 
-Console correlation: the sole bundle currently saved in Internal draft release
-1 is Zen Mode `0.1.5` (version code `6`), package
-`com.lab4code.zenmode`, built from packaged source
-`25547c880f022c59b298aa3e8f621162387b2c80`, has AAB SHA-256
-`6e85ec913c7e36c0be762667f8039488b8a969f6cc688c45904799084cad2cff`,
-and packages Italy. Google Play accepted and saved it at 08:02 UTC on
-2026-09-16 on track `4700894893507986209`, retaining the original release
-notes; no rollout was started. The built, not-uploaded code-7 replacement
-incorporates Expo 57.0.23. The runtime/data behavior relevant to this worksheet
-is unchanged; exact replacement-candidate device evidence remains pending.
+Console correlation: Internal release 1 now contains Zen Mode `0.1.5` (version
+code `7`), package `com.lab4code.zenmode`, built from source
+`45be98daf88685f9ac6f694304cb4ef1c75fbe6a`. Its AAB SHA-256 is
+`08bb1d84f4d92519a06c1796c9748e64f5f9a9384582b94790f6b84a0c49dde7`
+and it packages Italy. At 08:54 UTC on 2026-09-16 Console reported the release
+Active, available to the approved one-person Internal list, and Not reviewed on
+track `4700894893507986209`. There is no production release. The runtime/data
+behavior relevant to this worksheet is unchanged; exact Play-installed device
+evidence remains pending.
 
 ## Release audit facts
 
@@ -86,4 +85,5 @@ network transfer, analytics, diagnostics, identifier, or backend path.
 - The public policy URL and in-app disclosure use the same local-processing,
   retention, consent, and optional GitHub-feedback facts.
 - The parent saved the public policy URL and the classification above in
-  Console. No rollout was started.
+  Console. Only the approved one-person Internal test is active; no production
+  rollout was started.

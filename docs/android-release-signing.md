@@ -108,11 +108,11 @@ secret storage.
 The first verified 0.1.5/code-5 artifacts and device evidence are recorded in
 `docs/evidence/android-release-candidate-0.1.5-20260916.md`. The corrected
 Italy-wording code-6 artifacts and their source/build audit are recorded in
-`docs/evidence/android-release-candidate-0.1.5-vc6-20260916.md`; its AAB is the
-sole bundle saved in Internal draft release 1, with no rollout. The built and
+`docs/evidence/android-release-candidate-0.1.5-vc6-20260916.md`. The built and
 audited code-7 Expo 57.0.23 replacement is recorded in
-`docs/evidence/android-release-candidate-0.1.5-vc7-20260916.md`; exact
-replacement-candidate device testing remains an owner task.
+`docs/evidence/android-release-candidate-0.1.5-vc7-20260916.md` and is now the
+active one-person Internal release. Exact Play-installed candidate testing and
+Play App Signing correlation remain owner tasks; no production release exists.
 
 The owner confirms that nobody else can access the internal EAS diagnostic
 which previously included a credential payload and has chosen to retain the

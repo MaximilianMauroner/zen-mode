@@ -1,8 +1,8 @@
 # Zen Mode privacy policy
 
-Effective date: September 15, 2026
+Effective date: September 16, 2026
 
-Zen Mode is provided by Maximilian Mauroner (Lab4Code), Austria. This policy
+Zen Mode is provided by Maximilian Mauroner (Lab4Code), Italy. This policy
 explains how the Android app processes information. Questions or privacy
 requests can be sent to [support@lab4code.com](mailto:support@lab4code.com).
 
@@ -130,6 +130,6 @@ Material changes will be reflected in this public document with a new effective
 date. For privacy questions, deletion requests concerning direct support
 communications, or other requests, contact:
 
-Maximilian Mauroner (Lab4Code)  
-Austria  
+Maximilian Mauroner (Lab4Code)<br>
+Italy<br>
 [support@lab4code.com](mailto:support@lab4code.com)

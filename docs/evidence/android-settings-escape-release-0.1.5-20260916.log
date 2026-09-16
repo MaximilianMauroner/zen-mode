@@ -1,0 +1,54 @@
+
+2026-09-16T06:11:40.483Z ## Isolated device and installed-build identity
+2026-09-16T06:11:41.731Z PASS emulator-5554: Android 15/API 35, com.lab4code.zenmode 0.1.5 (5), target SDK 36, non-debuggable release candidate with emulator-root test seeding
+2026-09-16T06:11:41.731Z PASS source HEAD=d722d167c4fb907e20474684f7044989d8ec8de5; APK sha256=dccacc5be6db38ebabe011f88bc9162eaad1ffa897b021ec9749a459d650a3a1; lastUpdateTime=2026-09-16 06:11:10
+
+2026-09-16T06:11:41.846Z ## Real consent, protection, service confirmation, and settings lock setup
+2026-09-16T06:12:12.987Z PASS service enabled through Android confirmation UI and bound to the installed app
+2026-09-16T06:12:25.905Z PASS current native consent v3, active protection, and live 7-day SecureStore lock created through UI
+
+2026-09-16T06:12:25.924Z ## Clock timed-visit rule mutation and first-launch enforcement
+2026-09-16T06:13:38.464Z PASS real UI visit→daily→visit save sequence leaves only the Clock timed-visit rule stored
+2026-09-16T06:13:42.101Z PASS first Clock launch enforced: #4 owner=com.lab4code.zenmode type=ACCESSIBILITY_OVERLAY isOnScreen=true isVisible=true above #10 owner=com.google.android.deskclock type=APPLICATION_PANEL isOnScreen=true isVisible=true
+2026-09-16T06:13:43.406Z PASS Clock timed overlay survived a transient SystemUI notification window
+2026-09-16T06:13:59.877Z PASS Clock first-launch overlay: Accessibility Settings stayed foreground continuously for 8 seconds after one Settings launch
+2026-09-16T06:13:59.919Z PASS Clock first-launch overlay was removed by the Settings safety boundary
+2026-09-16T06:13:59.962Z PASS SecureStore-backed lock data and protection preference remain unchanged
+2026-09-16T06:14:10.193Z PASS service disabled through Android Settings UI
+
+2026-09-16T06:14:10.299Z ## daily stale Settings rule
+2026-09-16T06:14:12.515Z PASS daily store contains a literal stale com.android.settings rule
+2026-09-16T06:14:22.948Z PASS service enabled through Android confirmation UI and bound to the installed app
+2026-09-16T06:14:40.793Z PASS daily: Android Settings stayed foreground continuously for 8 seconds after one Settings launch
+2026-09-16T06:14:55.505Z PASS daily: Accessibility Settings stayed foreground continuously for 8 seconds after one Settings launch
+2026-09-16T06:14:57.976Z PASS daily enforcement resumed for com.google.android.deskclock and sent it Home
+2026-09-16T06:14:58.054Z PASS SecureStore-backed lock data and protection preference remain unchanged
+2026-09-16T06:15:09.991Z PASS service disabled through Android Settings UI
+
+2026-09-16T06:15:09.991Z ## timed-visit stale Settings rule
+2026-09-16T06:15:11.711Z PASS timed-visit store contains a literal stale com.android.settings rule
+2026-09-16T06:15:22.411Z PASS service enabled through Android confirmation UI and bound to the installed app
+2026-09-16T06:15:37.592Z PASS timed-visit: Android Settings stayed foreground continuously for 8 seconds after one Settings launch
+2026-09-16T06:15:51.793Z PASS timed-visit: Accessibility Settings stayed foreground continuously for 8 seconds after one Settings launch
+2026-09-16T06:15:56.488Z PASS real timed-visit Clock overlay relation: #4 owner=com.lab4code.zenmode type=ACCESSIBILITY_OVERLAY isOnScreen=true isVisible=true above #10 owner=com.google.android.deskclock type=APPLICATION_PANEL isOnScreen=true isVisible=true
+2026-09-16T06:16:13.057Z PASS Accessibility Settings opened beneath an existing Zen overlay stayed foreground continuously for 8 seconds after one Settings launch
+2026-09-16T06:16:13.057Z PASS Settings-under-overlay relation: #3 owner=com.lab4code.zenmode type=ACCESSIBILITY_OVERLAY isOnScreen=true isVisible=true above #10 owner=com.android.settings type=APPLICATION_STARTING isOnScreen=true isVisible=true
+2026-09-16T06:16:13.103Z PASS existing timed overlay was removed and did not run its Home callback over Settings
+2026-09-16T06:16:13.143Z PASS SecureStore-backed lock data and protection preference remain unchanged
+2026-09-16T06:16:23.135Z PASS service disabled through Android Settings UI
+
+2026-09-16T06:16:23.135Z ## rolling stale Settings rule
+2026-09-16T06:16:25.448Z PASS rolling store contains a literal stale com.android.settings rule
+2026-09-16T06:16:35.909Z PASS service enabled through Android confirmation UI and bound to the installed app
+2026-09-16T06:16:51.372Z PASS rolling: Android Settings stayed foreground continuously for 8 seconds after one Settings launch
+2026-09-16T06:17:05.610Z PASS rolling: Accessibility Settings stayed foreground continuously for 8 seconds after one Settings launch
+2026-09-16T06:17:07.818Z PASS rolling enforcement resumed for com.google.android.deskclock and sent it Home
+2026-09-16T06:17:07.884Z PASS SecureStore-backed lock data and protection preference remain unchanged
+2026-09-16T06:17:19.334Z PASS service disabled through Android Settings UI
+
+2026-09-16T06:17:19.334Z ## Final lock and user escape assertions
+2026-09-16T06:17:30.737Z PASS SecureStore-backed lock data and protection preference remain unchanged
+2026-09-16T06:17:30.737Z PASS in-app settings lock remains live in the real app UI
+2026-09-16T06:17:30.798Z PASS no task-app entry was recorded in Android's crash buffer during the run
+2026-09-16T06:17:30.798Z PASS all three stale-rule scenarios passed; service finishes disabled and the lock remains active
+2026-09-16T06:17:31.482Z PASS task-app test data was cleared after the final assertions

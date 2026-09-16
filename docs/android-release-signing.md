@@ -55,11 +55,13 @@ Android Gradle Plugin, Gradle, bundletool, and SDK identities in release issue
 and correlate all physical-device, screenshot, and reviewer-video evidence to
 the same identity before calling it a release candidate.
 
-Read-only enumeration of the authenticated owner's complete EAS project list
-found no Zen Mode project or credential associated with
-`com.lab4code.zenmode`. The exact proposed setup is an app-specific
-`@thearizztokrat/zen-mode` project with one new EAS-managed upload key, Max as
-custodian, and one owner-held encrypted recovery backup. This requires Max's
-explicit creation/custody approval before any project, key, or backup is made.
-A debug APK or any older test-signed release APK is not a substitute for this
-workflow and must not be uploaded.
+After owner approval, the app-specific `@thearizztokrat/zen-mode` EAS project
+was created and linked with one new EAS-managed upload key used only for
+`com.lab4code.zenmode`. Max is the approved custodian. The managed primary copy
+exists in EAS; the separate owner-held encrypted recovery backup remains
+pending an approved secure destination. Never send that backup through the
+public artifact uploader or chat. A debug APK or any older test-signed release
+APK is not a substitute for this workflow and must not be uploaded.
+
+The first verified 0.1.5 artifacts and signed-candidate device evidence are
+recorded in `docs/evidence/android-release-candidate-0.1.5-20260916.md`.

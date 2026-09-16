@@ -20,7 +20,7 @@ current repository state. It does not publish or send anything externally.
 | Package visibility | The module queries YouTube, Instagram, X, launcher activities, and exact Android Settings intents used to preserve the Accessibility escape path. Settings handlers are exempted only when Android identifies them as system or updated-system apps. `app.json` blocks unrelated storage and overlay permissions. Verify the merged release manifest. |
 | Listing decisions | Free, Productivity, support@lab4code.com, repository website, no ads/AD_ID, no account requirement, target ages 13–15/16–17/18+, IARC PEGI 3 / ESRB Everyone. Console operator reports these saved. |
 | Public policy identity | Maximilian Mauroner (Lab4Code), Austria, support@lab4code.com; explicitly approved for publication. |
-| Build state | Release signing is fail-closed and requires externally supplied upload-key values. No authorized upload key is present on this VM, so no production-signed candidate exists yet. |
+| Build state | Release signing is fail-closed. EAS holds an app-specific Zen upload key, and the upload-key-signed 0.1.5 AAB/APK identified in `docs/evidence/android-release-candidate-0.1.5-20260916.md` have been built and audited. The key was used ephemerally and is not stored in this repository or VM workspace. |
 
 The repeatable build, signer verification, and key-custody boundary are in
 [android-release-signing.md](android-release-signing.md).
@@ -52,22 +52,23 @@ test data needs manual migration or retention.
       before uploading an artifact or making the listing available.
 - [ ] Prepare the required 512 × 512 app icon, 1024 × 500 feature graphic, and
       final screenshots. A promo video is optional.
-- [ ] Choose the initial Play testing or release track after the signed build
-      and reviewer path are ready.
+- [x] Use Play Internal testing for the initial AAB upload. This does not
+      authorize publication or a production rollout.
 
 ### Build and signing
 
 - [x] Configure a repeatable fail-closed release build that creates a signed
       `.aab` only when all external upload-key values and its approved
       certificate fingerprint are supplied.
-- [ ] Decide who owns the keystore and Play upload key; back up recovery
-      material securely.
-- [ ] Set the release version code and version name. Confirm the package in the
+- [ ] Export the approved owner-held encrypted recovery backup for the
+      EAS-managed Zen upload key through a secure owner destination. Max is the
+      approved custodian; EAS currently holds the managed primary copy.
+- [x] Set the release version code and version name. Confirm the package in the
       built manifest is `com.lab4code.zenmode`.
-- [ ] Inspect the merged release manifest. Confirm the accessibility service is
+- [x] Inspect the merged release manifest. Confirm the accessibility service is
       present and no unwanted debug, storage, overlay, or broad package-query
       permissions were added.
-- [ ] Install and test the exact signed candidate. Check that debug-only
+- [x] Install and test the exact signed candidate. Check that debug-only
       diagnostics are absent; Instagram trace and blocker diagnostics are gated
       by the debug build flag.
 - [x] Backport the exact merged `react-native-screens` listener-lifetime fix
@@ -76,7 +77,7 @@ test data needs manual migration or retention.
       crash. See `docs/evidence/android-fabric-lifetime-backport-20260915.md`.
       Remove the patch only after an Expo-supported dependency includes the fix
       and the documented clean-install/device checks pass without it.
-- [ ] Verify the AAB signature and contents with the release toolchain. Keep the
+- [x] Verify the AAB signature and contents with the release toolchain. Keep the
       debug APK and preview APK out of Play uploads.
 
 ### Accessibility, privacy, and review declarations
@@ -85,13 +86,13 @@ test data needs manual migration or retention.
       already enabled. The service now requires current native consent before
       event, timer, usage, overlay, or navigation processing; unit coverage is
       present, but the real upgrade journey is still required.
-- [ ] On a device with daily, timed-visit, and rolling rules saved for the
-      resolved Settings package, confirm Android Settings never appears in the
-      app picker and remains reachable without an overlay or Home navigation.
-      Repeat while the in-app settings lock is active, then disable the service
-      from Accessibility settings. The app-picker check remains manual. The API
-      35 native escape-path regression can be repeated on the dedicated `moodqa`
-      task AVD while Metro serves the installed debug build:
+- [x] On the API-35 `moodqa` AVD with literal stale daily, timed-visit, and
+      rolling rules for the resolved Settings package, confirm Android Settings
+      remains reachable without an overlay or Home navigation. Repeat while the
+      in-app settings lock is active, then disable the service from Accessibility
+      settings. The signed-candidate automated path passed. See
+      `docs/evidence/android-release-candidate-0.1.5-20260916.md`. The debug
+      harness can still be repeated on the dedicated `moodqa` task AVD:
 
       ```bash
       ZEN_GUARD_TEST_SERIAL=emulator-5554 \
@@ -103,7 +104,11 @@ test data needs manual migration or retention.
       stores, toggles its accessibility service through Android UI, and clears
       the task-app data after its final assertions. It refuses non-emulators,
       other AVD names, and runs without the explicit reset acknowledgement.
-      Final OEM/device coverage remains required.
+- [ ] Confirm Android Settings does not appear in the real app picker on the
+      exact candidate, and repeat the escape/disable journey on representative
+      physical OEM devices. The automated stale-rule run does not exercise the
+      launchable-app picker, and the signed-candidate run covered only the
+      `moodqa` emulator.
 - [ ] When the accessibility disclosure changes, bump both
       `CONSENT_VERSION` in `src/features/protection/setup-policy.ts` and
       `CURRENT_VERSION` in the native `ConsentPolicy.kt` in the same release.
@@ -231,11 +236,13 @@ These items cannot be completed from the repository:
   release update policy;
 - final Data safety classification of the optional GitHub feedback URL and
   submission of Data safety/Accessibility forms by the Console operator;
-- upload-key generation or import, owner/custodian choice, secure backup and
-  recovery, Play App Signing enrollment, and approved certificate fingerprint;
+- owner-held encrypted upload-key recovery backup and Play App Signing
+  enrollment/verification in Console; the app-specific EAS-managed upload key,
+  Max custody decision, and approved certificate fingerprint are complete;
 - supported Android API/device and third-party app-version matrix;
 - reviewer setup or test-account instructions, if required;
 - exact production-signed candidate correlation for the reported physical-device
   testing, plus candidate-specific screenshots and reviewer video;
-- countries and initial testing/release track; and
+- countries and any later release track or rollout beyond the approved Internal
+  testing draft; and
 - any final legal/trademark review of the YouTube, Instagram, and X references.

@@ -58,7 +58,7 @@
     "test:android-settings-safety": "node scripts/android-settings-escape-integration.mjs",
     "release:internal": "node scripts/nightly-release.mjs run",
     "release:status": "node scripts/nightly-release.mjs status",
-    "test:nightly": "node --test tests/nightly-version.test.mjs && python3 tests/nightly-ledger.test.py"
+    "test:nightly": "node --test tests/nightly-version.test.mjs tests/upload-play-internal.test.mjs && python3 tests/nightly-ledger.test.py"
   },
   "private": true
 }

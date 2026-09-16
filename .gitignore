@@ -35,7 +35,7 @@ yarn-error.*
 .env.*
 !.env.example
 
-# Play submit service account key (nightly workflow writes this from secrets)
+# Never commit a Google Play API service-account key
 google-service-account.json
 
 # typescript

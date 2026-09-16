@@ -4,6 +4,12 @@ import { resolve } from 'node:path';
 
 if (process.argv.length !== 4) throw new Error('Usage: node scripts/run-nightlies.mjs MOODINATOR_REPO ZEN_MODE_REPO');
 for (const root of process.argv.slice(2)) {
+  const sync = spawnSync('git', ['pull', '--ff-only', 'origin', 'main'], { cwd: resolve(root), stdio: 'inherit' });
+  if (sync.error || sync.status !== 0) {
+    console.error(`Could not sync release checkout: ${root}`);
+    process.exitCode = 1;
+    continue;
+  }
   const result = spawnSync(process.execPath, [resolve(root, 'scripts/nightly-release.mjs'), 'run'], {
     cwd: resolve(root), stdio: 'inherit',
   });

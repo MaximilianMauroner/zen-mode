@@ -1,7 +1,8 @@
 # Android 0.1.5 upload candidate evidence — 2026-09-16
 
 This records the first upload-key-signed Zen Mode 0.1.5 Android App Bundle and
-matching APK. Nothing was uploaded to Play and no Play track was changed.
+matching APK. The AAB upload to the Play Internal testing draft is processing,
+but is not yet confirmed accepted or saved. No Play track was published.
 
 ## Identity
 
@@ -57,6 +58,12 @@ Artifacts:
 | `android/app/build/outputs/bundle/release/app-release.aab` | 76,542,127 | `150d5504e0af96ccf4534cdeb7a16abeca5fc900ef44f99be52967cf179a4387` |
 | `android/app/build/outputs/apk/release/app-release.apk` | 112,989,277 | `dccacc5be6db38ebabe011f88bc9162eaad1ffa897b021ec9749a459d650a3a1` |
 
+The parent independently downloaded the hosted APK and matched its complete
+SHA-256 to `dccacc5be6db38ebabe011f88bc9162eaad1ffa897b021ec9749a459d650a3a1`.
+The parent also copied the AAB to the Mac release environment and matched its
+complete SHA-256 to
+`150d5504e0af96ccf4534cdeb7a16abeca5fc900ef44f99be52967cf179a4387`.
+
 `jarsigner` and `keytool -printcert -jarfile` verified the AAB. `apksigner
 verify --verbose --print-certs` verified the APK with one signer and APK
 Signature Scheme v2. Both report the upload certificate above. This is the
@@ -86,9 +93,11 @@ restricted-settings policy. The service was present in package resolution, but
 the UI row was absent. See
 `android-settings-escape-release-0.1.5-20260916-failed-null-installer.log`.
 
-The same APK was reinstalled with the AVD's existing Play package as installer
-to model Play Internal delivery, after which Settings showed `Downloaded apps`
-and `Zen Mode protection`:
+The same APK was reinstalled with `adb -i com.android.vending`, which assigned
+synthetic installer-package metadata on the disposable emulator. This was only
+a harness setup condition; it was not Play delivery and does not verify Play
+installation or restricted-settings behavior. With that metadata, Settings
+showed `Downloaded apps` and `Zen Mode protection`:
 
 ```bash
 adb -s emulator-5554 install -r -i com.android.vending \
@@ -120,8 +129,13 @@ AVD was shut down.
 
 ## Limits and remaining handoff
 
-- The AAB has not been uploaded to Play; no Play-generated split APK set was
-  installed.
+- The AAB upload to the Play Internal testing draft is processing, but is not
+  yet confirmed accepted or saved. No Play-generated split APK set was
+  installed, and Play App Signing identity and processing have not been
+  verified.
+- The `adb -i com.android.vending` harness setup was synthetic installer
+  metadata, not Play delivery or evidence of Play installation and
+  restricted-settings behavior.
 - The signed candidate was tested on one x86_64 API-35 emulator, not a physical
   device, OEM Android build, or 16 KiB page-size runtime.
 - The earlier owner-reported physical-device tests are not correlated to these

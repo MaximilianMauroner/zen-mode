@@ -13,6 +13,7 @@ const androidHome = process.env.ANDROID_HOME ?? '/home/codex/android-sdk';
 const adbBinary = process.env.ADB ?? resolve(androidHome, 'platform-tools/adb');
 const serial = process.env.ZEN_GUARD_TEST_SERIAL;
 const dataResetApproval = process.env.ZEN_GUARD_ALLOW_TASK_DATA_RESET;
+const rootPrivateDataAccess = process.env.ZEN_GUARD_PRIVATE_DATA_ACCESS === 'root';
 const taskAvdName = 'moodqa';
 const metroUrl = process.env.ZEN_GUARD_METRO_URL ?? 'http://10.0.2.2:8081';
 const appPackage = appConfig.android.package;
@@ -24,7 +25,10 @@ const clockPackage = 'com.google.android.deskclock';
 const clockActivity = `${clockPackage}/com.android.deskclock.DeskClock`;
 const launcherPackage = 'com.google.android.apps.nexuslauncher';
 const uiDumpPath = '/sdcard/zen-guard-settings-safety.xml';
-const debugApkPath = resolve(root, 'android/app/build/outputs/apk/debug/app-debug.apk');
+const testApkPath = process.env.ZEN_GUARD_TEST_APK
+  ? resolve(root, process.env.ZEN_GUARD_TEST_APK)
+  : resolve(root, 'android/app/build/outputs/apk/debug/app-debug.apk');
+const privateDataRoot = `/data/user/0/${appPackage}`;
 const evidenceLogPath = process.env.ZEN_GUARD_EVIDENCE_LOG
   ? resolve(root, process.env.ZEN_GUARD_EVIDENCE_LOG)
   : null;
@@ -237,10 +241,12 @@ async function assertSettingsStaysForeground(action, label, observeTransition = 
 }
 
 function privateFile(path) {
+  if (rootPrivateDataAccess) return adb('exec-out', 'cat', `${privateDataRoot}/${path}`);
   return adb('exec-out', 'run-as', appPackage, 'cat', path);
 }
 
 function privateSha256(path) {
+  if (rootPrivateDataAccess) return shell('sha256sum', `${privateDataRoot}/${path}`).trim().split(/\s+/)[0];
   return shell('run-as', appPackage, 'sha256sum', path).trim().split(/\s+/)[0];
 }
 
@@ -251,9 +257,19 @@ function writePrivatePreference(fileName, xml) {
   writeFileSync(localPath, xml);
   try {
     adb('push', localPath, devicePath);
-    shell('run-as', appPackage, 'mkdir', '-p', 'shared_prefs');
-    shell('run-as', appPackage, 'cp', devicePath, `shared_prefs/${fileName}.xml`);
-    shell('run-as', appPackage, 'chmod', '660', `shared_prefs/${fileName}.xml`);
+    if (rootPrivateDataAccess) {
+      const appUid = shell('stat', '-c', '%u', privateDataRoot).trim();
+      assert.match(appUid, /^\d+$/, 'Could not resolve the installed app UID');
+      const destination = `${privateDataRoot}/shared_prefs/${fileName}.xml`;
+      shell('mkdir', '-p', `${privateDataRoot}/shared_prefs`);
+      shell('cp', devicePath, destination);
+      shell('chown', `${appUid}:${appUid}`, destination);
+      shell('chmod', '660', destination);
+    } else {
+      shell('run-as', appPackage, 'mkdir', '-p', 'shared_prefs');
+      shell('run-as', appPackage, 'cp', devicePath, `shared_prefs/${fileName}.xml`);
+      shell('run-as', appPackage, 'chmod', '660', `shared_prefs/${fileName}.xml`);
+    }
   } finally {
     adbMaybe('shell', 'rm', '-f', devicePath);
     rmSync(localPath, { force: true });
@@ -394,6 +410,15 @@ async function disableServiceThroughUi({ requireEnabled = false } = {}) {
 }
 
 async function launchApp() {
+  if (rootPrivateDataAccess) {
+    startComponent(`${appPackage}/.MainActivity`);
+    await waitForFocus(appPackage);
+    await waitFor('Zen Mode JavaScript UI', () => {
+      const ui = dumpUi();
+      return ui.nodes.some((node) => ['Feeds', 'App limits', 'Lock'].includes(node['content-desc']));
+    }, 90_000, 500);
+    return;
+  }
   const url = `exp+zen-mode://expo-development-client/?url=${encodeURIComponent(metroUrl)}`;
   adb('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', url, '-n', `${appPackage}/.MainActivity`);
   await waitForFocus(appPackage);
@@ -404,6 +429,12 @@ async function launchApp() {
 }
 
 async function launchDevelopmentClient() {
+  if (rootPrivateDataAccess) {
+    startComponent(`${appPackage}/.MainActivity`);
+    await waitForFocus(appPackage, 60_000);
+    await waitForNode('text', 'Set up the guard', { timeoutMs: 90_000 });
+    return;
+  }
   const url = `exp+zen-mode://expo-development-client/?url=${encodeURIComponent(metroUrl)}`;
   adb('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', url, '-n', `${appPackage}/.MainActivity`);
   await waitForFocus(appPackage, 60_000);
@@ -646,7 +677,11 @@ async function main() {
   assert.equal(shell('getprop', 'ro.boot.qemu.avd_name').trim(), taskAvdName,
     `Target is not the dedicated ${taskAvdName} task AVD`);
   assert.equal(shell('getprop', 'ro.build.version.sdk').trim(), '35', 'This harness is pinned to the Android 15/API 35 task AVD');
-  assert.doesNotThrow(() => shell('run-as', appPackage, 'id'), 'Installed app is not a debuggable test build');
+  if (rootPrivateDataAccess) {
+    assert.equal(shell('id', '-u').trim(), '0', 'Root private-data mode requires a rooted disposable emulator');
+  } else {
+    assert.doesNotThrow(() => shell('run-as', appPackage, 'id'), 'Installed app is not a debuggable test build');
+  }
   const sourceHead = run('git', ['rev-parse', 'HEAD']).trim();
   assert.match(sourceHead, /^[0-9a-f]{40}$/);
   const productionSourceChanges = run('git', [
@@ -654,17 +689,20 @@ async function main() {
   ]).trim();
   assert.equal(productionSourceChanges, '',
     `Production source differs from ${sourceHead}: ${productionSourceChanges}`);
-  const localApkSha256 = run('sha256sum', [debugApkPath]).trim().split(/\s+/)[0];
+  const localApkSha256 = run('sha256sum', [testApkPath]).trim().split(/\s+/)[0];
   const installedApkPath = shell('pm', 'path', appPackage).trim().replace(/^package:/, '');
   const installedApkSha256 = shell('sha256sum', installedApkPath).trim().split(/\s+/)[0];
-  assert.equal(installedApkSha256, localApkSha256, 'Installed APK differs from the locally built debug APK');
+  assert.equal(installedApkSha256, localApkSha256, 'Installed APK differs from the explicit local test APK');
   const packageDump = shell('dumpsys', 'package', appPackage);
   assert.match(packageDump, new RegExp(`versionName=${appVersion.replaceAll('.', '\\.')}`));
   assert.match(packageDump, new RegExp(`versionCode=${appVersionCode}\\b`));
   assert.match(packageDump, /targetSdk=36\b/);
   assert.ok(packageDump.includes(serviceComponent.split('/')[1]));
   assert.ok(shell('pm', 'path', clockPackage).trim(), `${clockPackage} is unavailable`);
-  pass(`${serial}: Android 15/API 35, ${appPackage} ${appVersion} (${appVersionCode}), target SDK 36, debuggable task build`);
+  if (rootPrivateDataAccess) {
+    assert.doesNotMatch(packageDump, /\bDEBUGGABLE\b/, 'Release-candidate test APK is debuggable');
+  }
+  pass(`${serial}: Android 15/API 35, ${appPackage} ${appVersion} (${appVersionCode}), target SDK 36, ${rootPrivateDataAccess ? 'non-debuggable release candidate with emulator-root test seeding' : 'debuggable task build'}`);
   pass(`source HEAD=${sourceHead}; APK sha256=${localApkSha256}; ${/lastUpdateTime=([^\n]+)/.exec(packageDump)?.[0]}`);
   adb('logcat', '-c');
   destructiveRunStarted = true;

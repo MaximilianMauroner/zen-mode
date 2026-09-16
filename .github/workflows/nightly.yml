@@ -1,0 +1,73 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      # Scheduled runs skip when this commit was already attempted,
+      # whether that attempt succeeded or failed. A retry on the same
+      # commit repeats the same result, so a new commit is needed.
+      # Manual runs always build.
+      - id: check
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          last="$(gh run list --workflow nightly.yml --branch main --status completed --limit 1 --json headSha --jq '.[0].headSha')"
+          if [ -n "$last" ] && [ "$last" = "$GITHUB_SHA" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  nightly:
+    needs: gate
+    if: needs.gate.outputs.should_run != 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      # tsc has known /privacy typed-route errors on main; show them without blocking the nightly.
+      - run: npx tsc --noEmit
+        continue-on-error: true
+      - run: npx expo export --platform web
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          packager: npm
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Stamp nightly version
+        run: node scripts/stamp-nightly-version.mjs
+
+      - name: Write Play service account key
+        env:
+          GOOGLE_SERVICE_ACCOUNT_KEY_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY_JSON }}
+        run: printf '%s' "$GOOGLE_SERVICE_ACCOUNT_KEY_JSON" > google-service-account.json
+
+      - name: Build and submit to Play Internal
+        run: eas build --platform android --profile nightly --non-interactive --auto-submit

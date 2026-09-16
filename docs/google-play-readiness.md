@@ -49,7 +49,7 @@ test data needs manual migration or retention.
 ### Console and listing
 
 - [ ] Resolve every item in [Remaining human gates](#remaining-human-gates)
-      before uploading an artifact or making the listing available.
+      before starting a test/public rollout or making the listing available.
 - [ ] Prepare the required 512 × 512 app icon, 1024 × 500 feature graphic, and
       final screenshots. A promo video is optional.
 - [x] Use Play Internal testing for the initial AAB upload. This does not
@@ -157,7 +157,7 @@ upload flow:
 
 Use a clean, supported Android device or emulator with the current YouTube,
 Instagram, and X Android apps installed. Run this procedure on the exact signed
-candidate before upload. Use the shortest available values for fast checks:
+candidate before any rollout. Use the shortest available values for fast checks:
 15 seconds for the Instagram pause, 1 minute for viewing or Home allowances,
 and 1 minute for timed visits where available.
 

@@ -1,11 +1,24 @@
 import { Text, View } from 'react-native';
 import { router } from 'expo-router';
+import { useState } from 'react';
 
 import { SecondaryButton } from '@/components/ui/button';
-import { Screen, ScreenHeader } from '@/components/ui/screen';
+import { ErrorNote, Screen, ScreenHeader } from '@/components/ui/screen';
 import { openPrivacyPolicy } from '@/features/privacy/policy';
+import { getActionError } from '@/features/action-error';
 
 export default function PrivacyScreen() {
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const openPolicy = () => {
+    if (busy) return;
+    setError('');
+    setBusy(true);
+    void openPrivacyPolicy()
+      .catch((cause: unknown) => setError(getActionError(cause, 'The privacy policy could not be opened. Check your connection and try again.')))
+      .finally(() => setBusy(false));
+  };
+
   return (
     <Screen>
       <ScreenHeader label="PRIVACY" onBack={() => router.back()} />
@@ -23,7 +36,8 @@ export default function PrivacyScreen() {
         <Text className="text-[14px] leading-[21px] text-muted">You can turn off Zen Mode in Android Accessibility settings at any time. Clear storage for Zen Mode in Android settings or uninstall it to remove its local data. Zen Mode opts out of Android cloud backup. Device-to-device transfer behavior can still depend on the device manufacturer.</Text>
         <Text className="text-[14px] leading-[21px] text-muted">Opening Send feedback creates an editable GitHub issue draft and sends the app version and platform to GitHub. Nothing is submitted until you choose to submit it. Submitted issues and their contents are public.</Text>
         <Text className="text-[14px] leading-[21px] text-muted">Zen Mode is provided by Maximilian Mauroner (Lab4Code), Italy. Privacy and support: support@lab4code.com</Text>
-        <SecondaryButton title="Read the privacy policy" onPress={() => void openPrivacyPolicy()} />
+        <ErrorNote message={error} />
+        <SecondaryButton title={busy ? 'Opening…' : 'Read the privacy policy'} disabled={busy} onPress={openPolicy} />
       </View>
     </Screen>
   );

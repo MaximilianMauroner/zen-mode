@@ -1,4 +1,5 @@
 import type { ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
+import { getBrowserReadiness, getSupportedAppAvailability } from './target-availability.ts';
 import { hasAwaitingXFeed } from './x-readiness.ts';
 
 export type OverviewAction =
@@ -9,7 +10,8 @@ export type OverviewAction =
   | 'limit-shorts'
   | 'check-instagram'
   | 'start-instagram'
-  | 'set-up-x';
+  | 'set-up-x'
+  | 'check-sites';
 
 /**
  * Selects the overview's highest-priority action from one native snapshot.
@@ -22,14 +24,22 @@ export function getOverviewAction(status: ZenGuardStatus | null, hasReadError: b
   if (!status.serviceEnabled) return 'open-accessibility';
   if (!status.protectionEnabled) return 'resume-protection';
 
-  if (status.shortsEnabled && status.observationMode) {
-    return status.lastDetectionAt === 0 ? 'check-youtube' : 'limit-shorts';
+  if (status.shortsEnabled && getSupportedAppAvailability(status, 'youtube') !== 'absent' && getSupportedAppAvailability(status, 'youtube') !== 'disabled') {
+    if (!isShortsReady(status)) return status.lastDetectionAt === 0 ? 'check-youtube' : 'limit-shorts';
   }
-  if (status.instagramObservationMode) {
-    return (status.instagramSignalMask & 3) !== 3 ? 'check-instagram' : 'start-instagram';
+  const instagramConfigured = status.instagramObservationMode || status.instagramSignalMask !== 0 || status.instagramExploreBlocked === true;
+  if (instagramConfigured && getSupportedAppAvailability(status, 'instagram') !== 'absent' && getSupportedAppAvailability(status, 'instagram') !== 'disabled') {
+    if (status.instagramObservationMode) return (status.instagramSignalMask & 3) !== 3 ? 'check-instagram' : 'start-instagram';
+    if ((status.instagramSignalMask & 3) !== 3) return 'check-instagram';
   }
 
   const xEnabled = status.xHomeEnabled || status.xVideosEnabled;
-  if (xEnabled && (status.xObservationMode || hasAwaitingXFeed(status))) return 'set-up-x';
+  const xAvailability = getSupportedAppAvailability(status, 'x');
+  if (xEnabled && xAvailability !== 'absent' && xAvailability !== 'disabled' && (status.xObservationMode || hasAwaitingXFeed(status))) return 'set-up-x';
+  if (status.adultSiteEnabled && ['check', 'unknown'].includes(getBrowserReadiness(status))) return 'check-sites';
   return null;
+}
+
+function isShortsReady(status: ZenGuardStatus): boolean {
+  return !status.observationMode && typeof status.lastDetectionAt === 'number' && status.lastDetectionAt > 0;
 }

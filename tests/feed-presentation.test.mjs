@@ -10,6 +10,9 @@ const active = {
   observationMode: false, instagramObservationMode: false,
   instagramWaitSeconds: 15, instagramReelsMinutes: 1,
   instagramHomeMinutes: 5, instagramExploreBlocked: true,
+  lastDetectionAt: 1, instagramSignalMask: 3,
+  appAvailability: { youtube: 'installed', instagram: 'installed', x: 'installed' },
+  browserAvailability: { chrome: 'installed', samsungInternet: 'installed', opera: 'installed', firefox: 'installed' },
 };
 
 test('labels distinguish blocked, limited and deliberately allowed feeds', () => {

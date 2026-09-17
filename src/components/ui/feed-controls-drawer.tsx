@@ -10,6 +10,7 @@ import { getHomeFeedTimeLabel } from '@/features/protection/home-feed-time';
 import { isChangeBlocked } from '@/features/protection/lock';
 import { getXDrawerGuidance } from '@/features/protection/x-drawer-guidance';
 import { hasAllRequiredXSignals } from '@/features/protection/x-readiness';
+import { getSupportedAppAvailability, type SupportedAppKey } from '@/features/protection/target-availability';
 import { getZenGuardStatus, openInstagram, setInstagramObservationMode, setInstagramSettings, openX, openYouTube, setObservationMode, setShortsEnabled, setXObservationMode, setXSettings, type ZenGuardStatus } from '@/features/protection/native';
 
 export type FeedDrawer = 'youtube' | 'instagram' | 'x';
@@ -27,6 +28,8 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
   const disabled = busy || loading || !status?.available || Boolean(readError);
   const isX = feed === 'x';
   const isInstagram = feed === 'instagram';
+  const targetApp: SupportedAppKey = isInstagram ? 'instagram' : isX ? 'x' : 'youtube';
+  const targetAvailability = getSupportedAppAvailability(status, targetApp);
   const observing = isInstagram ? status?.instagramObservationMode : isX ? status?.xObservationMode : status?.observationMode;
   const enabled = isInstagram ? true : isX ? status?.xHomeEnabled || status?.xVideosEnabled : status?.shortsEnabled;
   const detected = status && (isInstagram ? (status.instagramSignalMask & 3) === 3 : isX ? hasAllRequiredXSignals(status) : status.lastDetectionAt > 0);
@@ -123,7 +126,13 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
               ))}
               <Text className="text-[12px] text-faint">Other X rules keep running in the meantime.</Text>
             </View> : null}
-            <SecondaryButton className="mt-5" title={isInstagram ? 'Open Instagram' : isX ? 'Open X' : 'Open YouTube'} disabled={disabled} onPress={() => run(async () => { if (isInstagram) await openInstagram(); else if (isX) await openX(); else await openYouTube(); })} />
+            {targetAvailability === 'absent' || targetAvailability === 'disabled' ? (
+              <Text className="mt-5 text-[13px] leading-[19px] text-muted">
+                {TITLES[targetApp === 'youtube' ? 'youtube' : targetApp === 'instagram' ? 'instagram' : 'x']} is {targetAvailability === 'absent' ? 'not installed' : 'disabled in Android'}. Install or enable it to run this check. Saved rules stay unchanged.
+              </Text>
+            ) : (
+              <SecondaryButton className="mt-5" title={isInstagram ? 'Open Instagram to check' : isX ? 'Open X to check' : 'Open YouTube to check'} disabled={disabled} onPress={() => run(async () => { if (isInstagram) await openInstagram(); else if (isX) await openX(); else await openYouTube(); })} />
+            )}
             <ErrorNote message={error || readError} />
           </ScrollView>
         </SafeAreaView>

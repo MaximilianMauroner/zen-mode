@@ -17,6 +17,7 @@ const active = {
   xHomeMinutes: 5,
   xHomeUsedMs: 241_000,
   xHomeBreakRemainingMs: 0,
+  appAvailability: { youtube: 'installed', instagram: 'installed', x: 'installed' },
 };
 
 test('shows remaining Home-feed time from native usage', () => {

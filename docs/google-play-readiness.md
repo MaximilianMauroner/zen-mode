@@ -145,7 +145,7 @@ test data needs manual migration or retention.
       explicit external/user-initiated-sharing distinction.
 - [x] Finalize the owner-approved [privacy policy](../PRIVACY.md) and align the
       in-app privacy screen. The parent saved the public GitHub URL in Console.
-      The superseded code-6 candidate and the historical active code-7 Expo 57.0.23
+      The superseded code-6 candidate and the active code-7 Expo 57.0.23
       artifact both package `Italy` and are recorded in their respective
       candidate evidence. Play-installed code-7 testing remains the owner's
       separate work.

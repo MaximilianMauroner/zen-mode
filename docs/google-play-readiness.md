@@ -10,7 +10,8 @@ current repository state. It does not publish or send anything externally.
 | App name | `Zen Mode` in `app.json`. |
 | Play app | Console app `4973526737842711493`, personal developer `6468274858330069554`; Console changes are maintained separately from this repository. |
 | Android application ID | `com.lab4code.zenmode` in `app.json`; the owner selected it as the permanent Play package ID and the Console app has been created with it. |
-| Version | `0.1.5` with Android version code `7` in `app.json`. The parent independently matched the code-7 AAB SHA-256, replaced code 6 in Internal release 1, and saved the release name exactly as `0.1.5`. At 08:54 UTC on 2026-09-16 Console reported the release Active, available to internal testers, and Not reviewed on track `4700894893507986209`. No production release exists. |
+| Current source version | `app.json` is the source of truth. At this revision it declares `versionName` `0.1.5` and Android `versionCode` `8`; the consistency test keeps this statement aligned when the source version changes. |
+| Historical verified artifact | The dated code-7 AAB evidence below refers to the `0.1.5` artifact that was independently matched, replaced code 6 in Internal release 1, and reported Active, available to internal testers, and Not reviewed at 08:54 UTC on 2026-09-16 on track `4700894893507986209`. No production release exists. |
 | Protection target | Android only. Web checks the interface; iOS does not provide protection. |
 | Accessibility service | The native module declares `BIND_ACCESSIBILITY_SERVICE`, can retrieve window content, and receives window/content, click, and scroll events. The service is marked `isAccessibilityTool=false`. |
 | Supported feed surfaces | YouTube Shorts; Instagram Reels, Home, Explore, and Direct Messages for setup/provenance; X Home and video viewer. X support is for the Android app package, not the browser. |
@@ -58,7 +59,7 @@ test data needs manual migration or retention.
 - [ ] Capture final candidate screenshots. A promo video is optional.
 - [x] Use Play Internal testing for the initial AAB upload. This does not
       authorize publication or a production rollout.
-- [x] Publish code 7 to the owner-approved one-person Internal testing list.
+- [x] Historical: publish code 7 to the owner-approved one-person Internal testing list.
       Console reports Active and Not reviewed. The optional missing
       deobfuscation-file warning remains; no production release was created.
 
@@ -71,9 +72,9 @@ test data needs manual migration or retention.
       Dev-vault attachment `Zen Mode - Android upload-key recovery`. The parent
       independently verified its complete SHA-256; parent Mac copies and the VM
       staging directory were removed. EAS retains the managed primary copy.
-- [x] Set the release version code and version name. Confirm the package in the
-      built manifest is `com.lab4code.zenmode`. Code 7 replaced code 6 in the
-      active Internal release; the Expo 57.0.23 artifact is audited in
+- [x] Historical code-7 release: confirm the package in the built manifest is
+      `com.lab4code.zenmode`. Code 7 replaced code 6 in the active Internal
+      release; the Expo 57.0.23 artifact is audited in
       `docs/evidence/android-release-candidate-0.1.5-vc7-20260916.md`. The
       displayed version remains `0.1.5`.
 - [x] Inspect the merged release manifest. Confirm the accessibility service is

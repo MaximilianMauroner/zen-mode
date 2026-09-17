@@ -8,7 +8,7 @@ import { useSharedGuardStatus } from '@/features/protection/guard-status-context
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { getHomeFeedTimeLabel } from '@/features/protection/home-feed-time';
 import { isChangeBlocked } from '@/features/protection/lock';
-import { getXFeedReadiness, hasAllRequiredXSignals } from '@/features/protection/x-readiness';
+import { getAwaitingXFeeds, hasAllRequiredXSignals } from '@/features/protection/x-readiness';
 import { getZenGuardStatus, openInstagram, setInstagramObservationMode, setInstagramSettings, openX, openYouTube, setObservationMode, setShortsEnabled, setXObservationMode, setXSettings, type ZenGuardStatus } from '@/features/protection/native';
 
 export type FeedDrawer = 'youtube' | 'instagram' | 'x';
@@ -32,9 +32,8 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
   const canStart = detected && status?.serviceEnabled && status.protectionEnabled;
   // After setup, a feed switched on later still needs its own signal. Say so,
   // rather than leaving the user with a rule that quietly enforces nothing.
-  const xAwaiting = isX && !observing && status
-    ? (['home', 'videos'] as const).filter((feed) => getXFeedReadiness(status, feed) === 'awaiting')
-    : [];
+  const xAwaiting = isX ? getAwaitingXFeeds(status) : [];
+  const postSetupXAwaiting = isX && !observing ? xAwaiting : [];
 
   const run = (action: (fresh: ZenGuardStatus) => Promise<void>) => {
     if (inFlight.current || disabled) return;
@@ -111,13 +110,13 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
             </View>}
             {observing && enabled ? <View className="mt-5 gap-2 border-t border-line pt-4">
               {isInstagram ? <Text className="text-[13px] text-muted">{detected ? '✓ Messages and Reels detected' : 'Open Direct Messages, then one Reel from a message. Return here when done.'}</Text> : isX ? <>
-                {status?.xHomeEnabled ? <Text className="text-[13px] text-muted">{getXFeedReadiness(status, 'home') === 'ready' ? '✓ Home feed detected' : '○ Open the Home feed'}</Text> : null}
-                {status?.xVideosEnabled ? <Text className="text-[13px] text-muted">{getXFeedReadiness(status, 'videos') === 'ready' ? '✓ Video viewer detected' : '○ Open one video'}</Text> : null}
+                {status?.xHomeEnabled ? <Text className="text-[13px] text-muted">{xAwaiting.includes('home') ? '○ Open the Home feed' : '✓ Home feed detected'}</Text> : null}
+                {status?.xVideosEnabled ? <Text className="text-[13px] text-muted">{xAwaiting.includes('videos') ? '○ Open one video' : '✓ Video viewer detected'}</Text> : null}
               </> : <Text className="text-[13px] text-muted">{detected ? '✓ Shorts detected' : 'Open one Short, then return here.'}</Text>}
               {canStart ? <PrimaryButton title="Start protection" disabled={disabled} onPress={() => run(async () => { if (isInstagram) await setInstagramObservationMode(false); else if (isX) await setXObservationMode(false); else await setObservationMode(false); })} /> : detected ? <Text className="text-[13px] text-muted">Turn on protection and Android access in Settings.</Text> : null}
             </View> : null}
-            {xAwaiting.length ? <View className="mt-5 gap-2 border-t border-line pt-4">
-              {xAwaiting.map((feed) => (
+            {postSetupXAwaiting.length ? <View className="mt-5 gap-2 border-t border-line pt-4">
+              {postSetupXAwaiting.map((feed) => (
                 <Text key={feed} className="text-[13px] text-muted">
                   {feed === 'home' ? '○ Open the Home feed once to start breaks' : '○ Open one video once to start the video limit'}
                 </Text>

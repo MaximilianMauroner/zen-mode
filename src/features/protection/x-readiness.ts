@@ -30,6 +30,16 @@ export function getXFeedReadiness(status: ZenGuardStatus | null, feed: XFeed): X
   return (status.xSignalMask & bit) === bit ? 'ready' : 'awaiting';
 }
 
+/** Enabled X feeds that have not yet produced the signal they enforce on. */
+export function getAwaitingXFeeds(status: ZenGuardStatus | null): XFeed[] {
+  return (['home', 'videos'] as const).filter((feed) => getXFeedReadiness(status, feed) === 'awaiting');
+}
+
+/** Whether any enabled X feed still needs its own observed surface. */
+export function hasAwaitingXFeed(status: ZenGuardStatus | null): boolean {
+  return getAwaitingXFeeds(status).length > 0;
+}
+
 /** The signals first-time setup waits for, given which X feeds are switched on. */
 export function requiredXSignals(status: ZenGuardStatus | null): number {
   if (!status) return 0;

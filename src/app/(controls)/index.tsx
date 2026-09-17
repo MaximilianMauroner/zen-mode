@@ -13,6 +13,7 @@ import { formatRemaining, readLockState, type LockState } from '@/features/prote
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { getFeedStatus } from '@/features/protection/feed-status';
 import { getHomeFeedTimeLabel } from '@/features/protection/home-feed-time';
+import { getOverviewAction } from '@/features/protection/overview-actions';
 import { getAdultSitePresentation } from '@/features/protection/adult-site-presentation';
 import { useSharedGuardStatus } from '@/features/protection/guard-status-context';
 import { hasCompletedSetup } from '@/features/protection/setup';
@@ -67,20 +68,17 @@ export default function FeedsScreen() {
   const xHomeTime = getHomeFeedTimeLabel(status, 'x');
 
   const nextAction = (() => {
-    if (readError) return { title: 'Try again', run: refresh };
-    if (!status?.available) return null;
-    if (!status.serviceEnabled) return { title: 'Open Android settings', run: openAccessibilitySettings };
-    if (!status.protectionEnabled) return { title: 'Resume protection', run: async () => { await setNativeProtectionEnabled(true); await refresh(); } };
-    if (status.shortsEnabled && status.observationMode) {
-      if (!status.lastDetectionAt) return { title: 'Check YouTube Shorts', run: openYouTube };
-      return { title: 'Limit Shorts to one', run: async () => { await setObservationMode(false); await refresh(); } };
+    switch (getOverviewAction(status, Boolean(readError))) {
+      case 'retry': return { title: 'Try again', run: refresh };
+      case 'open-accessibility': return { title: 'Open Android settings', run: openAccessibilitySettings };
+      case 'resume-protection': return { title: 'Resume protection', run: async () => { await setNativeProtectionEnabled(true); await refresh(); } };
+      case 'check-youtube': return { title: 'Check YouTube Shorts', run: openYouTube };
+      case 'limit-shorts': return { title: 'Limit Shorts to one', run: async () => { await setObservationMode(false); await refresh(); } };
+      case 'check-instagram': return { title: 'Check Instagram feeds', run: openInstagram };
+      case 'start-instagram': return { title: 'Start Instagram protection', run: async () => { await setInstagramObservationMode(false); await refresh(); } };
+      case 'set-up-x': return { title: 'Set up X', run: async () => { setDrawer('x'); } };
+      default: return null;
     }
-    if (status.instagramObservationMode) {
-      if ((status.instagramSignalMask & 3) !== 3) return { title: 'Check Instagram feeds', run: openInstagram };
-      return { title: 'Start Instagram protection', run: async () => { await setInstagramObservationMode(false); await refresh(); } };
-    }
-    if ((status.xHomeEnabled || status.xVideosEnabled) && status.xObservationMode) return { title: 'Set up X', run: async () => { setDrawer('x'); } };
-    return null;
   })();
 
   return (

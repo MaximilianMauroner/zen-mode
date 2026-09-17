@@ -4,8 +4,8 @@ Prepared for Play app `4973526737842711493`, package
 `com.lab4code.zenmode`. This text is reviewer material, not a declaration that
 has been submitted or accepted by Google Play.
 
-Console correlation: Internal release 1 now contains Zen Mode `0.1.5` (version
-code `7`), built from source
+Historical Console correlation: Internal release 1 contained Zen Mode `0.1.5`
+(version code `7`), built from source
 `45be98daf88685f9ac6f694304cb4ef1c75fbe6a`. Its AAB SHA-256 is
 `08bb1d84f4d92519a06c1796c9748e64f5f9a9384582b94790f6b84a0c49dde7`
 and it packages Italy. At 08:54 UTC on 2026-09-16 Console reported the release

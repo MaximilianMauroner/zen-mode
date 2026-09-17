@@ -11,6 +11,7 @@ test('Android application ID and accessibility settings activity stay aligned', 
   const packageLock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
   const easConfig = JSON.parse(readFileSync(new URL('../eas.json', import.meta.url), 'utf8'));
   const settingsScreen = readFileSync(new URL('../src/app/settings.tsx', import.meta.url), 'utf8');
+  const playReadiness = readFileSync(new URL('../docs/google-play-readiness.md', import.meta.url), 'utf8');
   const accessibilityConfig = readFileSync(
     new URL('../modules/zen-guard/android/src/main/res/xml/zen_guard_accessibility_service.xml', import.meta.url),
     'utf8',
@@ -31,6 +32,17 @@ test('Android application ID and accessibility settings activity stay aligned', 
   assert.ok(appConfig.expo.plugins.includes('./plugins/with-android-release-signing'));
   assert.match(settingsScreen, /Constants\.expoConfig\?\.version/);
   assert.match(accessibilityConfig, /android:settingsActivity="com\.lab4code\.zenmode\.MainActivity"/);
+  assert.match(
+    playReadiness,
+    new RegExp(
+      'Current source version.*app\\.json.*versionName.*`' +
+        appConfig.expo.version +
+        '`.*versionCode.*`' +
+        appConfig.expo.android.versionCode +
+        '`',
+    ),
+  );
+  assert.match(playReadiness, /Historical verified artifact.*code-7/);
 });
 
 test('release signing has no debug fallback and uses the verified bundle workflow', () => {

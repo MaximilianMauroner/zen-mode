@@ -21,7 +21,7 @@ current repository state. It does not publish or send anything externally.
 | Package visibility | The module queries YouTube, Instagram, X, launcher activities, and exact Android Settings intents used to preserve the Accessibility escape path. Settings handlers are exempted only when Android identifies them as system or updated-system apps. `app.json` blocks unrelated storage and overlay permissions. Verify the merged release manifest. |
 | Listing decisions | Free, Productivity, support@lab4code.com, repository website, no ads/AD_ID, no account requirement, target ages 13–15/16–17/18+, IARC PEGI 3 / ESRB Everyone. Console operator reports these plus the listing text, icon, and public policy URL saved as a draft. |
 | Public policy identity | Maximilian Mauroner (Lab4Code), Italy, support@lab4code.com; explicitly approved for publication. No street address is published. |
-| Build state | Release signing is fail-closed. EAS holds an app-specific Zen upload key. The signed code-7 Expo replacement audited in `docs/evidence/android-release-candidate-0.1.5-vc7-20260916.md` is the active Internal artifact; Play-installed testing remains pending. Code-5 build/device and code-6 superseded-candidate evidence remain preserved separately. The key is not stored in this repository or VM workspace. |
+| Build state | Release signing is fail-closed. EAS holds an app-specific Zen upload key. The historical signed code-7 Expo replacement audited in `docs/evidence/android-release-candidate-0.1.5-vc7-20260916.md` remains the active Internal artifact; no code-8 upload is claimed, and Play-installed testing remains pending. Code-5 build/device and code-6 superseded-candidate evidence remain preserved separately. The key is not stored in this repository or VM workspace. |
 | Internal access | Opt-in: <https://play.google.com/apps/internaltest/4700894893507986209>. The sole selected list is `Max internal testing`, containing only `maximilian.mauroner@gmail.com`; a second mistyped address was never added. |
 
 The repeatable build, signer verification, and key-custody boundary are in
@@ -145,7 +145,7 @@ test data needs manual migration or retention.
       explicit external/user-initiated-sharing distinction.
 - [x] Finalize the owner-approved [privacy policy](../PRIVACY.md) and align the
       in-app privacy screen. The parent saved the public GitHub URL in Console.
-      The superseded code-6 candidate and the active code-7 Expo 57.0.23
+      The superseded code-6 candidate and the historical active code-7 Expo 57.0.23
       artifact both package `Italy` and are recorded in their respective
       candidate evidence. Play-installed code-7 testing remains the owner's
       separate work.

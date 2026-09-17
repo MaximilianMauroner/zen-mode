@@ -1,9 +1,36 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { parse } from '@babel/parser';
 import { getOverviewAction } from '../src/features/protection/overview-actions.ts';
 
 const overviewSource = readFileSync(new URL('../src/app/(controls)/index.tsx', import.meta.url), 'utf8');
+
+function walk(node, visit) {
+  if (!node || typeof node !== 'object') return;
+  visit(node);
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) value.forEach((child) => walk(child, visit));
+    else if (value && typeof value === 'object' && value.type) walk(value, visit);
+  }
+}
+
+function getSetUpXReturn() {
+  const ast = parse(overviewSource, { sourceType: 'module', plugins: ['typescript', 'jsx'] });
+  const matches = [];
+  walk(ast, (node) => {
+    if (node.type !== 'SwitchCase' || node.test?.type !== 'StringLiteral' || node.test.value !== 'set-up-x') return;
+    const returned = node.consequent.find((statement) => statement.type === 'ReturnStatement');
+    assert.ok(returned?.argument?.type === 'ObjectExpression', 'set-up-x must return an action object');
+    matches.push(returned.argument);
+  });
+  assert.equal(matches.length, 1, 'expected exactly one set-up-x dispatcher case');
+  return matches[0];
+}
+
+function getObjectProperty(object, name) {
+  return object.properties.find((property) => property.type === 'ObjectProperty' && property.key.type === 'Identifier' && property.key.name === name);
+}
 
 const base = {
   available: true,
@@ -41,10 +68,20 @@ const base = {
 
 test('the overview is wired to the shared action selector', () => {
   assert.match(overviewSource, /getOverviewAction\(status, Boolean\(readError\)\)/);
-  assert.match(overviewSource, /case 'set-up-x'/);
-  assert.match(overviewSource, /setDrawer\('x'\)/);
+  const action = getSetUpXReturn();
+  assert.equal(getObjectProperty(action, 'title')?.value.value, 'Set up X');
+  const run = getObjectProperty(action, 'run')?.value;
+  assert.equal(run?.type, 'ArrowFunctionExpression');
+  const calls = [];
+  walk(run, (node) => {
+    if (node.type === 'CallExpression' && node.callee.type === 'Identifier') calls.push(node);
+  });
+  assert.equal(calls.length, 1, 'set-up-x must dispatch exactly one operation');
+  assert.equal(calls[0].callee.name, 'setDrawer');
+  assert.equal(calls[0].arguments.length, 1);
+  assert.equal(calls[0].arguments[0].type, 'StringLiteral');
+  assert.equal(calls[0].arguments[0].value, 'x');
   assert.doesNotMatch(overviewSource, /status\.xObservationMode\) return \{ title: 'Set up X'/);
-  assert.doesNotMatch(overviewSource, /setXObservationMode|setXSettings/);
 });
 
 test('initial X setup offers the drawer without changing observation state', () => {

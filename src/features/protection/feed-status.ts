@@ -1,4 +1,5 @@
 import type { ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
+import { getXFeedReadiness } from './x-readiness.ts';
 
 /** A service switch alone does not mean either feed detector is enforcing. */
 export function getFeedStatus(status: ZenGuardStatus | null) {
@@ -6,6 +7,9 @@ export function getFeedStatus(status: ZenGuardStatus | null) {
   if (!status.available) return 'unavailable';
   if (!status.serviceEnabled) return 'permission';
   if (!status.protectionEnabled) return 'paused';
-  if ((status.shortsEnabled && status.observationMode) || status.instagramObservationMode || ((status.xHomeEnabled || status.xVideosEnabled) && status.xObservationMode)) return 'setup';
+  // An X feed switched on after setup enforces nothing until its own surface is
+  // seen, so the summary must not claim full protection while one is waiting.
+  const xAwaiting = getXFeedReadiness(status, 'home') === 'awaiting' || getXFeedReadiness(status, 'videos') === 'awaiting';
+  if ((status.shortsEnabled && status.observationMode) || status.instagramObservationMode || ((status.xHomeEnabled || status.xVideosEnabled) && status.xObservationMode) || xAwaiting) return 'setup';
   return 'active';
 }

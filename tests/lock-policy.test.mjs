@@ -7,6 +7,7 @@ import {
   endOf,
   formatRemaining,
   isWeakerAppRule,
+  maxBurstMinutes,
   parseLockRecord,
   stateOf,
   UNLOCK_DELAY_MS,
@@ -192,6 +193,40 @@ test('an unchanged rule is not weaker, so re-saving is always allowed', () => {
 test('adding a rule to an unguarded app only tightens', () => {
   assert.equal(isWeakerAppRule([], { mode: 'daily', minutes: 480 }), false);
   assert.equal(isWeakerAppRule([], { mode: 'visit', sessionMinutes: 60, cooldownMinutes: 0 }), false);
+});
+
+test('a single sitting is capped by the allowance or visit length, not the daily total', () => {
+  assert.equal(maxBurstMinutes({ mode: 'daily', minutes: 120 }), 120);
+  assert.equal(maxBurstMinutes({ mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 }), 5);
+  assert.equal(maxBurstMinutes({ mode: 'visit', sessionMinutes: 5, cooldownMinutes: 0 }), 5);
+});
+
+test('a mode switch cannot trade pacing away for the same daily total', () => {
+  // Both permit 120 minutes a day, but only the rolling rule stops a two-hour
+  // sitting. Keeping the total is not keeping the restriction.
+  const rolling = { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 };
+  const daily = { mode: 'daily', minutes: 120 };
+  assert.equal(dailyCeilingMinutes(rolling), dailyCeilingMinutes(daily));
+  assert.equal(isWeakerAppRule([rolling], daily), true);
+
+  // The same trade through a timed visit.
+  assert.equal(isWeakerAppRule([rolling], { mode: 'visit', sessionMinutes: 120, cooldownMinutes: 1320 }), true);
+});
+
+test('a longer sitting is refused even when the day gets tighter', () => {
+  const rolling = { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 };
+  // 60 a day is well under the stored 120, but it permits an hour in one go.
+  assert.equal(isWeakerAppRule([rolling], { mode: 'daily', minutes: 60 }), true);
+  // Matching the sitting cap and lowering the day is a genuine tightening.
+  assert.equal(isWeakerAppRule([rolling], { mode: 'daily', minutes: 5 }), false);
+});
+
+test('a rolling rule may widen its window when the sitting cap holds', () => {
+  // 5m per hour to 5m per 3 hours: tighter over the day, same single sitting.
+  const hourly = { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 };
+  assert.equal(isWeakerAppRule([hourly], { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 180 }), false);
+  // Widening the allowance itself lengthens the sitting, so it is refused.
+  assert.equal(isWeakerAppRule([hourly], { mode: 'rolling', allowanceMinutes: 10, windowMinutes: 180 }), true);
 });
 
 test('when an app carries several rules, the tightest one is what a replacement must match', () => {

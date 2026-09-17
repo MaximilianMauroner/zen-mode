@@ -145,16 +145,42 @@ export function dailyCeilingMinutes(rule: AppRule): number {
 }
 
 /**
+ * The longest unbroken stretch of use a rule permits.
+ *
+ * A daily budget can be spent in one sitting. A rolling allowance and a timed
+ * visit each cap a single stretch, which is the guarantee a daily total cannot
+ * express: "5 minutes in any hour" and "120 minutes a day" both come to 120
+ * over a day, but only one of them prevents a two-hour sitting.
+ */
+export function maxBurstMinutes(rule: AppRule): number {
+  switch (rule.mode) {
+    case 'daily':
+      return Math.min(MINUTES_PER_DAY, Math.max(0, rule.minutes));
+    case 'rolling':
+      return Math.min(MINUTES_PER_DAY, Math.max(0, rule.allowanceMinutes));
+    case 'visit':
+      return Math.min(MINUTES_PER_DAY, Math.max(0, rule.sessionMinutes));
+  }
+}
+
+/**
  * True when saving `proposed` over `stored` would loosen the guard, which the
  * settings lock refuses.
  *
+ * A rule restricts on two axes that a mode switch can trade against each other,
+ * so both have to hold: how much the day allows in total, and how much a single
+ * sitting allows. Checking the daily total alone would let "5 minutes in any
+ * hour" become "120 minutes a day", which keeps the total and throws away the
+ * pacing.
+ *
  * `stored` is a list because the native stores can hold a daily, visit, and
- * rolling rule for the same app at once. All of them apply, so the tightest is
- * what binds today and what a replacement has to match. An app with no rule
- * only gains one, so an empty list is never weaker.
+ * rolling rule for the same app at once. All of them apply, so the tightest
+ * value on each axis is what binds today and what a replacement has to match.
+ * An app with no rule only gains one, so an empty list is never weaker.
  */
 export function isWeakerAppRule(stored: readonly AppRule[], proposed: AppRule): boolean {
   if (stored.length === 0) return false;
   const bindingCeiling = Math.min(...stored.map(dailyCeilingMinutes));
-  return dailyCeilingMinutes(proposed) > bindingCeiling;
+  const bindingBurst = Math.min(...stored.map(maxBurstMinutes));
+  return dailyCeilingMinutes(proposed) > bindingCeiling || maxBurstMinutes(proposed) > bindingBurst;
 }

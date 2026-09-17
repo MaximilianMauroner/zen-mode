@@ -5,7 +5,7 @@ import { AppPicker } from '@/components/ui/app-picker';
 import { TopTabs } from 'expo-router/js-top-tabs';
 import { StatusPill } from '@/components/ui/pill';
 import { isChangeBlocked } from '@/features/protection/lock';
-import { isWeakerAppRule, type AppRule } from '@/features/protection/lock-policy';
+import { appRuleLockRefusal, type AppRule } from '@/features/protection/lock-policy';
 import {
   getAppLimits,
   getIntentApps,
@@ -212,9 +212,10 @@ export default function AppLimitsScreen() {
     runAction(async () => {
       // Read what is stored right now. The cached list can be a refresh behind,
       // and the lock must judge the change that is actually being made.
-      if (isWeakerAppRule(await readStoredRules(packageName), proposed) && (await isChangeBlocked())) {
+      const refusal = appRuleLockRefusal(await readStoredRules(packageName), proposed);
+      if (refusal !== null && (await isChangeBlocked())) {
         setLockBlocked(true);
-        throw new Error('That rule is looser than the one you set. Ask to unlock, then wait a day.');
+        throw new Error(refusal);
       }
       if (mode === 'daily') {
         await setAppLimit(packageName, minutes);

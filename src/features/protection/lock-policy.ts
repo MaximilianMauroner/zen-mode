@@ -4,7 +4,6 @@
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const MINUTES_PER_DAY = 24 * 60;
 
 /** Cooling-off period between asking to unlock and the lock actually opening. */
 export const UNLOCK_DELAY_MS = DAY_MS;
@@ -119,80 +118,53 @@ export type AppRule =
   | { mode: 'rolling'; allowanceMinutes: number; windowMinutes: number };
 
 /**
- * The most minutes a rule permits in any 24 hours, counted from any moment
- * rather than from midnight.
+ * Why the settings lock refuses to save `proposed` over `stored`, or null when
+ * the change is a tightening the lock allows.
  *
- * Daily, timed-visit, and rolling rules are not otherwise comparable, so this
- * is what lets the lock judge a mode switch instead of refusing every one of
- * them. A timed visit with no downtime repeats all day, which is why a zero
- * cooldown reaches the ceiling.
+ * The lock allows an edit only inside one mode. That is narrower than comparing
+ * the two rules, and it is deliberate, because a change of mode is not a
+ * comparison the app can win:
  *
- * A daily budget counts double because it is the only mode with a reset
- * moment: `AppLimitStore` keys usage by local calendar day, so an evening and
- * the morning after each draw a full budget inside one 24-hour span. A rolling
- * allowance never resets, so the same number of minutes buys a weaker promise
- * as a daily budget than as a rolling one, and the lock has to see that.
- */
-export function dailyCeilingMinutes(rule: AppRule): number {
-  switch (rule.mode) {
-    case 'daily':
-      return Math.min(MINUTES_PER_DAY, Math.max(0, rule.minutes) * 2);
-    case 'rolling': {
-      if (rule.windowMinutes <= 0) return MINUTES_PER_DAY;
-      const windows = Math.floor(MINUTES_PER_DAY / rule.windowMinutes);
-      return Math.min(MINUTES_PER_DAY, rule.allowanceMinutes * windows);
-    }
-    case 'visit': {
-      const cycle = rule.sessionMinutes + rule.cooldownMinutes;
-      if (cycle <= 0) return MINUTES_PER_DAY;
-      const visits = Math.floor(MINUTES_PER_DAY / cycle);
-      return Math.min(MINUTES_PER_DAY, rule.sessionMinutes * visits);
-    }
-  }
-}
-
-/**
- * The longest unbroken stretch of use a rule permits.
+ * - Consumed time does not move between the stores. Saving a rule of a
+ *   different mode writes to a store that holds nothing for this app and drops
+ *   the old one, and `RollingLimitStore.removeRule` deletes the banked slices
+ *   outright. A spent allowance therefore comes back in full the moment the
+ *   mode changes, however tight the new rule reads.
+ * - The modes promise different things at different spans. "15 minutes an
+ *   hour" and "10 minutes with 30 minutes off" both come to 360 minutes a day
+ *   with a shorter sitting, yet two visits fit inside one hour and give 20.
+ *   Summarising a rule as a few numbers loses the span where it binds.
  *
- * A daily budget can be spent in one sitting. A rolling allowance and a timed
- * visit each cap a single stretch, which is the guarantee a daily total cannot
- * express: "5 minutes in any hour" and "120 minutes a day" both come to 120
- * over a day, but only one of them prevents a two-hour sitting.
- *
- * A sitting that straddles midnight can reach twice a daily budget. That is
- * counted on the 24-hour axis and deliberately not here, because doubling both
- * axes would refuse "5 minutes an hour" becoming "5 minutes a day" over a
- * 10-minute midnight sitting, and trap the user in the far looser rule.
- */
-export function maxBurstMinutes(rule: AppRule): number {
-  switch (rule.mode) {
-    case 'daily':
-      return Math.min(MINUTES_PER_DAY, Math.max(0, rule.minutes));
-    case 'rolling':
-      return Math.min(MINUTES_PER_DAY, Math.max(0, rule.allowanceMinutes));
-    case 'visit':
-      return Math.min(MINUTES_PER_DAY, Math.max(0, rule.sessionMinutes));
-  }
-}
-
-/**
- * True when saving `proposed` over `stored` would loosen the guard, which the
- * settings lock refuses.
- *
- * A rule restricts on two axes that a mode switch can trade against each other,
- * so both have to hold: how much the day allows in total, and how much a single
- * sitting allows. Checking the daily total alone would let "5 minutes in any
- * hour" become "120 minutes a day", which keeps the total and throws away the
- * pacing.
+ * Inside one mode neither problem exists. The rule keeps its own store and its
+ * own consumed time, and its parameters are directly comparable at every span:
+ * fewer minutes, a smaller allowance in a window no shorter, or a shorter visit
+ * with downtime no shorter is tighter everywhere, not just on average.
  *
  * `stored` is a list because the native stores can hold a daily, visit, and
- * rolling rule for the same app at once. All of them apply, so the tightest
- * value on each axis is what binds today and what a replacement has to match.
- * An app with no rule only gains one, so an empty list is never weaker.
+ * rolling rule for the same app at once. Saving replaces all of them, so a
+ * second stored rule is always a guard the save would drop. An app with no rule
+ * only gains one, so an empty list is never refused.
  */
-export function isWeakerAppRule(stored: readonly AppRule[], proposed: AppRule): boolean {
-  if (stored.length === 0) return false;
-  const bindingCeiling = Math.min(...stored.map(dailyCeilingMinutes));
-  const bindingBurst = Math.min(...stored.map(maxBurstMinutes));
-  return dailyCeilingMinutes(proposed) > bindingCeiling || maxBurstMinutes(proposed) > bindingBurst;
+export function appRuleLockRefusal(stored: readonly AppRule[], proposed: AppRule): string | null {
+  if (stored.length === 0) return null;
+  if (stored.length > 1 || stored[0].mode !== proposed.mode) {
+    return 'Changing how an app is limited clears the time it has already used. Ask to unlock, then wait a day.';
+  }
+  return isLooserInMode(stored[0], proposed)
+    ? 'That rule is looser than the one you set. Ask to unlock, then wait a day.'
+    : null;
+}
+
+/** Compares two rules of the same mode on their own parameters. */
+function isLooserInMode(stored: AppRule, proposed: AppRule): boolean {
+  if (stored.mode === 'daily' && proposed.mode === 'daily') {
+    return proposed.minutes > stored.minutes;
+  }
+  if (stored.mode === 'rolling' && proposed.mode === 'rolling') {
+    return proposed.allowanceMinutes > stored.allowanceMinutes || proposed.windowMinutes < stored.windowMinutes;
+  }
+  if (stored.mode === 'visit' && proposed.mode === 'visit') {
+    return proposed.sessionMinutes > stored.sessionMinutes || proposed.cooldownMinutes < stored.cooldownMinutes;
+  }
+  return true;
 }

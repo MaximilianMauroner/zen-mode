@@ -2,16 +2,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  appRuleLockRefusal,
   armedRecord,
-  dailyCeilingMinutes,
   endOf,
   formatRemaining,
-  isWeakerAppRule,
-  maxBurstMinutes,
   parseLockRecord,
   stateOf,
   UNLOCK_DELAY_MS,
 } from '../src/features/protection/lock-policy.ts';
+
+/** True when the lock refuses the save, whatever reason it gives. */
+const refused = (stored, proposed) => appRuleLockRefusal(stored, proposed) !== null;
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -140,119 +141,79 @@ test('remaining time reads coarsely and never renders a stale zero', () => {
   assert.equal(formatRemaining(NOW - DAY, NOW), 'under a minute');
 });
 
-test('a daily budget permits twice its minutes across a midnight', () => {
-  // The budget resets at local midnight, so an evening and the morning after
-  // both draw it inside one 24-hour span. Only the calendar day sees 15.
-  assert.equal(dailyCeilingMinutes({ mode: 'daily', minutes: 15 }), 30);
-  assert.equal(dailyCeilingMinutes({ mode: 'daily', minutes: 120 }), 240);
+test('an app with no rule only gains one, so nothing is refused', () => {
+  assert.equal(appRuleLockRefusal([], { mode: 'daily', minutes: 480 }), null);
+  assert.equal(appRuleLockRefusal([], { mode: 'visit', sessionMinutes: 60, cooldownMinutes: 0 }), null);
 });
 
-test('a rolling allowance permits one helping per whole window in the day', () => {
-  assert.equal(dailyCeilingMinutes({ mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 }), 120);
-  assert.equal(dailyCeilingMinutes({ mode: 'rolling', allowanceMinutes: 5, windowMinutes: 180 }), 40);
-  assert.equal(dailyCeilingMinutes({ mode: 'rolling', allowanceMinutes: 30, windowMinutes: 1440 }), 30);
+test('a daily budget may be lowered but not raised', () => {
+  const stored = [{ mode: 'daily', minutes: 15 }];
+  assert.equal(refused(stored, { mode: 'daily', minutes: 120 }), true);
+  assert.equal(refused(stored, { mode: 'daily', minutes: 10 }), false);
+  // Re-saving the same rule changes nothing, so it is always allowed.
+  assert.equal(refused(stored, { mode: 'daily', minutes: 15 }), false);
 });
 
-test('a timed visit repeats once per visit-plus-downtime cycle', () => {
-  assert.equal(dailyCeilingMinutes({ mode: 'visit', sessionMinutes: 5, cooldownMinutes: 60 }), 110);
-  assert.equal(dailyCeilingMinutes({ mode: 'visit', sessionMinutes: 10, cooldownMinutes: 5 }), 960);
+test('a rolling rule may shrink its allowance or widen its window', () => {
+  const stored = [{ mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 }];
+  assert.equal(refused(stored, { mode: 'rolling', allowanceMinutes: 10, windowMinutes: 60 }), true);
+  assert.equal(refused(stored, { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 30 }), true);
+  assert.equal(refused(stored, { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 180 }), false);
+  assert.equal(refused(stored, { mode: 'rolling', allowanceMinutes: 2, windowMinutes: 60 }), false);
+  assert.equal(refused(stored, { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 }), false);
 });
 
-test('a visit that asks every time reaches the whole day', () => {
-  assert.equal(dailyCeilingMinutes({ mode: 'visit', sessionMinutes: 5, cooldownMinutes: 0 }), 1440);
-  assert.equal(dailyCeilingMinutes({ mode: 'visit', sessionMinutes: 1, cooldownMinutes: 0 }), 1440);
+test('a timed visit may shorten its session or lengthen its downtime', () => {
+  const stored = [{ mode: 'visit', sessionMinutes: 5, cooldownMinutes: 30 }];
+  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 10, cooldownMinutes: 30 }), true);
+  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 5, cooldownMinutes: 0 }), true);
+  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 5, cooldownMinutes: 60 }), false);
+  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 2, cooldownMinutes: 30 }), false);
+  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 5, cooldownMinutes: 30 }), false);
 });
 
-test('no ceiling exceeds a whole day', () => {
-  assert.equal(dailyCeilingMinutes({ mode: 'daily', minutes: 5000 }), 1440);
-  assert.equal(dailyCeilingMinutes({ mode: 'daily', minutes: 800 }), 1440);
-  assert.equal(dailyCeilingMinutes({ mode: 'rolling', allowanceMinutes: 480, windowMinutes: 15 }), 1440);
-  assert.equal(dailyCeilingMinutes({ mode: 'visit', sessionMinutes: 60, cooldownMinutes: 0 }), 1440);
+test('a change of mode is refused however tight the replacement reads', () => {
+  // Consumed time does not move between the stores, so any mode change hands
+  // back a spent allowance in full. None of these may pass while locked.
+  const daily = [{ mode: 'daily', minutes: 5 }];
+  const rolling = [{ mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 }];
+  const visit = [{ mode: 'visit', sessionMinutes: 5, cooldownMinutes: 60 }];
+
+  assert.equal(refused(rolling, { mode: 'daily', minutes: 5 }), true);
+  assert.equal(refused(rolling, { mode: 'daily', minutes: 1 }), true);
+  assert.equal(refused(daily, { mode: 'rolling', allowanceMinutes: 1, windowMinutes: 1440 }), true);
+  assert.equal(refused(visit, { mode: 'daily', minutes: 1 }), true);
+  assert.equal(refused(daily, { mode: 'visit', sessionMinutes: 1, cooldownMinutes: 600 }), true);
 });
 
-test('the plan comparison table holds, including across a mode switch', () => {
-  const cases = [
-    ['daily raised', { mode: 'daily', minutes: 15 }, { mode: 'daily', minutes: 120 }, true],
-    ['daily to visit', { mode: 'daily', minutes: 15 }, { mode: 'visit', sessionMinutes: 10, cooldownMinutes: 5 }, true],
-    ['daily to rolling', { mode: 'daily', minutes: 5 }, { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 }, true],
-    ['rolling to daily', { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 }, { mode: 'daily', minutes: 5 }, false],
-    ['downtime removed', { mode: 'visit', sessionMinutes: 5, cooldownMinutes: 60 }, { mode: 'visit', sessionMinutes: 5, cooldownMinutes: 0 }, true],
-    ['daily lowered', { mode: 'daily', minutes: 120 }, { mode: 'daily', minutes: 15 }, false],
-    ['visit shortened', { mode: 'visit', sessionMinutes: 10, cooldownMinutes: 5 }, { mode: 'visit', sessionMinutes: 5, cooldownMinutes: 5 }, false],
-    ['window narrowed', { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 180 }, { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 }, true],
-    ['allowance widened', { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 }, { mode: 'rolling', allowanceMinutes: 10, windowMinutes: 60 }, true],
-  ];
-
-  for (const [name, stored, proposed, expected] of cases) {
-    assert.equal(isWeakerAppRule([stored], proposed), expected, name);
-  }
-});
-
-test('an unchanged rule is not weaker, so re-saving is always allowed', () => {
-  const rule = { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 };
-  assert.equal(isWeakerAppRule([rule], { ...rule }), false);
-});
-
-test('adding a rule to an unguarded app only tightens', () => {
-  assert.equal(isWeakerAppRule([], { mode: 'daily', minutes: 480 }), false);
-  assert.equal(isWeakerAppRule([], { mode: 'visit', sessionMinutes: 60, cooldownMinutes: 0 }), false);
-});
-
-test('a single sitting is capped by the allowance or visit length, not the daily total', () => {
-  assert.equal(maxBurstMinutes({ mode: 'daily', minutes: 120 }), 120);
-  assert.equal(maxBurstMinutes({ mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 }), 5);
-  assert.equal(maxBurstMinutes({ mode: 'visit', sessionMinutes: 5, cooldownMinutes: 0 }), 5);
-});
-
-test('a mode switch cannot trade pacing away for the same daily total', () => {
-  // Both permit 120 minutes in any 24 hours, but only the rolling rule stops a
-  // one-hour sitting. Keeping the total is not keeping the restriction.
-  const rolling = { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 };
-  const daily = { mode: 'daily', minutes: 60 };
-  assert.equal(dailyCeilingMinutes(rolling), dailyCeilingMinutes(daily));
-  assert.equal(isWeakerAppRule([rolling], daily), true);
-
-  // The same trade through a timed visit.
-  assert.equal(isWeakerAppRule([rolling], { mode: 'visit', sessionMinutes: 120, cooldownMinutes: 1320 }), true);
-});
-
-test('a longer sitting is refused even when the day gets tighter', () => {
-  const rolling = { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 };
-  // 60 a day is well under the stored 120, but it permits an hour in one go.
-  assert.equal(isWeakerAppRule([rolling], { mode: 'daily', minutes: 60 }), true);
-  // Matching the sitting cap and lowering the day is a genuine tightening.
-  assert.equal(isWeakerAppRule([rolling], { mode: 'daily', minutes: 5 }), false);
+test('a mode change cannot trade a sub-day guarantee for the same daily total', () => {
+  // 15m an hour and 10m with 30m off both come to 360 minutes a day with a
+  // shorter sitting, yet two visits fit inside one hour and give 20.
+  const stored = [{ mode: 'rolling', allowanceMinutes: 15, windowMinutes: 60 }];
+  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 10, cooldownMinutes: 30 }), true);
 });
 
 test('a rolling day cannot become a calendar day with the same minutes', () => {
   // Both are offered by the screen as "30m / day". They are not the same
   // promise: the rolling one holds across any 24 hours, the daily one lets the
   // evening and the morning after each draw a full 30.
-  const rolling = { mode: 'rolling', allowanceMinutes: 30, windowMinutes: 1440 };
-  assert.equal(isWeakerAppRule([rolling], { mode: 'daily', minutes: 30 }), true);
-  // Halving the budget restores the 24-hour promise, so it is allowed.
-  assert.equal(isWeakerAppRule([rolling], { mode: 'daily', minutes: 15 }), false);
+  const stored = [{ mode: 'rolling', allowanceMinutes: 30, windowMinutes: 1440 }];
+  assert.equal(refused(stored, { mode: 'daily', minutes: 30 }), true);
 });
 
-test('a rolling rule may widen its window when the sitting cap holds', () => {
-  // 5m per hour to 5m per 3 hours: tighter over the day, same single sitting.
-  const hourly = { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 };
-  assert.equal(isWeakerAppRule([hourly], { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 180 }), false);
-  // Widening the allowance itself lengthens the sitting, so it is refused.
-  assert.equal(isWeakerAppRule([hourly], { mode: 'rolling', allowanceMinutes: 10, windowMinutes: 180 }), true);
-});
-
-test('when an app carries several rules, the tightest one is what a replacement must match', () => {
+test('a second stored rule is a guard the save would drop, so it is refused', () => {
   // The stores allow this even though the screen writes one rule at a time.
-  // Daily 5m binds at 10 over any 24 hours, rolling 5m/hour at 120.
   const stored = [
     { mode: 'daily', minutes: 5 },
     { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 },
   ];
+  assert.equal(refused(stored, { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 }), true);
+  assert.equal(refused(stored, { mode: 'daily', minutes: 5 }), true);
+  assert.equal(refused(stored, { mode: 'daily', minutes: 3 }), true);
+});
 
-  // Replacing both with the loose one alone would hand back 115 minutes.
-  assert.equal(isWeakerAppRule(stored, { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 }), true);
-  // Keeping the binding limit is allowed.
-  assert.equal(isWeakerAppRule(stored, { mode: 'daily', minutes: 5 }), false);
-  assert.equal(isWeakerAppRule(stored, { mode: 'daily', minutes: 3 }), false);
+test('the reason names the mode change, so the screen can say why', () => {
+  const rolling = [{ mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 }];
+  assert.match(appRuleLockRefusal(rolling, { mode: 'daily', minutes: 5 }), /already used/);
+  assert.match(appRuleLockRefusal(rolling, { mode: 'rolling', allowanceMinutes: 10, windowMinutes: 60 }), /looser/);
 });

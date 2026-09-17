@@ -41,10 +41,10 @@ const base = {
 
 test('the drawer uses the shared guidance helper for both rendered sections', () => {
   assert.match(drawerSource, /getXDrawerGuidance\(status, Boolean\(observing\)\)/);
-  const initialSection = drawerSource.slice(drawerSource.indexOf('{observing && enabled'), drawerSource.indexOf('{xGuidance.postSetupAwaiting.length'));
+  const initialSection = drawerSource.slice(drawerSource.indexOf('{targetPresentation.showObservationGuidance'), drawerSource.indexOf('{targetPresentation.showPostSetupGuidance'));
   assert.match(initialSection, /xGuidance\.initialAwaiting/);
   assert.doesNotMatch(initialSection, /xGuidance\.postSetupAwaiting/);
-  const followUpSection = drawerSource.slice(drawerSource.indexOf('{xGuidance.postSetupAwaiting.length'));
+  const followUpSection = drawerSource.slice(drawerSource.indexOf('{targetPresentation.showPostSetupGuidance'));
   assert.match(followUpSection, /xGuidance\.postSetupAwaiting/);
 });
 

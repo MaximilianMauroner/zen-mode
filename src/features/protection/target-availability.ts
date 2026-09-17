@@ -50,7 +50,7 @@ export function installedBrowserMask(status: ZenGuardStatus | null): number | nu
   );
 }
 
-export type BrowserReadiness = 'ready' | 'check' | 'none-installed' | 'unknown' | 'unavailable';
+export type BrowserReadiness = 'ready' | 'check' | 'none-installed' | 'disabled' | 'unknown' | 'unavailable';
 
 /**
  * Website blocking is ready when one currently installed supported browser has
@@ -63,8 +63,10 @@ export function getBrowserReadiness(status: ZenGuardStatus | null): BrowserReadi
   const browserStates = SUPPORTED_BROWSERS.map((browser) => getSupportedBrowserAvailability(status, browser.key));
   if (browserStates.every((state) => state === 'unavailable')) return 'unavailable';
   if (installedMask === 0) {
-    const hasUnknown = browserStates.includes('unknown');
-    return hasUnknown ? 'unknown' : 'none-installed';
+    const hasUnknown = browserStates.some((state) => state === 'unknown' || state === 'unavailable');
+    if (hasUnknown) return 'unknown';
+    if (browserStates.includes('disabled')) return 'disabled';
+    return 'none-installed';
   }
   return typeof status.browserSignalMask === 'number' && (status.browserSignalMask & installedMask) !== 0
     ? 'ready'

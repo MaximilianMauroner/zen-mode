@@ -24,18 +24,18 @@ export function getOverviewAction(status: ZenGuardStatus | null, hasReadError: b
   if (!status.serviceEnabled) return 'open-accessibility';
   if (!status.protectionEnabled) return 'resume-protection';
 
-  if (status.shortsEnabled && getSupportedAppAvailability(status, 'youtube') !== 'absent' && getSupportedAppAvailability(status, 'youtube') !== 'disabled') {
+  if (status.shortsEnabled && getSupportedAppAvailability(status, 'youtube') === 'installed') {
     if (!isShortsReady(status)) return status.lastDetectionAt === 0 ? 'check-youtube' : 'limit-shorts';
   }
   const instagramConfigured = status.instagramObservationMode || status.instagramSignalMask !== 0 || status.instagramExploreBlocked === true;
-  if (instagramConfigured && getSupportedAppAvailability(status, 'instagram') !== 'absent' && getSupportedAppAvailability(status, 'instagram') !== 'disabled') {
+  if (instagramConfigured && getSupportedAppAvailability(status, 'instagram') === 'installed') {
     if (status.instagramObservationMode) return (status.instagramSignalMask & 3) !== 3 ? 'check-instagram' : 'start-instagram';
     if ((status.instagramSignalMask & 3) !== 3) return 'check-instagram';
   }
 
   const xEnabled = status.xHomeEnabled || status.xVideosEnabled;
   const xAvailability = getSupportedAppAvailability(status, 'x');
-  if (xEnabled && xAvailability !== 'absent' && xAvailability !== 'disabled' && (status.xObservationMode || hasAwaitingXFeed(status))) return 'set-up-x';
+  if (xEnabled && xAvailability === 'installed' && (status.xObservationMode || hasAwaitingXFeed(status))) return 'set-up-x';
   if (status.adultSiteEnabled && ['check', 'unknown'].includes(getBrowserReadiness(status))) return 'check-sites';
   return null;
 }

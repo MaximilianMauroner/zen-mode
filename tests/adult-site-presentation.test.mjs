@@ -26,6 +26,11 @@ test('enabled rules require an observed browser before claiming active blocking'
     statusLabel: 'ON',
     tone: 'accent',
   });
+  assert.deepEqual(getAdultSitePresentation({ ...status, browserAvailability: { chrome: 'disabled', samsungInternet: 'absent', opera: 'absent', firefox: 'absent' }, browserSignalMask: 15 }), {
+    detail: 'On · enable a supported browser in Android.',
+    statusLabel: 'ENABLE',
+    tone: 'neutral',
+  });
 });
 
 test('missing status stays unknown', () => {

@@ -6,6 +6,7 @@ import { getActionError } from '../src/features/action-error.ts';
 import { getConfiguredAppPresentation } from '../src/features/protection/app-rule-presentation.ts';
 import { getAppLimitsPlatformState } from '../src/features/protection/app-limits-state.ts';
 import { getAdultSitePresentation } from '../src/features/protection/adult-site-presentation.ts';
+import { getFeedDrawerTargetPresentation } from '../src/features/protection/feed-drawer-presentation.ts';
 import { getFeedStatus, getFeedStatusDetail, getProtectionReadiness } from '../src/features/protection/feed-status.ts';
 import { getFeedPresentation } from '../src/features/protection/feed-presentation.ts';
 import { getOverviewAction } from '../src/features/protection/overview-actions.ts';
@@ -14,6 +15,8 @@ import { checkedInstalledBrowserCount, getBrowserReadiness, getSupportedAppAvail
 const overviewSource = readFileSync(new URL('../src/app/(controls)/index.tsx', import.meta.url), 'utf8');
 const limitsSource = readFileSync(new URL('../src/app/(controls)/limits.tsx', import.meta.url), 'utf8');
 const privacySource = readFileSync(new URL('../src/app/privacy.tsx', import.meta.url), 'utf8');
+const feedDrawerSource = readFileSync(new URL('../src/components/ui/feed-controls-drawer.tsx', import.meta.url), 'utf8');
+const adultSiteDrawerSource = readFileSync(new URL('../src/components/ui/adult-site-controls-drawer.tsx', import.meta.url), 'utf8');
 const manifestSource = readFileSync(new URL('../modules/zen-guard/android/src/main/AndroidManifest.xml', import.meta.url), 'utf8');
 
 const installedApps = {
@@ -129,9 +132,15 @@ test('browser readiness requires one current installed supported browser, not al
     [{ ...base, browserSignalMask: undefined }, 'check'],
     [{ ...base, browserSignalMask: 1 }, 'ready'],
     [{ ...base, browserSignalMask: 15 }, 'ready'],
+    [{ ...base, browserAvailability: { chrome: 'installed', samsungInternet: 'absent', opera: 'absent', firefox: 'absent' }, browserSignalMask: 1 }, 'ready'],
+    [{ ...base, browserAvailability: { chrome: 'installed', samsungInternet: 'absent', opera: 'absent', firefox: 'absent' }, browserSignalMask: 0 }, 'check'],
+    [{ ...base, browserAvailability: { chrome: 'disabled', samsungInternet: 'disabled', opera: 'disabled', firefox: 'disabled' }, browserSignalMask: 15 }, 'disabled'],
+    [{ ...base, browserAvailability: { chrome: 'disabled', samsungInternet: 'disabled', opera: 'absent', firefox: 'absent' }, browserSignalMask: 15 }, 'disabled'],
+    [{ ...base, browserAvailability: { chrome: 'disabled', samsungInternet: 'absent', opera: 'absent', firefox: 'absent' }, browserSignalMask: 15 }, 'disabled'],
     [{ ...base, browserAvailability: { chrome: 'absent', samsungInternet: 'installed', opera: 'installed', firefox: 'installed' }, browserSignalMask: 1 }, 'check'],
     [{ ...base, browserAvailability: { chrome: 'absent', samsungInternet: 'absent', opera: 'absent', firefox: 'absent' }, browserSignalMask: 15 }, 'none-installed'],
     [{ ...base, browserAvailability: { chrome: 'unknown', samsungInternet: 'absent', opera: 'absent', firefox: 'absent' }, browserSignalMask: 0 }, 'unknown'],
+    [{ ...base, browserAvailability: { chrome: 'unknown', samsungInternet: 'disabled', opera: 'absent', firefox: 'absent' }, browserSignalMask: 15 }, 'unknown'],
     [{ ...base, available: false }, 'unavailable'],
   ];
   for (const [status, expected] of cases) assert.equal(getBrowserReadiness(status), expected);
@@ -173,6 +182,7 @@ test('global status has explicit off, access, empty, setup, partial, active, and
   for (const [status, expected] of table) assert.equal(getFeedStatus(status), expected);
   assert.match(getFeedStatusDetail({ ...base, observationMode: true }), /active for ready rules/i);
   assert.match(getFeedStatusDetail(allOff), /No feed or site rules enabled/);
+  assert.match(getFeedStatusDetail(absent), /Install or enable/);
   assert.equal(getProtectionReadiness({ ...base, observationMode: true }).pending, 1);
 });
 
@@ -205,6 +215,27 @@ test('absent YouTube cannot monopolize setup while an available X rule remains',
   assert.equal(getOverviewAction({ ...status, appAvailability: { ...status.appAvailability, youtube: 'installed' } }, false), 'check-youtube');
 });
 
+test('unknown supported apps never take the automatic CTA from an installed X target', () => {
+  assert.equal(getOverviewAction(onlyX({
+    shortsEnabled: true,
+    xSignalMask: 1,
+    appAvailability: { youtube: 'unknown', instagram: 'absent', x: 'installed' },
+  }), false), 'set-up-x');
+  assert.equal(getOverviewAction(onlyX({
+    instagramObservationMode: true,
+    xSignalMask: 1,
+    appAvailability: { youtube: 'absent', instagram: 'unknown', x: 'installed' },
+  }), false), 'set-up-x');
+  const allUnknown = onlyX({
+    shortsEnabled: true,
+    xSignalMask: 0,
+    appAvailability: { youtube: 'unknown', instagram: 'unknown', x: 'unknown' },
+  });
+  assert.equal(getOverviewAction(allUnknown, false), null);
+  assert.equal(getFeedStatus(allUnknown), 'targets-unknown');
+  assert.equal(getOverviewAction(onlyX({ shortsEnabled: true, xSignalMask: 0, appAvailability: undefined }), false), null);
+});
+
 test('disabled and absent rules do not create setup actions', () => {
   assert.equal(getOverviewAction(onlyX({ xHomeEnabled: false, xVideosEnabled: false }), false), null);
   assert.equal(getOverviewAction(onlyShorts({ shortsEnabled: true, appAvailability: { ...installedApps, youtube: 'absent' }, observationMode: true }), false), null);
@@ -217,6 +248,36 @@ test('sites action appears only when an installed or unknown supported browser n
   assert.equal(getOverviewAction(onlySites({ browserAvailability: undefined, browserSignalMask: 0 }), false), 'check-sites');
   assert.equal(getOverviewAction(onlySites({ browserAvailability: { chrome: 'absent', samsungInternet: 'absent', opera: 'absent', firefox: 'absent' } }), false), null);
   assert.equal(getAdultSitePresentation(onlySites({ browserAvailability: { chrome: 'absent', samsungInternet: 'absent', opera: 'absent', firefox: 'absent' } })).statusLabel, 'NO BROWSER');
+  assert.equal(getAdultSitePresentation(onlySites({ browserAvailability: { chrome: 'disabled', samsungInternet: 'absent', opera: 'absent', firefox: 'absent' } })).statusLabel, 'ENABLE');
+  assert.match(adultSiteDrawerSource, /getBrowserReadiness\(status\) === 'none-installed' \|\| getBrowserReadiness\(status\) === 'disabled'/);
+  assert.match(adultSiteDrawerSource, /getBrowserReadiness\(status\) === 'disabled' \? <Text[^>]*>Enable one of the supported browsers/);
+});
+
+test('feed drawers suppress impossible observation guidance but preserve recovery', () => {
+  for (const appLabel of ['YouTube', 'Instagram', 'X']) {
+    const installed = getFeedDrawerTargetPresentation('installed', appLabel, true, true, true);
+    assert.deepEqual(installed, { showObservationGuidance: true, showPostSetupGuidance: true, showOpener: true, recovery: null });
+    const absent = getFeedDrawerTargetPresentation('absent', appLabel, true, true, true);
+    assert.equal(absent.showObservationGuidance, false);
+    assert.equal(absent.showPostSetupGuidance, false);
+    assert.equal(absent.showOpener, false);
+    assert.match(absent.recovery, /not installed/);
+    const disabled = getFeedDrawerTargetPresentation('disabled', appLabel, true, true, true);
+    assert.equal(disabled.showObservationGuidance, false);
+    assert.equal(disabled.showPostSetupGuidance, false);
+    assert.equal(disabled.showOpener, false);
+    assert.match(disabled.recovery, /disabled in Android/);
+    const unknown = getFeedDrawerTargetPresentation('unknown', appLabel, true, true, true);
+    assert.equal(unknown.showObservationGuidance, false);
+    assert.equal(unknown.showPostSetupGuidance, false);
+    assert.equal(unknown.showOpener, true);
+    assert.match(unknown.recovery, /could not be confirmed/);
+  }
+  assert.match(feedDrawerSource, /getFeedDrawerTargetPresentation\(/);
+  assert.match(feedDrawerSource, /targetPresentation\.showObservationGuidance/);
+  assert.match(feedDrawerSource, /targetPresentation\.showPostSetupGuidance/);
+  assert.match(feedDrawerSource, /targetPresentation\.showOpener/);
+  assert.match(feedDrawerSource, /targetPresentation\.recovery/);
 });
 
 test('saved rules show a stale app from fresh picker evidence and recover after install', () => {

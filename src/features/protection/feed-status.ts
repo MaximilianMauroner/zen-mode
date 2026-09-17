@@ -57,6 +57,7 @@ export function getProtectionReadiness(status: ZenGuardStatus): ProtectionReadin
       case 'ready': result.ready += 1; break;
       case 'check': result.pending += 1; break;
       case 'none-installed': result.unavailable += 1; break;
+      case 'disabled': result.unavailable += 1; break;
       case 'unknown': result.unknown += 1; break;
       case 'unavailable': result.unavailable += 1; break;
     }
@@ -89,7 +90,7 @@ export function getFeedStatusDetail(status: ZenGuardStatus | null): string {
   if (state === 'permission') return 'Enable Zen Mode in Android Accessibility settings to apply your saved rules.';
   if (state === 'paused') return 'Protection is off. Resume it in Settings when you are ready.';
   if (state === 'empty') return 'No feed or site rules enabled. Open a feed or Sites to choose a boundary, or App limits for whole-app rules.';
-  if (state === 'targets-unavailable') return 'Your saved feed/site targets are not installed or enabled. Install one to use its rule; saved settings remain unchanged.';
+  if (state === 'targets-unavailable') return 'Your saved feed/site targets are unavailable. Install or enable one to use its rule; saved settings remain unchanged.';
   if (state === 'targets-unknown') return 'Zen Mode could not confirm a supported feed app or browser. Refresh after checking Android access.';
 
   const readiness = status ? getProtectionReadiness(status) : null;

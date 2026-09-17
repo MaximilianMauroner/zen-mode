@@ -29,6 +29,9 @@ export function getAdultSitePresentation(status: ZenGuardStatus | null, loading 
   if (browserReadiness === 'none-installed') {
     return { detail: `On · no supported browser is installed${custom}.`, statusLabel: 'NO BROWSER', tone: 'neutral' };
   }
+  if (browserReadiness === 'disabled') {
+    return { detail: `On · enable a supported browser in Android${custom}.`, statusLabel: 'ENABLE', tone: 'neutral' };
+  }
   if (browserReadiness !== 'ready') {
     const detail = browserReadiness === 'unknown'
       ? 'On · browser availability is unknown. Check a supported browser.'

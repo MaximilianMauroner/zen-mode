@@ -8,6 +8,7 @@ import { useSharedGuardStatus } from '@/features/protection/guard-status-context
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { getHomeFeedTimeLabel } from '@/features/protection/home-feed-time';
 import { isChangeBlocked } from '@/features/protection/lock';
+import { getXFeedReadiness, hasAllRequiredXSignals } from '@/features/protection/x-readiness';
 import { getZenGuardStatus, openInstagram, setInstagramObservationMode, setInstagramSettings, openX, openYouTube, setObservationMode, setShortsEnabled, setXObservationMode, setXSettings, type ZenGuardStatus } from '@/features/protection/native';
 
 export type FeedDrawer = 'youtube' | 'instagram' | 'x';
@@ -27,9 +28,13 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
   const isInstagram = feed === 'instagram';
   const observing = isInstagram ? status?.instagramObservationMode : isX ? status?.xObservationMode : status?.observationMode;
   const enabled = isInstagram ? true : isX ? status?.xHomeEnabled || status?.xVideosEnabled : status?.shortsEnabled;
-  const requiredMask = status ? (status.xHomeEnabled ? 1 : 0) | (status.xVideosEnabled ? 2 : 0) : 3;
-  const detected = status && (isInstagram ? (status.instagramSignalMask & 3) === 3 : isX ? (status.xSignalMask & requiredMask) === requiredMask : status.lastDetectionAt > 0);
+  const detected = status && (isInstagram ? (status.instagramSignalMask & 3) === 3 : isX ? hasAllRequiredXSignals(status) : status.lastDetectionAt > 0);
   const canStart = detected && status?.serviceEnabled && status.protectionEnabled;
+  // After setup, a feed switched on later still needs its own signal. Say so,
+  // rather than leaving the user with a rule that quietly enforces nothing.
+  const xAwaiting = isX && !observing && status
+    ? (['home', 'videos'] as const).filter((feed) => getXFeedReadiness(status, feed) === 'awaiting')
+    : [];
 
   const run = (action: (fresh: ZenGuardStatus) => Promise<void>) => {
     if (inFlight.current || disabled) return;
@@ -106,10 +111,18 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
             </View>}
             {observing && enabled ? <View className="mt-5 gap-2 border-t border-line pt-4">
               {isInstagram ? <Text className="text-[13px] text-muted">{detected ? '✓ Messages and Reels detected' : 'Open Direct Messages, then one Reel from a message. Return here when done.'}</Text> : isX ? <>
-                {status?.xHomeEnabled ? <Text className="text-[13px] text-muted">{status.xSignalMask & 1 ? '✓ Home feed detected' : '○ Open the Home feed'}</Text> : null}
-                {status?.xVideosEnabled ? <Text className="text-[13px] text-muted">{status.xSignalMask & 2 ? '✓ Video viewer detected' : '○ Open one video'}</Text> : null}
+                {status?.xHomeEnabled ? <Text className="text-[13px] text-muted">{getXFeedReadiness(status, 'home') === 'ready' ? '✓ Home feed detected' : '○ Open the Home feed'}</Text> : null}
+                {status?.xVideosEnabled ? <Text className="text-[13px] text-muted">{getXFeedReadiness(status, 'videos') === 'ready' ? '✓ Video viewer detected' : '○ Open one video'}</Text> : null}
               </> : <Text className="text-[13px] text-muted">{detected ? '✓ Shorts detected' : 'Open one Short, then return here.'}</Text>}
               {canStart ? <PrimaryButton title="Start protection" disabled={disabled} onPress={() => run(async () => { if (isInstagram) await setInstagramObservationMode(false); else if (isX) await setXObservationMode(false); else await setObservationMode(false); })} /> : detected ? <Text className="text-[13px] text-muted">Turn on protection and Android access in Settings.</Text> : null}
+            </View> : null}
+            {xAwaiting.length ? <View className="mt-5 gap-2 border-t border-line pt-4">
+              {xAwaiting.map((feed) => (
+                <Text key={feed} className="text-[13px] text-muted">
+                  {feed === 'home' ? '○ Open the Home feed once to start breaks' : '○ Open one video once to start the video limit'}
+                </Text>
+              ))}
+              <Text className="text-[12px] text-faint">Other X rules keep running in the meantime.</Text>
             </View> : null}
             <SecondaryButton className="mt-5" title={isInstagram ? 'Open Instagram' : isX ? 'Open X' : 'Open YouTube'} disabled={disabled} onPress={() => run(async () => { if (isInstagram) await openInstagram(); else if (isX) await openX(); else await openYouTube(); })} />
             <ErrorNote message={error || readError} />

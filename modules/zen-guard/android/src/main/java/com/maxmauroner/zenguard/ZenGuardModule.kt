@@ -253,21 +253,24 @@ class ZenGuardModule : Module() {
       ZenGuardPreferences(requireNotNull(appContext.reactContext)).shortsEnabled = enabled
     }
 
+    /**
+     * Enabling a feed never re-enters observation. Each X feed waits for its own
+     * observed signal, so turning Videos on cannot pause an already-running Home
+     * rule. An unobserved feed simply does not enforce until its signal appears.
+     */
     AsyncFunction("setXSettings") { homeEnabled: Boolean, videosEnabled: Boolean, homeMinutes: Int ->
       require(homeMinutes in 1..30) { "Home time must be between 1 and 30 minutes" }
       ZenGuardPreferences(requireNotNull(appContext.reactContext)).apply {
         xHomeEnabled = homeEnabled
         xVideosEnabled = videosEnabled
         xHomeMinutes = homeMinutes
-        val required = (if (homeEnabled) 1 else 0) or (if (videosEnabled) 2 else 0)
-        if (xSignalMask and required != required) xObservationMode = true
       }
       Unit
     }
 
     AsyncFunction("setXObservationMode") { enabled: Boolean ->
       val preferences = ZenGuardPreferences(requireNotNull(appContext.reactContext))
-      val required = (if (preferences.xHomeEnabled) 1 else 0) or (if (preferences.xVideosEnabled) 2 else 0)
+      val required = preferences.requiredXSignals()
       check(enabled || preferences.xSignalMask and required == required) { "Open X Home and one video before starting protection" }
       preferences.xObservationMode = enabled
     }

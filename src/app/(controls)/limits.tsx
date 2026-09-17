@@ -5,6 +5,7 @@ import { AppPicker } from '@/components/ui/app-picker';
 import { TopTabs } from 'expo-router/js-top-tabs';
 import { StatusPill } from '@/components/ui/pill';
 import { isChangeBlocked } from '@/features/protection/lock';
+import { isWeakerAppRule, type AppRule } from '@/features/protection/lock-policy';
 import {
   getAppLimits,
   getIntentApps,
@@ -52,6 +53,29 @@ type GuardedEntry = {
 const MODE_LABEL: Record<RuleMode, string> = { daily: 'DAILY', visit: 'VISIT', rolling: 'ALLOW' };
 const WINDOW_LABEL: Record<number, string> = { 30: '30 min', 60: 'hour', 180: '3 hours', 480: '8 hours', 1440: 'day' };
 
+/**
+ * Every rule stored for one app right now. The lock compares against this
+ * rather than the rendered list, which can be a refresh behind.
+ */
+async function readStoredRules(packageName: string): Promise<AppRule[]> {
+  const [limits, intents, rollingRules] = await Promise.all([getAppLimits(), getIntentApps(), getRollingLimits()]);
+  const stored: AppRule[] = [];
+  for (const limit of limits) {
+    if (limit.packageName === packageName) stored.push({ mode: 'daily', minutes: limit.minutes });
+  }
+  for (const intent of intents) {
+    if (intent.packageName === packageName) {
+      stored.push({ mode: 'visit', sessionMinutes: intent.sessionMinutes, cooldownMinutes: intent.cooldownMinutes });
+    }
+  }
+  for (const rule of rollingRules) {
+    if (rule.packageName === packageName) {
+      stored.push({ mode: 'rolling', allowanceMinutes: rule.allowanceMinutes, windowMinutes: rule.windowMinutes });
+    }
+  }
+  return stored;
+}
+
 export default function AppLimitsScreen() {
   const [limits, setLimits] = useState<AppLimit[] | null>(null);
   const [intents, setIntents] = useState<IntentApp[] | null>(null);
@@ -66,6 +90,7 @@ export default function AppLimitsScreen() {
   const [allowance, setAllowance] = useState(5);
   const [window, setWindow] = useState(60);
   const [error, setError] = useState('');
+  const [lockBlocked, setLockBlocked] = useState(false);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const refreshInFlightRef = useRef(false);
@@ -113,6 +138,7 @@ export default function AppLimitsScreen() {
     busyRef.current = true;
     setBusy(true);
     setError('');
+    setLockBlocked(false);
     void (async () => {
       try {
         await task();
@@ -176,7 +202,20 @@ export default function AppLimitsScreen() {
       return;
     }
     const packageName = selected.packageName;
+    const proposed: AppRule =
+      mode === 'daily'
+        ? { mode: 'daily', minutes }
+        : mode === 'visit'
+          ? { mode: 'visit', sessionMinutes: session, cooldownMinutes: cooldown }
+          : { mode: 'rolling', allowanceMinutes: allowance, windowMinutes: window };
+
     runAction(async () => {
+      // Read what is stored right now. The cached list can be a refresh behind,
+      // and the lock must judge the change that is actually being made.
+      if (isWeakerAppRule(await readStoredRules(packageName), proposed) && (await isChangeBlocked())) {
+        setLockBlocked(true);
+        throw new Error('That rule is looser than the one you set. Ask to unlock, then wait a day.');
+      }
       if (mode === 'daily') {
         await setAppLimit(packageName, minutes);
         await removeIntentApp(packageName);
@@ -199,9 +238,8 @@ export default function AppLimitsScreen() {
   const dropRules = (packageName: string) =>
     runAction(async () => {
       if (await isChangeBlocked()) {
-        setError('Removing a rule loosens the guard. Ask to unlock, then wait a day.');
-        router.navigate('/lock');
-        return;
+        setLockBlocked(true);
+        throw new Error('Removing a rule loosens the guard. Ask to unlock, then wait a day.');
       }
       await removeAppLimit(packageName);
       await removeIntentApp(packageName);
@@ -316,6 +354,7 @@ export default function AppLimitsScreen() {
 
       <AppPicker visible={pickerOpen} configuredPackages={new Set(guardedByPackage.keys())} onClose={() => setPickerOpen(false)} onSelect={(app) => { setPickerOpen(false); selectApp(app); }} />
       <ErrorNote message={error} />
+      {lockBlocked ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
     </Screen>
   );
 }

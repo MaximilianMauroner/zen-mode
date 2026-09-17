@@ -4,6 +4,8 @@ import { getFeedPresentation } from '../src/features/protection/feed-presentatio
 
 const active = {
   shortsEnabled: true, xHomeEnabled: true, xVideosEnabled: true, xObservationMode: false, xHomeMinutes: 5,
+  // Both X surfaces have been observed, which is what setup leaves behind.
+  xSignalMask: 3,
   available: true, serviceEnabled: true, protectionEnabled: true,
   observationMode: false, instagramObservationMode: false,
   instagramWaitSeconds: 15, instagramReelsMinutes: 1,
@@ -42,4 +44,27 @@ test('disabled Shorts and X rules are explicitly allowed', () => {
   assert.equal(getFeedPresentation({ ...active, xVideosEnabled: false }, 'xVideos').statusLabel, 'Allowed');
   assert.equal(getFeedPresentation({ ...active, xObservationMode: true }, 'xHome').statusLabel, 'Set up');
   assert.equal(getFeedPresentation({ ...active, protectionEnabled: false }, 'xVideos').statusLabel, 'Not running');
+});
+
+test('an observed X feed reports limited', () => {
+  assert.equal(getFeedPresentation(active, 'xHome').statusLabel, 'Limited');
+  assert.equal(getFeedPresentation(active, 'xVideos').statusLabel, 'Limited');
+});
+
+test('an X feed switched on after setup asks for its own signal', () => {
+  // Home was observed during setup; Videos was switched on afterwards.
+  const videosPending = { ...active, xSignalMask: 1 };
+  const pending = getFeedPresentation(videosPending, 'xVideos');
+  assert.equal(pending.statusLabel, 'Check');
+  assert.match(pending.detail, /Open one video in X once to start/);
+
+  // The point of the change: Home keeps reporting that it is running.
+  assert.equal(getFeedPresentation(videosPending, 'xHome').statusLabel, 'Limited');
+});
+
+test('an unobserved X feed still reports the blocker that outranks it', () => {
+  const videosPending = { ...active, xSignalMask: 1 };
+  assert.equal(getFeedPresentation({ ...videosPending, serviceEnabled: false }, 'xVideos').statusLabel, 'Not running');
+  assert.equal(getFeedPresentation({ ...videosPending, protectionEnabled: false }, 'xVideos').statusLabel, 'Not running');
+  assert.equal(getFeedPresentation({ ...videosPending, xObservationMode: true }, 'xVideos').statusLabel, 'Set up');
 });

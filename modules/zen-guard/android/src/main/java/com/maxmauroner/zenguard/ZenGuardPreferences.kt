@@ -50,6 +50,13 @@ internal class ZenGuardPreferences(context: Context) {
     preferences.edit().putInt("x_signal_mask", xSignalMask or mask).apply()
   }
 
+  /** The signals first-time setup waits for, given which X feeds are switched on. */
+  fun requiredXSignals(): Int =
+    (if (xHomeEnabled) X_HOME_SIGNAL else 0) or (if (xVideosEnabled) X_VIDEO_SIGNAL else 0)
+
+  /** True once the service has seen the surface this feed enforces on. */
+  fun hasXSignal(mask: Int): Boolean = xSignalMask and mask == mask
+
   val lastEventAt: Long get() = preferences.getLong(KEY_LAST_EVENT_AT, 0)
   val lastDetectionAt: Long get() = preferences.getLong(KEY_LAST_DETECTION_AT, 0)
   val detectionCount: Int get() = preferences.getInt(KEY_DETECTION_COUNT, 0)
@@ -109,6 +116,11 @@ internal class ZenGuardPreferences(context: Context) {
   )
 
   companion object {
+    /** The X Home timeline has been seen at least once. */
+    const val X_HOME_SIGNAL = 1
+    /** The full-screen X video pager has been seen at least once. */
+    const val X_VIDEO_SIGNAL = 2
+
     private const val FILE_NAME = "zen_guard_preferences"
     private const val KEY_CONSENT_VERSION = "consent_version"
     private const val KEY_PROTECTION_ENABLED = "protection_enabled"

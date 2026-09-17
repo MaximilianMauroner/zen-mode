@@ -4,6 +4,8 @@ import { getFeedStatus } from '../src/features/protection/feed-status.ts';
 
 const running = {
   shortsEnabled: true, xHomeEnabled: true, xVideosEnabled: true, xObservationMode: false, xHomeMinutes: 5,
+  // Both X surfaces have been observed, which is what setup leaves behind.
+  xSignalMask: 3,
   available: true,
   serviceEnabled: true,
   protectionEnabled: true,
@@ -36,6 +38,15 @@ test('both feed detectors must finish setup before the overview claims protectio
 
 test('X setup counts only when a rule is enabled; disabled Shorts need no setup', () => {
   assert.equal(getFeedStatus({ ...running, xObservationMode: true }), 'setup');
-  assert.equal(getFeedStatus({ ...running, xObservationMode: true, xHomeEnabled: false, xVideosEnabled: false }), 'active');
+  assert.equal(getFeedStatus({ ...running, xObservationMode: true, xHomeEnabled: false, xVideosEnabled: false, xSignalMask: 0 }), 'active');
   assert.equal(getFeedStatus({ ...running, observationMode: true, shortsEnabled: false }), 'active');
+});
+
+test('an X feed still waiting for its own signal never reads as full protection', () => {
+  // Videos switched on after setup, before the video pager has been seen.
+  assert.equal(getFeedStatus({ ...running, xSignalMask: 1 }), 'setup');
+  // Home switched on after setup, before the timeline has been seen.
+  assert.equal(getFeedStatus({ ...running, xSignalMask: 2 }), 'setup');
+  // A feed that is switched off is not waiting for anything.
+  assert.equal(getFeedStatus({ ...running, xSignalMask: 1, xVideosEnabled: false }), 'active');
 });

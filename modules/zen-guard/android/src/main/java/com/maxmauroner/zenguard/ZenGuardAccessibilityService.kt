@@ -433,8 +433,8 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     }
     val surface = XDetector.detect(snapshot(root))
     val pager = if (surface == XSurface.VIDEO) findXNode(root) { isXVideoPager(it) } else null
-    if (surface == XSurface.HOME) preferences.recordXSignal(1)
-    if (pager != null) preferences.recordXSignal(2)
+    if (surface == XSurface.HOME) preferences.recordXSignal(ZenGuardPreferences.X_HOME_SIGNAL)
+    if (pager != null) preferences.recordXSignal(ZenGuardPreferences.X_VIDEO_SIGNAL)
     if (preferences.xObservationMode) { clearXEnforcement(); return }
     val source = event?.source
     val advanced = pager != null && event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED &&
@@ -695,9 +695,14 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     )
   }
 
+  /**
+   * Each X feed enforces only on a surface the service has already seen. A feed
+   * switched on later therefore starts on its own signal, and never pauses a
+   * feed that is already running.
+   */
   private fun xSettings() = XSettings(
-    homeEnabled = preferences.xHomeEnabled,
-    videosEnabled = preferences.xVideosEnabled,
+    homeEnabled = preferences.xHomeEnabled && preferences.hasXSignal(ZenGuardPreferences.X_HOME_SIGNAL),
+    videosEnabled = preferences.xVideosEnabled && preferences.hasXSignal(ZenGuardPreferences.X_VIDEO_SIGNAL),
     homeAllowanceMs = preferences.xHomeMinutes * 60_000L,
   )
 

@@ -1,4 +1,5 @@
 import type { ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
+import { getXFeedReadiness } from './x-readiness.ts';
 
 type HomeFeed = 'instagram' | 'x';
 
@@ -6,7 +7,8 @@ type HomeFeed = 'instagram' | 'x';
 export function getHomeFeedTimeLabel(status: ZenGuardStatus | null, feed: HomeFeed): string | null {
   if (!status?.available || !status.serviceEnabled || !status.protectionEnabled) return null;
   if (feed === 'instagram' && status.instagramObservationMode) return null;
-  if (feed === 'x' && (status.xObservationMode || !status.xHomeEnabled)) return null;
+  // A feed that is not enforcing has no allowance to report.
+  if (feed === 'x' && (status.xObservationMode || getXFeedReadiness(status, 'home') !== 'ready')) return null;
 
   const allowanceMinutes = feed === 'instagram' ? status.instagramHomeMinutes : status.xHomeMinutes;
   const usedMs = feed === 'instagram' ? status.instagramHomeUsedMs : status.xHomeUsedMs;

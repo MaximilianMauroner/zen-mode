@@ -54,6 +54,7 @@
     "lint": "expo lint",
     "postinstall": "patch-package",
     "test": "node --test tests/*.test.mjs",
+    "test:native": "node scripts/run-native-tests.mjs",
     "test:android-fabric-startup": "node scripts/android-fabric-cold-start-regression.mjs",
     "test:android-settings-safety": "node scripts/android-settings-escape-integration.mjs",
     "release:internal": "node scripts/nightly-release.mjs run",

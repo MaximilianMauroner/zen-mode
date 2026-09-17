@@ -12,6 +12,8 @@ const active = {
   instagramHomeBreakRemainingMs: 0,
   xObservationMode: false,
   xHomeEnabled: true,
+  // The Home surface has been observed, which is what lets its rule run.
+  xSignalMask: 1,
   xHomeMinutes: 5,
   xHomeUsedMs: 241_000,
   xHomeBreakRemainingMs: 0,
@@ -34,4 +36,12 @@ test('never presents runtime time for a rule that is not running', () => {
   assert.equal(getHomeFeedTimeLabel({ ...active, protectionEnabled: false }, 'instagram'), null);
   assert.equal(getHomeFeedTimeLabel({ ...active, xHomeEnabled: false }, 'x'), null);
   assert.equal(getHomeFeedTimeLabel({ ...active, instagramObservationMode: true }, 'instagram'), null);
+});
+
+test('an X Home rule waiting for its own signal reports no allowance yet', () => {
+  // Switched on, but the service has never seen the Home timeline, so nothing
+  // is being counted and there is no time to show.
+  assert.equal(getHomeFeedTimeLabel({ ...active, xSignalMask: 0 }, 'x'), null);
+  // The video signal alone does not start the Home rule.
+  assert.equal(getHomeFeedTimeLabel({ ...active, xSignalMask: 2 }, 'x'), null);
 });

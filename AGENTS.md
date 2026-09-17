@@ -37,6 +37,15 @@ npm run lint
 npx expo export --platform web
 ```
 
+For changes under `modules/zen-guard/android/`, also run the Kotlin unit tests:
+
+```bash
+npm run test:native
+```
+
+This needs `ANDROID_HOME` or `ANDROID_SDK_ROOT`, and generates the `android/`
+folder through `expo prebuild` when it is missing.
+
 For Android native changes, also build and test on an Android device or
 emulator with `npm run android`. State any check you could not run.
 

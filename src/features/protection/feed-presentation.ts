@@ -1,4 +1,5 @@
 import type { ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
+import { getXFeedReadiness } from './x-readiness.ts';
 
 type Feed = 'shorts' | 'reels' | 'home' | 'explore' | 'xHome' | 'xVideos';
 
@@ -9,12 +10,7 @@ export function getFeedPresentation(status: ZenGuardStatus | null, feed: Feed, l
   if ((feed === 'shorts' && !status.shortsEnabled) || (feed === 'xHome' && !status.xHomeEnabled) || (feed === 'xVideos' && !status.xVideosEnabled)) {
     return { statusLabel: 'Allowed', detail: feed === 'xHome' ? 'No Home-feed breaks are set.' : 'Scrolling has no feed limit.', tone: 'neutral' as const };
   }
-  const isX = feed === 'xHome' || feed === 'xVideos';
-  if (isX) {
-    const saved = feed === 'xHome' ? `Break after ${status.xHomeMinutes}m` : 'One video per visit';
-    const unavailable = !status.serviceEnabled || !status.protectionEnabled;
-    return { statusLabel: unavailable ? 'Not running' : status.xObservationMode ? 'Set up' : 'Limited', detail: unavailable ? `Saved: ${saved}. ${!status.serviceEnabled ? 'Android access is needed.' : 'Protection is paused.'}` : saved + '.', tone: unavailable || status.xObservationMode ? 'neutral' as const : 'accent' as const };
-  }
+  if (feed === 'xHome' || feed === 'xVideos') return xPresentation(status, feed);
   const saved = feed === 'shorts' ? 'One Short per visit' : feed === 'reels' ? `${status.instagramWaitSeconds}s pause, ${status.instagramReelsMinutes}m viewing window` : feed === 'home' ? `${status.instagramHomeMinutes}m of home-feed viewing` : 'Block Explore';
   if (feed === 'explore' && !status.instagramExploreBlocked) {
     return { statusLabel: 'Allowed', detail: 'No Explore block is set.', tone: 'neutral' as const };
@@ -23,4 +19,24 @@ export function getFeedPresentation(status: ZenGuardStatus | null, feed: Feed, l
   if (reason) return { statusLabel: 'Not running', detail: `Saved: ${saved}. ${reason}`, tone: 'neutral' as const };
   const detail = feed === 'shorts' ? 'Watch one Short. Scrolling to another is blocked.' : feed === 'reels' ? `Wait ${status.instagramWaitSeconds}s, then watch for ${status.instagramReelsMinutes}m.` : feed === 'home' ? `${status.instagramHomeMinutes}m of home-feed viewing.` : 'The Explore grid cannot open.';
   return { statusLabel: feed === 'explore' ? 'Blocked' : 'Limited', detail, tone: 'accent' as const };
+}
+
+/**
+ * X reports per feed. Each one waits for its own observed signal, so a feed
+ * switched on after setup says what it is still waiting for instead of
+ * claiming the whole guard is back in setup.
+ */
+function xPresentation(status: ZenGuardStatus, feed: 'xHome' | 'xVideos') {
+  const saved = feed === 'xHome' ? `Break after ${status.xHomeMinutes}m` : 'One video per visit';
+  const neutral = 'neutral' as const;
+
+  if (!status.serviceEnabled) return { statusLabel: 'Not running', detail: `Saved: ${saved}. Android access is needed.`, tone: neutral };
+  if (!status.protectionEnabled) return { statusLabel: 'Not running', detail: `Saved: ${saved}. Protection is paused.`, tone: neutral };
+  if (status.xObservationMode) return { statusLabel: 'Set up', detail: `Saved: ${saved}. Finish X setup.`, tone: neutral };
+
+  if (getXFeedReadiness(status, feed === 'xHome' ? 'home' : 'videos') === 'awaiting') {
+    const surface = feed === 'xHome' ? 'the Home feed' : 'one video';
+    return { statusLabel: 'Check', detail: `Saved: ${saved}. Open ${surface} in X once to start.`, tone: neutral };
+  }
+  return { statusLabel: 'Limited', detail: `${saved}.`, tone: 'accent' as const };
 }

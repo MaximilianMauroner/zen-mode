@@ -2,6 +2,11 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // `node --test` runs the tested modules as raw TypeScript, and Node's
+    // resolver needs an explicit extension on a relative runtime import.
+    // Metro and tsc both accept one, so shared logic can live in its own file
+    // instead of being duplicated into each tested module.
+    "allowImportingTsExtensions": true,
     "paths": {
       "@/*": [
         "./src/*"

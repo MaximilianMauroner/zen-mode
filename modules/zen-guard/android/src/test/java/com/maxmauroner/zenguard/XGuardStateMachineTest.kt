@@ -81,6 +81,47 @@ class XGuardStateMachineTest {
     assertEquals(XAction.NONE, guard.next(XSurface.VIDEO, 63_000L, settings.copy(videosEnabled = false), true))
   }
 
+  @Test fun `an unobserved feed does not pause a feed that is already running`() {
+    // Home is observed and enforcing. The user then switches Videos on, before
+    // the service has ever seen the video pager. Home must keep enforcing.
+    val guard = XGuardStateMachine()
+    val homeOnly = XSettings(homeEnabled = true, videosEnabled = false, homeAllowanceMs = 100L)
+    guard.next(XSurface.HOME, 0L, homeOnly)
+    assertEquals(XAction.HOME_BREAK, guard.next(XSurface.HOME, 100L, homeOnly))
+
+    guard.leaveBlockedSurface()
+    guard.reset()
+
+    // Videos is switched on but its signal is still missing, so videosEnabled
+    // stays false while homeEnabled stays true.
+    val videosPending = homeOnly.copy(videosEnabled = false)
+    guard.next(XSurface.HOME, 200L, videosPending)
+    assertEquals(XAction.HOME_BREAK, guard.next(XSurface.HOME, 300L, videosPending))
+    // The unobserved video feed enforces nothing yet.
+    assertEquals(XAction.NONE, guard.next(XSurface.VIDEO, 400L, videosPending, true))
+  }
+
+  @Test fun `a feed starts enforcing on its own once its signal arrives`() {
+    val guard = XGuardStateMachine()
+    val bothObserved = XSettings(homeEnabled = true, videosEnabled = true, homeAllowanceMs = 100L)
+    assertEquals(XAction.NONE, guard.next(XSurface.VIDEO, 0L, bothObserved))
+    assertEquals(XAction.LEAVE_VIDEO, guard.next(XSurface.VIDEO, 1_000L, bothObserved, true))
+  }
+
+  @Test fun `required signals follow the switched-on feeds`() {
+    assertEquals(0, requiredXSignals(homeEnabled = false, videosEnabled = false))
+    assertEquals(ZenGuardPreferences.X_HOME_SIGNAL, requiredXSignals(homeEnabled = true, videosEnabled = false))
+    assertEquals(ZenGuardPreferences.X_VIDEO_SIGNAL, requiredXSignals(homeEnabled = false, videosEnabled = true))
+    assertEquals(
+      ZenGuardPreferences.X_HOME_SIGNAL or ZenGuardPreferences.X_VIDEO_SIGNAL,
+      requiredXSignals(homeEnabled = true, videosEnabled = true),
+    )
+  }
+
+  private fun requiredXSignals(homeEnabled: Boolean, videosEnabled: Boolean): Int =
+    (if (homeEnabled) ZenGuardPreferences.X_HOME_SIGNAL else 0) or
+      (if (videosEnabled) ZenGuardPreferences.X_VIDEO_SIGNAL else 0)
+
   @Test fun `X detection uses screen identifiers and ignores post text`() {
     assertEquals(XSurface.HOME, XDetector.detect(listOf(NodeSignal(viewId = "scaffold_home_tabbed"))))
     assertEquals(XSurface.VIDEO, XDetector.detect(listOf(NodeSignal(viewId = "VideoTab"))))

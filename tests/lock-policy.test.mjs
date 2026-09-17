@@ -140,9 +140,11 @@ test('remaining time reads coarsely and never renders a stale zero', () => {
   assert.equal(formatRemaining(NOW - DAY, NOW), 'under a minute');
 });
 
-test('a daily budget permits its own minutes', () => {
-  assert.equal(dailyCeilingMinutes({ mode: 'daily', minutes: 15 }), 15);
-  assert.equal(dailyCeilingMinutes({ mode: 'daily', minutes: 120 }), 120);
+test('a daily budget permits twice its minutes across a midnight', () => {
+  // The budget resets at local midnight, so an evening and the morning after
+  // both draw it inside one 24-hour span. Only the calendar day sees 15.
+  assert.equal(dailyCeilingMinutes({ mode: 'daily', minutes: 15 }), 30);
+  assert.equal(dailyCeilingMinutes({ mode: 'daily', minutes: 120 }), 240);
 });
 
 test('a rolling allowance permits one helping per whole window in the day', () => {
@@ -163,6 +165,7 @@ test('a visit that asks every time reaches the whole day', () => {
 
 test('no ceiling exceeds a whole day', () => {
   assert.equal(dailyCeilingMinutes({ mode: 'daily', minutes: 5000 }), 1440);
+  assert.equal(dailyCeilingMinutes({ mode: 'daily', minutes: 800 }), 1440);
   assert.equal(dailyCeilingMinutes({ mode: 'rolling', allowanceMinutes: 480, windowMinutes: 15 }), 1440);
   assert.equal(dailyCeilingMinutes({ mode: 'visit', sessionMinutes: 60, cooldownMinutes: 0 }), 1440);
 });
@@ -202,10 +205,10 @@ test('a single sitting is capped by the allowance or visit length, not the daily
 });
 
 test('a mode switch cannot trade pacing away for the same daily total', () => {
-  // Both permit 120 minutes a day, but only the rolling rule stops a two-hour
-  // sitting. Keeping the total is not keeping the restriction.
+  // Both permit 120 minutes in any 24 hours, but only the rolling rule stops a
+  // one-hour sitting. Keeping the total is not keeping the restriction.
   const rolling = { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 };
-  const daily = { mode: 'daily', minutes: 120 };
+  const daily = { mode: 'daily', minutes: 60 };
   assert.equal(dailyCeilingMinutes(rolling), dailyCeilingMinutes(daily));
   assert.equal(isWeakerAppRule([rolling], daily), true);
 
@@ -221,6 +224,16 @@ test('a longer sitting is refused even when the day gets tighter', () => {
   assert.equal(isWeakerAppRule([rolling], { mode: 'daily', minutes: 5 }), false);
 });
 
+test('a rolling day cannot become a calendar day with the same minutes', () => {
+  // Both are offered by the screen as "30m / day". They are not the same
+  // promise: the rolling one holds across any 24 hours, the daily one lets the
+  // evening and the morning after each draw a full 30.
+  const rolling = { mode: 'rolling', allowanceMinutes: 30, windowMinutes: 1440 };
+  assert.equal(isWeakerAppRule([rolling], { mode: 'daily', minutes: 30 }), true);
+  // Halving the budget restores the 24-hour promise, so it is allowed.
+  assert.equal(isWeakerAppRule([rolling], { mode: 'daily', minutes: 15 }), false);
+});
+
 test('a rolling rule may widen its window when the sitting cap holds', () => {
   // 5m per hour to 5m per 3 hours: tighter over the day, same single sitting.
   const hourly = { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 };
@@ -231,7 +244,7 @@ test('a rolling rule may widen its window when the sitting cap holds', () => {
 
 test('when an app carries several rules, the tightest one is what a replacement must match', () => {
   // The stores allow this even though the screen writes one rule at a time.
-  // Daily 5m binds at 5, rolling 5m/hour at 120. Today the user gets 5.
+  // Daily 5m binds at 10 over any 24 hours, rolling 5m/hour at 120.
   const stored = [
     { mode: 'daily', minutes: 5 },
     { mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 },

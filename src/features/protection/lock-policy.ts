@@ -119,17 +119,24 @@ export type AppRule =
   | { mode: 'rolling'; allowanceMinutes: number; windowMinutes: number };
 
 /**
- * The most minutes a rule permits in any 24 hours.
+ * The most minutes a rule permits in any 24 hours, counted from any moment
+ * rather than from midnight.
  *
  * Daily, timed-visit, and rolling rules are not otherwise comparable, so this
  * is what lets the lock judge a mode switch instead of refusing every one of
  * them. A timed visit with no downtime repeats all day, which is why a zero
  * cooldown reaches the ceiling.
+ *
+ * A daily budget counts double because it is the only mode with a reset
+ * moment: `AppLimitStore` keys usage by local calendar day, so an evening and
+ * the morning after each draw a full budget inside one 24-hour span. A rolling
+ * allowance never resets, so the same number of minutes buys a weaker promise
+ * as a daily budget than as a rolling one, and the lock has to see that.
  */
 export function dailyCeilingMinutes(rule: AppRule): number {
   switch (rule.mode) {
     case 'daily':
-      return Math.min(MINUTES_PER_DAY, Math.max(0, rule.minutes));
+      return Math.min(MINUTES_PER_DAY, Math.max(0, rule.minutes) * 2);
     case 'rolling': {
       if (rule.windowMinutes <= 0) return MINUTES_PER_DAY;
       const windows = Math.floor(MINUTES_PER_DAY / rule.windowMinutes);
@@ -151,6 +158,11 @@ export function dailyCeilingMinutes(rule: AppRule): number {
  * visit each cap a single stretch, which is the guarantee a daily total cannot
  * express: "5 minutes in any hour" and "120 minutes a day" both come to 120
  * over a day, but only one of them prevents a two-hour sitting.
+ *
+ * A sitting that straddles midnight can reach twice a daily budget. That is
+ * counted on the 24-hour axis and deliberately not here, because doubling both
+ * axes would refuse "5 minutes an hour" becoming "5 minutes a day" over a
+ * 10-minute midnight sitting, and trap the user in the far looser rule.
  */
 export function maxBurstMinutes(rule: AppRule): number {
   switch (rule.mode) {

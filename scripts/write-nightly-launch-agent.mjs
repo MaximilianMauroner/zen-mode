@@ -3,12 +3,14 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { releaseEnvironment } from './release-environment.mjs';
 
 if (process.platform !== 'darwin' || Intl.DateTimeFormat().resolvedOptions().timeZone !== 'Europe/Vienna') {
   throw new Error('LaunchAgent requires this Mac to use the Europe/Vienna time zone');
 }
 if (process.argv.length !== 4) throw new Error('Usage: node scripts/write-nightly-launch-agent.mjs MOODINATOR_REPO ZEN_MODE_REPO');
 const root = fileURLToPath(new URL('..', import.meta.url));
+const validatedEnvironment = releaseEnvironment();
 const artifacts = resolve(root, '.agents/artifacts');
 const logs = resolve(homedir(), 'Library/Logs/lab4code-nightlies');
 mkdirSync(artifacts, { recursive: true });
@@ -16,7 +18,7 @@ mkdirSync(logs, { recursive: true });
 const xml = (value) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const args = [process.execPath, resolve(root, 'scripts/run-nightlies.mjs'), ...process.argv.slice(2).map((path) => resolve(path))];
 const variables = ['PATH', 'JAVA_HOME', 'ANDROID_HOME', 'ANDROID_SDK_ROOT', 'ANDROID_BUNDLETOOL_JAR', 'PLAY_SERVICE_ACCOUNT_KEY_PATH', 'EAS_BIN', 'RELEASE_ARTIFACTS_DIR'];
-const environment = variables.filter((key) => process.env[key]).map((key) => `<key>${key}</key><string>${xml(process.env[key])}</string>`).join('\n');
+const environment = variables.filter((key) => validatedEnvironment[key]).map((key) => `<key>${key}</key><string>${xml(validatedEnvironment[key])}</string>`).join('\n');
 const target = resolve(artifacts, 'net.lab4code.nightly.plist');
 writeFileSync(target, `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

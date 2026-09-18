@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { stampRelease } from './stamp-nightly-version.mjs';
 import { verifyReleaseArtifacts } from './verify-release-artifacts.mjs';
 import { uploadPlayInternal } from './upload-play-internal.mjs';
+import { preflightRelease, releaseFailure } from './release-environment.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const app = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name;
@@ -78,8 +79,15 @@ function assertProfiles(sourceRoot) {
 async function buildRelease() {
   run('git', ['fetch', 'origin', 'main']);
   const sha = run('git', ['rev-parse', 'origin/main'], root, true);
+  try {
+    Object.assign(process.env, preflightRelease(root));
+  } catch (error) {
+    const output = resolve(process.env.RELEASE_ARTIFACTS_DIR ?? join(homedir(), 'Downloads/lab4code-releases'), app, `preflight-${sha.slice(0, 12)}`);
+    mkdirSync(output, { recursive: true });
+    writeFileSync(join(output, 'release.json'), `${JSON.stringify({ app, sha, status: 'failed', failure: releaseFailure('preflight'), finishedAt: new Date().toISOString() }, null, 2)}\n`);
+    throw error;
+  }
   const credentialPath = process.env.PLAY_SERVICE_ACCOUNT_KEY_PATH;
-  if (!credentialPath || !existsSync(credentialPath)) throw new Error('Set PLAY_SERVICE_ACCOUNT_KEY_PATH to the Google Play service-account JSON key before starting a release');
   const reservation = ledger('reserve', [sha]);
   console.log(JSON.stringify({ app, ...reservation }));
   if (!reservation.build) return;
@@ -88,6 +96,8 @@ async function buildRelease() {
   let worktreeAdded = false;
   let output;
   let outcome = 'failed';
+  let stage = 'checks';
+  let failure;
   try {
     output = resolve(process.env.RELEASE_ARTIFACTS_DIR ?? join(homedir(), 'Downloads/lab4code-releases'), app,
       `${reservation.version}-${reservation.versionCode}-${sha.slice(0, 12)}`);
@@ -123,20 +133,27 @@ async function buildRelease() {
     chmodSync(logs, 0o700);
     const apk = join(output, `${app}-${reservation.version}.apk`);
     const aab = join(output, `${app}-${reservation.version}.aab`);
+    stage = 'apk-build';
     await runEas(['build', '--platform', 'android', '--profile', 'nightly-apk', '--local', '--non-interactive', '--freeze-credentials', '--output', apk], sourceRoot, join(logs, 'apk-build.log'));
+    stage = 'aab-build';
     checkResources();
     await runEas(['build', '--platform', 'android', '--profile', 'nightly', '--local', '--non-interactive', '--freeze-credentials', '--output', aab], sourceRoot, join(logs, 'aab-build.log'));
+    stage = 'artifact-verify';
     const stamped = JSON.parse(readFileSync(join(sourceRoot, 'app.json'), 'utf8')).expo;
     verifyReleaseArtifacts(apk, aab, { package: stamped.android.package, version: reservation.version, versionCode: reservation.versionCode }, app);
+    stage = 'play-upload';
     await uploadPlayInternal({ app, aabPath: aab, version: reservation.version, versionCode: reservation.versionCode, keyPath: credentialPath });
     outcome = 'succeeded';
     console.log(`Internal release ready: ${output}`);
+  } catch (error) {
+    failure = releaseFailure(stage);
+    throw error;
   } finally {
     // Record the attempt even when dependency installation, checks, build, or upload fails.
     // If SSH itself fails here, the active reservation safely blocks another upload.
     try {
+      if (output) writeFileSync(join(output, 'release.json'), `${JSON.stringify({ ...reservation, status: outcome, ...(failure ? { failure } : {}), finishedAt: new Date().toISOString() }, null, 2)}\n`);
       ledger('finish', [reservation.id, outcome]);
-      if (output) writeFileSync(join(output, 'release.json'), `${JSON.stringify({ ...reservation, status: outcome, finishedAt: new Date().toISOString() }, null, 2)}\n`);
     } finally {
       if (worktreeAdded) run('git', ['worktree', 'remove', '--force', sourceRoot]);
       if (temporary) rmSync(temporary, { recursive: true, force: true });

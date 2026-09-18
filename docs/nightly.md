@@ -20,7 +20,11 @@ On coding, use the same command with `RELEASE_COORDINATOR=local`. The Mac uses
 `RELEASE_COORDINATOR=coding` by default. Both use the same ledger on coding:
 `~/.local/state/lab4code-releases/<app>.json`.
 
-The ledger reserves a patch version and Android versionCode before work starts.
+The host preflight runs before the ledger reserves a patch version and Android
+versionCode. It checks readable SDK, bundletool and Play key paths, Android
+verification tools, EAS and Java commands, 15 GiB free disk space and 8 GiB RAM.
+A preflight failure does not consume a release number or mark the SHA attempted.
+Run `node scripts/release-environment.mjs` to check the current environment.
 It allows at most one attempt per app per Vienna calendar day. An attempted Git
 SHA is never retried automatically, even after a failed check, build, or upload.
 A new SHA can run on the next day. Failed attempts consume their reserved numbers.
@@ -43,7 +47,8 @@ The release profile uses `--freeze-credentials` to prevent credential changes.
 
 Set these paths in the scheduler's environment:
 
-- `ANDROID_HOME`: Android SDK directory.
+- `ANDROID_HOME` or `ANDROID_SDK_ROOT`: absolute Android SDK directory. If both
+  are set, they must match. LaunchAgent generation writes both aliases.
 - `ANDROID_BUNDLETOOL_JAR`: the official Google bundletool JAR.
 - `JAVA_HOME`: the installed supported JDK, if the default Java is different.
 - `PLAY_SERVICE_ACCOUNT_KEY_PATH`: an existing Google Play release service-account
@@ -137,6 +142,11 @@ node scripts/nightly-release.mjs finish RESERVATION_ID failed
 
 Closing a reservation does not permit another attempt for its source SHA.
 No automatic retry runs for submission failures, including ambiguous outcomes.
+
+The release record includes a fixed, sanitized failure stage and message for
+`preflight`, `checks`, `apk-build`, `aab-build`, `artifact-verify`, or `play-upload`.
+Preflight records use `preflight-<SHA>` folders because no identity is reserved.
+Final artifact verification remains a required gate before upload.
 
 ## Checks
 

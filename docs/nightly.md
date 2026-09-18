@@ -165,8 +165,9 @@ The uploader signs a short-lived [service-account OAuth assertion](https://devel
 locally. It sends that assertion only to `oauth2.googleapis.com`. It streams the
 verified AAB to Google's [bundle upload API](https://developers.google.com/android-publisher/api-ref/rest/v3/edits.bundles/upload).
 It checks the returned versionCode before changing Internal. It commits with
-`changesNotSentForReview=true` and `changesInReviewBehavior=ERROR_IF_IN_REVIEW`,
-which protects an existing review from Google's default cancellation behavior.
+`changesInReviewBehavior=ERROR_IF_IN_REVIEW`, which protects an existing review from Google's default cancellation behavior.
+Internal publishes automatically, so `changesNotSentForReview` is omitted.
+Google rejects that parameter for these Internal releases.
 See the [commit API](https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit).
 No request retries run, and an API error does not fall back to a draft release.
 

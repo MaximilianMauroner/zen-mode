@@ -16,11 +16,15 @@ const tabs = [
 
 const SUMMARY = {
   unknown: 'Checking protection',
-  unavailable: 'Android build needed',
-  permission: 'Protection not running',
-  paused: 'Protection paused',
-  setup: 'Feed setup',
-  active: 'Protection running',
+  unavailable: 'Android app required',
+  permission: 'Android access needed',
+  paused: 'Protection off',
+  empty: 'No feed/site rules enabled',
+  setup: 'Feed/site setup needed',
+  partial: 'Feed/site partly ready',
+  'targets-unavailable': 'No available feed/site targets',
+  'targets-unknown': 'Feed/site availability unknown',
+  active: 'Feed/site protection active for ready rules',
 } as const;
 
 type ControlHeaderProps = {

@@ -18,14 +18,10 @@ import {
 } from '@/features/protection/native';
 import { useSharedGuardStatus } from '@/features/protection/guard-status-context';
 import { colors } from '@/theme/colors';
+import { getBrowserReadiness, getSupportedBrowserAvailability, SUPPORTED_BROWSERS } from '@/features/protection/target-availability';
 
 type Props = { visible: boolean; onClose: () => void };
-const BROWSERS = [
-  { label: 'Chrome', mask: 1 },
-  { label: 'Samsung Internet', mask: 2 },
-  { label: 'Opera', mask: 4 },
-  { label: 'Firefox', mask: 8 },
-] as const;
+const BROWSERS = SUPPORTED_BROWSERS;
 
 /** Website rules stay in a drawer so the three-tab control surface does not grow. */
 export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
@@ -142,14 +138,23 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
             <SectionLabel className="mb-2 mt-5">BROWSERS</SectionLabel>
             <View className="overflow-hidden rounded-2xl border border-line bg-panel2 px-4">
               {BROWSERS.map((browser, index) => {
-                const ready = Boolean((settings?.browserSignalMask ?? 0) & browser.mask);
+                const availability = getSupportedBrowserAvailability(status, browser.key);
+                const ready = availability === 'installed' && Boolean((settings?.browserSignalMask ?? 0) & browser.mask);
+                const statusText = availability === 'absent' ? 'NOT INSTALLED' : availability === 'disabled' ? 'DISABLED' : availability === 'unknown' ? 'UNKNOWN' : ready ? 'READY' : 'CHECK';
+                const detail = availability === 'absent'
+                  ? 'Not installed on this device.'
+                  : availability === 'disabled'
+                    ? 'Disabled in Android.'
+                    : availability === 'unknown'
+                      ? 'Availability could not be confirmed.'
+                      : ready ? 'Address-bar signal recorded.' : `Open ${browser.label} once, then return here.`;
                 return (
                   <View key={browser.label} className={`flex-row items-center justify-between py-3.5 ${index ? 'border-t border-line' : ''}`}>
                     <View className="flex-1 pr-3">
                       <Text className="text-[14px] font-semibold text-copy">{browser.label}</Text>
-                      <Text className="mt-0.5 text-[12px] text-muted">{ready ? 'Address bar checked' : 'Open once to check'}</Text>
+                      <Text className="mt-0.5 text-[12px] text-muted">{detail}</Text>
                     </View>
-                    <Text className={`text-[11px] font-bold ${ready ? 'text-accent' : 'text-faint'}`}>{ready ? 'READY' : 'CHECK'}</Text>
+                    <Text className={`text-[11px] font-bold ${ready ? 'text-accent' : availability === 'absent' || availability === 'disabled' ? 'text-muted' : 'text-faint'}`}>{statusText}</Text>
                   </View>
                 );
               })}
@@ -207,8 +212,8 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
               <Text className="mt-3 text-[13px] text-muted">No sites added. The built-in list still applies.</Text>
             ) : null}
 
-            <SecondaryButton className="mt-5" title="Check a browser" disabled={disabled || !settings?.enabled || !status?.serviceEnabled || !status.protectionEnabled} onPress={() => run(openBrowserCheck, 'A browser could not be opened.')} />
-            {!settings?.enabled ? <Text className="mt-2 text-[12px] text-muted">Turn on website blocking before checking a browser.</Text> : !status?.serviceEnabled || !status?.protectionEnabled ? <Text className="mt-2 text-[12px] text-muted">Turn on Android access and Protection in Settings before checking a browser.</Text> : null}
+            <SecondaryButton className="mt-5" title="Open default browser to check" disabled={disabled || !settings?.enabled || !status?.serviceEnabled || !status.protectionEnabled || getBrowserReadiness(status) === 'none-installed' || getBrowserReadiness(status) === 'disabled'} onPress={() => run(openBrowserCheck, 'The default browser could not be opened. Check that a browser is installed.')} />
+            {!settings?.enabled ? <Text className="mt-2 text-[12px] text-muted">Turn on website blocking before checking a browser.</Text> : !status?.serviceEnabled || !status?.protectionEnabled ? <Text className="mt-2 text-[12px] text-muted">Turn on Android access and Protection in Settings before checking a browser.</Text> : getBrowserReadiness(status) === 'none-installed' ? <Text className="mt-2 text-[12px] text-muted">Install one of the supported browsers above before checking a browser.</Text> : getBrowserReadiness(status) === 'disabled' ? <Text className="mt-2 text-[12px] text-muted">Enable one of the supported browsers above in Android before checking a browser.</Text> : <Text className="mt-2 text-[12px] leading-[18px] text-muted">This opens the default browser at a safe example page. The rows above explain which supported browser still needs its own check.</Text>}
             <Text className="mt-4 text-center text-[11px] leading-[17px] text-faint">The built-in list ships with Zen Mode and is not shown here.</Text>
             <ErrorNote message={error} />
             {lockBlocked ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => { close(); router.navigate('/lock'); }} /> : null}

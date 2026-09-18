@@ -79,9 +79,9 @@ export default function SettingsScreen() {
         </RowGroup>
         <SecondaryButton title="Privacy" onPress={() => router.navigate('/privacy')} disabled={busy} />
         <SecondaryButton title="Send feedback" disabled={busy} onPress={() => runAction(openFeedbackIssue)} />
-        <SecondaryButton title="Open YouTube" disabled={disabled} onPress={() => runAction(openYouTube)} />
-        <SecondaryButton title="Open Instagram" disabled={disabled} onPress={() => runAction(openInstagram)} />
-        <SecondaryButton title="Open X" disabled={disabled} onPress={() => runAction(openX)} />
+        <SecondaryButton title="Check YouTube app opener" disabled={disabled} onPress={() => runAction(openYouTube)} />
+        <SecondaryButton title="Check Instagram app opener" disabled={disabled} onPress={() => runAction(openInstagram)} />
+        <SecondaryButton title="Check X app opener" disabled={disabled} onPress={() => runAction(openX)} />
       </View>
     </Screen>
   );

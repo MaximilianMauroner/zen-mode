@@ -70,8 +70,8 @@ export default function SetupScreen() {
     <Screen>
       <IconTile icon={ShieldCheck} />
       <ScreenTitle
-        title="Quick setup"
-        description="One tap applies the recommended guard. Open each feed once afterwards so Zen Mode can verify it before blocking starts."
+        title="Set boundaries on Android"
+        description="Zen Mode limits scrolling in supported YouTube, Instagram, and X feeds, blocks sites in supported browsers, and limits whole apps. It works in the native Android app after you grant access and complete each needed check."
       />
 
       <Card>
@@ -114,7 +114,7 @@ export default function SetupScreen() {
       <ErrorNote message={error} />
       <SecondaryButton title="Privacy" disabled={busy} onPress={() => router.navigate('/privacy')} />
       <PrimaryButton
-        title={setupReadState === 'loading' ? 'Checking…' : saving ? 'Applying defaults…' : setupReadState === 'error' ? 'Try again' : 'Quick setup — use recommended'}
+        title={setupReadState === 'loading' ? 'Checking…' : saving ? 'Applying defaults…' : setupReadState === 'error' ? 'Try again' : 'Apply defaults & open Android settings'}
         disabled={busy}
         onPress={setupReadState === 'error' ? retrySetupCheck : finishSetup}
       />

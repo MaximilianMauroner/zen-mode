@@ -11,13 +11,13 @@ import { Row, RowGroup } from '@/components/ui/card';
 import { ErrorNote, Screen } from '@/components/ui/screen';
 import { formatRemaining, readLockState, type LockState } from '@/features/protection/lock';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
-import { getFeedStatus } from '@/features/protection/feed-status';
+import { getFeedStatus, getFeedStatusDetail } from '@/features/protection/feed-status';
 import { getHomeFeedTimeLabel } from '@/features/protection/home-feed-time';
 import { getOverviewAction } from '@/features/protection/overview-actions';
 import { getAdultSitePresentation } from '@/features/protection/adult-site-presentation';
 import { useSharedGuardStatus } from '@/features/protection/guard-status-context';
 import { hasCompletedSetup } from '@/features/protection/setup';
-import { openAccessibilitySettings, openInstagram, openYouTube, setInstagramObservationMode, setNativeProtectionEnabled, setObservationMode } from '@/features/protection/native';
+import { openAccessibilitySettings, openBrowserCheck, openInstagram, openYouTube, setInstagramObservationMode, setNativeProtectionEnabled, setObservationMode } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
 
 export default function FeedsScreen() {
@@ -77,6 +77,7 @@ export default function FeedsScreen() {
       case 'check-instagram': return { title: 'Check Instagram feeds', run: openInstagram };
       case 'start-instagram': return { title: 'Start Instagram protection', run: async () => { await setInstagramObservationMode(false); await refresh(); } };
       case 'set-up-x': return { title: 'Set up X', run: async () => { setDrawer('x'); } };
+      case 'check-sites': return { title: 'Open default browser to check', run: openBrowserCheck };
       default: return null;
     }
   })();
@@ -85,6 +86,7 @@ export default function FeedsScreen() {
     <Screen edges={[]} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => { if (!busy) void refresh(); }} tintColor={colors.accent} />}>
       <TopTabs.Screen options={{ swipeEnabled: !busy && drawer === null && !siteDrawerOpen }} />
 
+      {status ? <Text accessibilityLiveRegion="polite" className="text-[13px] leading-[19px] text-muted">{getFeedStatusDetail(status)}</Text> : null}
       {nextAction ? (
         <View className="gap-2">
           {state === 'setup' && (status?.shortsEnabled && status.observationMode || status?.instagramObservationMode) ? <Text className="text-[13px] leading-[19px] text-muted">{status?.observationMode ? status.lastDetectionAt ? 'Shorts detected. Blocking is ready.' : 'Open Shorts once, then return here.' : ((status?.instagramSignalMask ?? 0) & 3) === 3 ? 'Instagram checks passed. Protection is ready.' : 'Open Direct Messages, then one Reel from a message. Return here when done.'}</Text> : null}

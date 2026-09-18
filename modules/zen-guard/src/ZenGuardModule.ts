@@ -1,5 +1,9 @@
 import { NativeModule, requireNativeModule } from 'expo';
 
+export type PackageAvailability = 'installed' | 'disabled' | 'absent' | 'unknown' | 'unavailable';
+export type SupportedAppAvailability = Record<'youtube' | 'instagram' | 'x', PackageAvailability>;
+export type SupportedBrowserAvailability = Record<'chrome' | 'samsungInternet' | 'opera' | 'firefox', PackageAvailability>;
+
 export type ZenGuardStatus = {
   available: boolean;
   serviceEnabled: boolean;
@@ -32,6 +36,10 @@ export type ZenGuardStatus = {
   adultSiteEnabled: boolean;
   adultSiteCustomCount: number;
   browserSignalMask: number;
+  /** Optional for compatibility with an older installed native module; missing is unknown. */
+  appAvailability?: SupportedAppAvailability;
+  /** Optional for compatibility with an older installed native module; missing is unknown. */
+  browserAvailability?: SupportedBrowserAvailability;
 };
 
 export type AdultSiteSettings = {

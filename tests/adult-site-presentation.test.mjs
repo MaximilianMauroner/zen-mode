@@ -9,6 +9,7 @@ const status = {
   adultSiteEnabled: true,
   adultSiteCustomCount: 0,
   browserSignalMask: 0,
+  browserAvailability: { chrome: 'installed', samsungInternet: 'installed', opera: 'installed', firefox: 'installed' },
 };
 
 test('website rules never claim blocking without runtime prerequisites', () => {
@@ -21,9 +22,14 @@ test('website rules never claim blocking without runtime prerequisites', () => {
 test('enabled rules require an observed browser before claiming active blocking', () => {
   assert.equal(getAdultSitePresentation(status).statusLabel, 'CHECK');
   assert.deepEqual(getAdultSitePresentation({ ...status, browserSignalMask: 3, adultSiteCustomCount: 2 }), {
-    detail: 'Blocking in 2 checked browsers · 2 added.',
+    detail: 'Adult-site blocking in 2 checked supported browsers · 2 added.',
     statusLabel: 'ON',
     tone: 'accent',
+  });
+  assert.deepEqual(getAdultSitePresentation({ ...status, browserAvailability: { chrome: 'disabled', samsungInternet: 'absent', opera: 'absent', firefox: 'absent' }, browserSignalMask: 15 }), {
+    detail: 'On · enable a supported browser in Android.',
+    statusLabel: 'ENABLE',
+    tone: 'neutral',
   });
 });
 

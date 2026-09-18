@@ -64,6 +64,7 @@ const base = {
   adultSiteEnabled: false,
   adultSiteCustomCount: 0,
   browserSignalMask: 0,
+  appAvailability: { youtube: 'installed', instagram: 'installed', x: 'installed' },
 };
 
 test('the overview is wired to the shared action selector', () => {

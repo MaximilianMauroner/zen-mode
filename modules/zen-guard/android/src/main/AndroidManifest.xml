@@ -3,6 +3,10 @@
     <package android:name="com.google.android.youtube" />
     <package android:name="com.instagram.android" />
     <package android:name="com.twitter.android" />
+    <package android:name="com.android.chrome" />
+    <package android:name="com.sec.android.app.sbrowser" />
+    <package android:name="com.opera.browser" />
+    <package android:name="org.mozilla.firefox" />
     <!-- Lets the app limiter list launchable apps. Narrower than QUERY_ALL_PACKAGES. -->
     <intent>
       <action android:name="android.intent.action.MAIN" />

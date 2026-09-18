@@ -19,6 +19,7 @@ class ZenGuardModule : Module() {
       val preferences = ZenGuardPreferences(context)
       val adultSites = AdultSiteRuleStore(context)
       val homeFeedStatus = HomeFeedStatusStore(context)
+      val packageManager = context.packageManager
       val instagramHome = homeFeedStatus.instagram()
       val xHome = homeFeedStatus.x()
       val nowElapsedMs = SystemClock.elapsedRealtime()
@@ -58,6 +59,17 @@ class ZenGuardModule : Module() {
         "adultSiteEnabled" to adultSites.enabled,
         "adultSiteCustomCount" to adultSites.customHosts().size,
         "browserSignalMask" to adultSites.browserSignalMask,
+        "appAvailability" to mapOf(
+          "youtube" to packageAvailability(packageManager, YOUTUBE_PACKAGE),
+          "instagram" to packageAvailability(packageManager, INSTAGRAM_PACKAGE),
+          "x" to packageAvailability(packageManager, X_PACKAGE),
+        ),
+        "browserAvailability" to mapOf(
+          "chrome" to packageAvailability(packageManager, CHROME_PACKAGE),
+          "samsungInternet" to packageAvailability(packageManager, SAMSUNG_INTERNET_PACKAGE),
+          "opera" to packageAvailability(packageManager, OPERA_PACKAGE),
+          "firefox" to packageAvailability(packageManager, FIREFOX_PACKAGE),
+        ),
       )
     }
 
@@ -244,7 +256,7 @@ class ZenGuardModule : Module() {
 
     AsyncFunction("openX") {
       val context = requireNotNull(appContext.reactContext)
-      val intent = context.packageManager.getLaunchIntentForPackage("com.twitter.android")
+      val intent = context.packageManager.getLaunchIntentForPackage(X_PACKAGE)
         ?: throw IllegalStateException("The X app is not installed")
       context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
@@ -311,6 +323,16 @@ class ZenGuardModule : Module() {
     packageName
   }
 
+  /** Package visibility is explicitly limited by the module manifest queries. */
+  private fun packageAvailability(packageManager: PackageManager, packageName: String): String = try {
+    val application = packageManager.getApplicationInfo(packageName, 0)
+    if (application.enabled) "installed" else "disabled"
+  } catch (_: PackageManager.NameNotFoundException) {
+    "absent"
+  } catch (_: SecurityException) {
+    "unknown"
+  }
+
   private fun isServiceEnabled(context: android.content.Context): Boolean {
     val expected = ComponentName(context, ZenGuardAccessibilityService::class.java)
     val enabledServices = Settings.Secure.getString(
@@ -322,7 +344,13 @@ class ZenGuardModule : Module() {
 
   companion object {
     private const val RULE_EXEMPT_MESSAGE = "Zen Mode and Android Settings cannot have app rules"
+    private const val X_PACKAGE = "com.twitter.android"
     private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
+    private const val INSTAGRAM_PACKAGE = "com.instagram.android"
+    private const val CHROME_PACKAGE = "com.android.chrome"
+    private const val SAMSUNG_INTERNET_PACKAGE = "com.sec.android.app.sbrowser"
+    private const val OPERA_PACKAGE = "com.opera.browser"
+    private const val FIREFOX_PACKAGE = "org.mozilla.firefox"
     private const val REQUIRED_INSTAGRAM_SIGNALS = 3
     private const val BROWSER_CHECK_URL = "https://example.com"
   }

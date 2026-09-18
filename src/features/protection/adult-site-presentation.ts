@@ -1,4 +1,5 @@
 import type { ZenGuardStatus } from './native';
+import { checkedInstalledBrowserCount, getBrowserReadiness } from './target-availability.ts';
 
 type AdultSitePresentation = {
   detail: string;
@@ -23,24 +24,24 @@ export function getAdultSitePresentation(status: ZenGuardStatus | null, loading 
   if (!status.protectionEnabled) {
     return { detail: 'Rule saved · Protection paused.', statusLabel: 'SAVED', tone: 'danger' };
   }
-  const checkedBrowsers = countBits(status.browserSignalMask & 15);
+  const browserReadiness = getBrowserReadiness(status);
   const custom = status.adultSiteCustomCount ? ` · ${status.adultSiteCustomCount} added` : '';
-  if (!checkedBrowsers) {
-    return { detail: `On · check a browser${custom}.`, statusLabel: 'CHECK', tone: 'neutral' };
+  if (browserReadiness === 'none-installed') {
+    return { detail: `On · no supported browser is installed${custom}.`, statusLabel: 'NO BROWSER', tone: 'neutral' };
   }
+  if (browserReadiness === 'disabled') {
+    return { detail: `On · enable a supported browser in Android${custom}.`, statusLabel: 'ENABLE', tone: 'neutral' };
+  }
+  if (browserReadiness !== 'ready') {
+    const detail = browserReadiness === 'unknown'
+      ? 'On · browser availability is unknown. Check a supported browser.'
+      : 'On · check an installed supported browser.';
+    return { detail: `${detail}${custom}`, statusLabel: 'CHECK', tone: 'neutral' };
+  }
+  const checkedBrowsers = checkedInstalledBrowserCount(status);
   return {
-    detail: `Blocking in ${checkedBrowsers} checked browser${checkedBrowsers === 1 ? '' : 's'}${custom}.`,
+    detail: `Adult-site blocking in ${checkedBrowsers} checked supported browser${checkedBrowsers === 1 ? '' : 's'}${custom}.`,
     statusLabel: 'ON',
     tone: 'accent',
   };
-}
-
-function countBits(value: number): number {
-  let remaining = value;
-  let count = 0;
-  while (remaining) {
-    count += remaining & 1;
-    remaining >>>= 1;
-  }
-  return count;
 }

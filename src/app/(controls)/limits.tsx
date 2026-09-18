@@ -8,6 +8,7 @@ import { isChangeBlocked } from '@/features/protection/lock';
 import { appRuleLockRefusal, type AppRule } from '@/features/protection/lock-policy';
 import {
   getAppLimits,
+  getInstalledApps,
   getIntentApps,
   getRollingLimits,
   removeAppLimit,
@@ -16,6 +17,7 @@ import {
   setAppLimit,
   setIntentApp,
   setRollingLimit,
+  getZenGuardStatus,
   type AppLimit,
   type InstalledApp,
   type IntentApp,
@@ -23,7 +25,9 @@ import {
 } from '@/features/protection/native';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Platform, Pressable, Text, View } from 'react-native';
+import { getConfiguredAppPresentation } from '@/features/protection/app-rule-presentation';
+import { getAppLimitsPlatformState } from '@/features/protection/app-limits-state';
 
 const MINUTE_OPTIONS = [5, 15, 30, 45, 60, 90, 120];
 /** Fixed visit lengths for the intent question. */
@@ -39,7 +43,7 @@ const ROLLING_PREFILLS = [
   { label: '5m / 3h', allowance: 5, window: 180 },
   { label: '30m / day', allowance: 30, window: 1440 },
 ];
-type ReadState = 'loading' | 'ready' | 'error';
+type ReadState = 'loading' | 'ready' | 'error' | 'android-required';
 type RuleMode = 'daily' | 'visit' | 'rolling';
 
 type GuardedEntry = {
@@ -48,6 +52,8 @@ type GuardedEntry = {
   limit?: AppLimit;
   intent?: IntentApp;
   rolling?: RollingLimit;
+  availability: 'installed' | 'absent' | 'unknown';
+  availabilityDetail: string | null;
 };
 
 const MODE_LABEL: Record<RuleMode, string> = { daily: 'DAILY', visit: 'VISIT', rolling: 'ALLOW' };
@@ -80,6 +86,7 @@ export default function AppLimitsScreen() {
   const [limits, setLimits] = useState<AppLimit[] | null>(null);
   const [intents, setIntents] = useState<IntentApp[] | null>(null);
   const [rolling, setRolling] = useState<RollingLimit[] | null>(null);
+  const [installedApps, setInstalledApps] = useState<InstalledApp[] | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [readState, setReadState] = useState<ReadState>('loading');
   const [selected, setSelected] = useState<InstalledApp | null>(null);
@@ -101,19 +108,39 @@ export default function AppLimitsScreen() {
     setReadState('loading');
     setError('');
     try {
+      if (Platform.OS !== 'android') {
+        setLimits([]);
+        setIntents([]);
+        setRolling([]);
+        setInstalledApps([]);
+        setReadState('android-required');
+        return;
+      }
+      const nativeStatus = await getZenGuardStatus();
+      if (getAppLimitsPlatformState(nativeStatus) === 'android-required') {
+        setLimits([]);
+        setIntents([]);
+        setRolling([]);
+        setInstalledApps([]);
+        setReadState('android-required');
+        return;
+      }
       const [nextLimits, nextIntents, nextRolling] = await Promise.all([
         getAppLimits(),
         getIntentApps(),
         getRollingLimits(),
       ]);
+      const nextInstalledApps = await getInstalledApps();
       setLimits(nextLimits);
       setIntents(nextIntents);
       setRolling(nextRolling);
+      setInstalledApps(nextInstalledApps);
       setReadState('ready');
     } catch {
       setLimits(null);
       setIntents(null);
       setRolling(null);
+      setInstalledApps(null);
       setReadState('error');
       setError('The app rules could not be loaded.');
     } finally {
@@ -157,14 +184,25 @@ export default function AppLimitsScreen() {
   const currentRolling = rolling;
 
   const guardedByPackage = new Map<string, GuardedEntry>();
+  const addGuarded = (packageName: string, storedLabel: string, rule: Pick<GuardedEntry, 'limit' | 'intent' | 'rolling'>) => {
+    const existing = guardedByPackage.get(packageName);
+    const evidence = getConfiguredAppPresentation(storedLabel, packageName, installedApps);
+    guardedByPackage.set(packageName, {
+      ...(existing ?? { packageName, label: storedLabel, availability: evidence.availability, availabilityDetail: evidence.detail }),
+      label: evidence.availability === 'installed' ? evidence.label : evidence.availability === 'absent' ? evidence.label : existing?.label ?? storedLabel,
+      availability: evidence.availability,
+      availabilityDetail: evidence.detail,
+      ...rule,
+    });
+  };
   currentLimits?.forEach((limit) =>
-    guardedByPackage.set(limit.packageName, { ...(guardedByPackage.get(limit.packageName) ?? { packageName: limit.packageName, label: limit.label }), label: limit.label, limit }),
+    addGuarded(limit.packageName, limit.label, { limit }),
   );
   currentIntents?.forEach((intent) =>
-    guardedByPackage.set(intent.packageName, { ...(guardedByPackage.get(intent.packageName) ?? { packageName: intent.packageName, label: intent.label }), label: intent.label, intent }),
+    addGuarded(intent.packageName, intent.label, { intent }),
   );
   currentRolling?.forEach((rule) =>
-    guardedByPackage.set(rule.packageName, { ...(guardedByPackage.get(rule.packageName) ?? { packageName: rule.packageName, label: rule.label }), label: rule.label, rolling: rule }),
+    addGuarded(rule.packageName, rule.label, { rolling: rule }),
   );
   const guarded = [...guardedByPackage.values()].sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()));
 
@@ -330,7 +368,11 @@ export default function AppLimitsScreen() {
         <>
 
           <View>
-            {currentLimits === null || currentIntents === null || currentRolling === null ? (
+            {readState === 'android-required' ? (
+              <Card>
+                <Text className="text-[13px] leading-[19px] text-muted">App limits require the native Android app. This web preview cannot read or enforce app rules.</Text>
+              </Card>
+            ) : currentLimits === null || currentIntents === null || currentRolling === null ? (
               <Card>
                 <Text className="text-[13px] leading-[19px] text-muted">
                   {readState === 'loading' ? 'Reading your app rules.' : 'The app rules could not be read.'}
@@ -394,6 +436,7 @@ function GuardedCard({ entry, disabled, onEdit }: { entry: GuardedEntry; disable
     <Pressable accessibilityRole="button" accessibilityLabel={`Edit ${entry.label}`} disabled={disabled} onPress={onEdit} className="flex-row items-center justify-between gap-3 rounded-2xl border border-line bg-panel px-4 py-4 active:opacity-60">
       <View className="flex-1">
         <Text className="text-[15px] font-semibold text-copy">{entry.label}</Text>
+        {entry.availability !== 'installed' && entry.availabilityDetail ? <Text className="mt-1 text-[12px] leading-[17px] text-muted">{entry.availabilityDetail}</Text> : null}
         {summaries.map((summary) => <Text key={summary} className="mt-1 text-[12px] text-muted">{summary}</Text>)}
       </View>
       <StatusPill label={pill} tone={spentTone} />

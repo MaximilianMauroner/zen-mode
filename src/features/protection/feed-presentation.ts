@@ -1,4 +1,5 @@
 import type { ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
+import { getSupportedAppAvailability, type SupportedAppKey } from './target-availability.ts';
 import { getXFeedReadiness } from './x-readiness.ts';
 
 type Feed = 'shorts' | 'reels' | 'home' | 'explore' | 'xHome' | 'xVideos';
@@ -10,15 +11,26 @@ export function getFeedPresentation(status: ZenGuardStatus | null, feed: Feed, l
   if ((feed === 'shorts' && !status.shortsEnabled) || (feed === 'xHome' && !status.xHomeEnabled) || (feed === 'xVideos' && !status.xVideosEnabled)) {
     return { statusLabel: 'Allowed', detail: feed === 'xHome' ? 'No Home-feed breaks are set.' : 'Scrolling has no feed limit.', tone: 'neutral' as const };
   }
-  if (feed === 'xHome' || feed === 'xVideos') return xPresentation(status, feed);
-  const saved = feed === 'shorts' ? 'One Short per visit' : feed === 'reels' ? `${status.instagramWaitSeconds}s pause, ${status.instagramReelsMinutes}m viewing window` : feed === 'home' ? `${status.instagramHomeMinutes}m of home-feed viewing` : 'Block Explore';
   if (feed === 'explore' && !status.instagramExploreBlocked) {
     return { statusLabel: 'Allowed', detail: 'No Explore block is set.', tone: 'neutral' as const };
   }
-  const reason = !status.serviceEnabled ? 'Android access is needed.' : !status.protectionEnabled ? 'Protection is paused.' : (feed === 'shorts' ? status.observationMode : status.instagramObservationMode) ? 'Finish feed setup.' : null;
+  const target = feed === 'shorts' ? 'youtube' : feed === 'xHome' || feed === 'xVideos' ? 'x' : 'instagram';
+  const availability = getSupportedAppAvailability(status, target);
+  if (availability === 'absent') return unavailableTarget('not installed', target);
+  if (availability === 'disabled') return unavailableTarget('disabled in Android', target);
+  if (availability === 'unknown') return unavailableTarget('availability could not be confirmed', target);
+  if (availability === 'unavailable') return { statusLabel: 'Unavailable', detail: 'Feed protection needs the Android app.', tone: 'neutral' as const };
+  if (feed === 'xHome' || feed === 'xVideos') return xPresentation(status, feed);
+  const saved = feed === 'shorts' ? 'One Short per visit' : feed === 'reels' ? `${status.instagramWaitSeconds}s pause, ${status.instagramReelsMinutes}m viewing window` : feed === 'home' ? `${status.instagramHomeMinutes}m of home-feed viewing` : 'Block Explore';
+  const reason = !status.serviceEnabled ? 'Android access is needed.' : !status.protectionEnabled ? 'Protection is paused.' : feed === 'shorts' ? !isShortsReady(status) ? 'Finish feed setup.' : null : status.instagramObservationMode || (status.instagramSignalMask & 3) !== 3 ? 'Finish feed setup.' : null;
   if (reason) return { statusLabel: 'Not running', detail: `Saved: ${saved}. ${reason}`, tone: 'neutral' as const };
   const detail = feed === 'shorts' ? 'Watch one Short. Scrolling to another is blocked.' : feed === 'reels' ? `Wait ${status.instagramWaitSeconds}s, then watch for ${status.instagramReelsMinutes}m.` : feed === 'home' ? `${status.instagramHomeMinutes}m of home-feed viewing.` : 'The Explore grid cannot open.';
   return { statusLabel: feed === 'explore' ? 'Blocked' : 'Limited', detail, tone: 'accent' as const };
+}
+
+function unavailableTarget(reason: string, app: SupportedAppKey) {
+  const label = app === 'youtube' ? 'YouTube' : app === 'instagram' ? 'Instagram' : 'X';
+  return { statusLabel: reason === 'not installed' ? 'Not installed' : reason === 'disabled in Android' ? 'Disabled' : 'Unknown', detail: `Saved rule not active: ${label} is ${reason}.`, tone: 'neutral' as const };
 }
 
 /**
@@ -39,4 +51,8 @@ function xPresentation(status: ZenGuardStatus, feed: 'xHome' | 'xVideos') {
     return { statusLabel: 'Check', detail: `Saved: ${saved}. Open ${surface} in X once to start.`, tone: neutral };
   }
   return { statusLabel: 'Limited', detail: `${saved}.`, tone: 'accent' as const };
+}
+
+function isShortsReady(status: ZenGuardStatus): boolean {
+  return !status.observationMode && typeof status.lastDetectionAt === 'number' && status.lastDetectionAt > 0;
 }

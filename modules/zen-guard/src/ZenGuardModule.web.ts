@@ -36,6 +36,8 @@ class ZenGuardModule extends NativeModule<{}> {
       adultSiteEnabled: false,
       adultSiteCustomCount: 0,
       browserSignalMask: 0,
+      appAvailability: { youtube: 'unavailable', instagram: 'unavailable', x: 'unavailable' },
+      browserAvailability: { chrome: 'unavailable', samsungInternet: 'unavailable', opera: 'unavailable', firefox: 'unavailable' },
     };
   }
 

@@ -18,7 +18,7 @@ current repository state. It does not publish or send anything externally.
 | Supported browser probes | Chrome, Samsung Internet, Opera, and Firefox have package-specific address-bar adapters. Each remains unverified until its current stable normal/private modes pass on-device checks. |
 | Website rules | The adult-site switch is off by default. A small bundled hostname catalog and up to 100 user-added domains are matched locally. Visited addresses are not persisted. This is reactive accessibility enforcement, not network filtering. |
 | Other app rules | Launchable Android apps can receive daily, timed-visit, or rolling-window rules. Foreground package events are used to charge configured app rules. |
-| Package visibility | The module queries YouTube, Instagram, X, launcher activities, and exact Android Settings intents used to preserve the Accessibility escape path. Settings handlers are exempted only when Android identifies them as system or updated-system apps. `app.json` blocks unrelated storage and overlay permissions. Verify the merged release manifest. |
+| Package visibility | The module queries only YouTube, Instagram, X, Chrome, Samsung Internet, Opera, Firefox, launcher activities, and exact Android Settings intents used to preserve the Accessibility escape path. Settings handlers are exempted only when Android identifies them as system or updated-system apps. `app.json` blocks unrelated storage and overlay permissions. Verify the merged release manifest. |
 | Listing decisions | Free, Productivity, support@lab4code.com, repository website, no ads/AD_ID, no account requirement, target ages 13–15/16–17/18+, IARC PEGI 3 / ESRB Everyone. Console operator reports these plus the listing text, icon, and public policy URL saved as a draft. |
 | Public policy identity | Maximilian Mauroner (Lab4Code), Italy, support@lab4code.com; explicitly approved for publication. No street address is published. |
 | Build state | Release signing is fail-closed. EAS holds an app-specific Zen upload key. The historical signed code-7 Expo replacement audited in `docs/evidence/android-release-candidate-0.1.5-vc7-20260916.md` remains the active Internal artifact; no code-8 upload is claimed, and Play-installed testing remains pending. Code-5 build/device and code-6 superseded-candidate evidence remain preserved separately. The key is not stored in this repository or VM workspace. |
@@ -26,6 +26,72 @@ current repository state. It does not publish or send anything externally.
 
 The repeatable build, signer verification, and key-custody boundary are in
 [android-release-signing.md](android-release-signing.md).
+
+## Product journey and control acceptance matrix
+
+This matrix describes the release-readiness slice in this branch. “Code/tests
+verified” means the selector or wiring is covered by repository checks; it does
+not stand in for native visual interaction or a signed Play artifact.
+
+| Journey or control | Acceptance outcome | Exact source and test evidence | State |
+| --- | --- | --- | --- |
+| First use and disclosure | The first screen says what Zen Mode limits, that it is Android-only, and that supported feeds/sites need checks after access. Consent still precedes native protection. | [setup.tsx](../src/app/setup.tsx), [setup.ts](../src/features/protection/setup.ts), [setup-policy.test.mjs](../tests/setup-policy.test.mjs) | Code/tests verified; newcomer and native UI not verified |
+| Android access and return | Android access remains a separate Settings action; status is refreshed on focus and when the app returns active. | [use-guard-status.ts](../src/features/protection/use-guard-status.ts), [index.tsx](../src/app/%28controls%29/index.tsx) | Wiring verified; native Settings walk not verified in this PR |
+| Supported app availability | Only YouTube, Instagram, X and the four adapter-backed browsers are reported. Installed, disabled, absent, unknown, and native-unavailable are distinct. Known absent targets do not create an endless setup prompt. | [target-availability.ts](../src/features/protection/target-availability.ts), [ZenGuardModule.kt](../modules/zen-guard/android/src/main/java/com/maxmauroner/zenguard/ZenGuardModule.kt), [AndroidManifest.xml](../modules/zen-guard/android/src/main/AndroidManifest.xml), [release-readiness.test.mjs](../tests/release-readiness.test.mjs) | Code/tests verified; package-manager/device evidence not verified |
+| Overview and next action | Header and overview distinguish protection off, Android access needed, setup, partial readiness, active-for-ready-rules, no rules, and unavailable/unknown targets. Existing feed precedence is retained; Sites is offered when it is the remaining check. | [feed-status.ts](../src/features/protection/feed-status.ts), [overview-actions.ts](../src/features/protection/overview-actions.ts), [control-header.tsx](../src/components/ui/control-header.tsx), [index.tsx](../src/app/%28controls%29/index.tsx) | Code/tests verified; native visual hierarchy not verified |
+| Feed controls | Disabled/absent feeds remain explained; X Home and Videos retain independent signal readiness. An opener failure is shown in the drawer and does not mutate saved rules. | [feed-presentation.ts](../src/features/protection/feed-presentation.ts), [feed-controls-drawer.tsx](../src/components/ui/feed-controls-drawer.tsx), [x-readiness.ts](../src/features/protection/x-readiness.ts) | Code/tests verified; live third-party app behavior not verified |
+| Sites and browser check | One checked installed supported browser is enough; stale bits for an uninstalled browser do not claim active blocking. Copy says the action opens the default browser and identifies browser-specific checks. | [adult-site-presentation.ts](../src/features/protection/adult-site-presentation.ts), [adult-site-controls-drawer.tsx](../src/components/ui/adult-site-controls-drawer.tsx), [release-readiness.test.mjs](../tests/release-readiness.test.mjs) | Code/tests verified; no real adult sites visited and native browser interaction not verified |
+| App limits and stale rules | Web/non-native routes stop at “Android app required” before Android-only methods. Fresh picker data refreshes labels, while a missing launcher row is shown as “not currently available” without deleting the saved rule; Remove remains behind existing lock checks. | [limits.tsx](../src/app/%28controls%29/limits.tsx), [app-limits-state.ts](../src/features/protection/app-limits-state.ts), [app-rule-presentation.ts](../src/features/protection/app-rule-presentation.ts) | Code/tests verified; native route and restart persistence not verified |
+| External recovery | Privacy/open-app actions surface contextual errors instead of leaving rejected promises unhandled. | [privacy.tsx](../src/app/privacy.tsx), [action-error.ts](../src/features/action-error.ts), [release-readiness.test.mjs](../tests/release-readiness.test.mjs) | Code/tests verified; external-handler/OEM behavior not verified |
+
+The status contract deliberately keeps missing fields from an older native build
+as `unknown`; they are never coerced to `absent` or `false`. Saved switches,
+consent, observation signals, usage timers, and the settings lock are not
+changed by availability refreshes or install/uninstall transitions.
+
+## Verification boundary and residual gates
+
+Verified for this source head: the table-driven JS regression suite, TypeScript,
+lint, web export, and native Kotlin unit suite must pass before this PR is
+reviewed. The native service's enforcement state machines and Settings escape
+path were not changed. Native visual interaction, a clean-install journey,
+permission revocation/restart, touch/back/font-scaling/contrast checks, and
+third-party browser/app-version coverage are not verified here because the
+dedicated `moodqa` AVD is owned by another QA thread.
+
+Publishing remains unverified. This repository does not establish current Play
+Console track/account state. Before publication, the owner still needs a
+current signed AAB identity and Play-installed test, merged-manifest/target-API
+check, Accessibility declaration and prominent disclosure/affirmative-consent
+review including the acceptance/refusal video, Data Safety review, final
+screenshots and reviewer-safe video, supported device/OEM matrix, and any
+account-specific testing requirement. The applicability of the 12 opted-in
+testers for 14 consecutive days is account-specific and unknown.
+
+Publish blockers are the missing signed-candidate/Play-installed evidence,
+current target and merged-manifest confirmation, native clean-install and
+permission/revocation journey, Accessibility declaration/disclosure/reviewer
+material, Data Safety decision, final store assets/video, and any applicable
+tester requirement. Non-blocking polish is the broader OEM and third-party
+version matrix, additional screen-reader/font-size passes, and future native
+visual refinements after the core journeys are proven.
+
+The coordinator supplied these policy references as current on 2026-09-17;
+they are gates for the eventual release record, not evidence of Console state:
+[target API](https://support.google.com/googleplay/android-developer/answer/11926878?hl=en),
+[Accessibility API](https://support.google.com/googleplay/android-developer/answer/10964491?hl=en),
+[User Data](https://support.google.com/googleplay/android-developer/answer/10787469?hl=en),
+[personal-account testing](https://support.google.com/googleplay/android-developer/answer/14151465?hl=en),
+and [core app quality](https://developer.android.com/docs/quality-guidelines/core-app-quality).
+
+Intentionally retained from the full audit scope in this slice: native
+visual/OEM/browser-layout verification; exact current YouTube, Instagram, X,
+Chrome, Samsung Internet, Opera, and Firefox behavior; accessibility font-size
+and screen-reader walkthroughs; Play-installed split/signing review; listing
+legal/trademark review; and any broader app-picker or platform-feature changes.
+The product still makes no universal feed, webview, browser, or network-level
+blocking claim, and this PR adds no tutorial, telemetry, permission, or
+settings-lock bypass.
 
 ## Debug preview versus Play upload
 

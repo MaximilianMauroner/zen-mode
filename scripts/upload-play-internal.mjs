@@ -106,8 +106,9 @@ export async function uploadPlayInternal(options, request = fetch) {
   await jsonRequest(request, `${editUrl}/tracks/internal`, {
     method: 'PUT', headers, body: JSON.stringify({ track: 'internal', releases: [release] }),
   }, 'Play Internal track update');
-  // Protect an existing review. Google's default commit behavior can cancel it.
-  await jsonRequest(request, `${editUrl}:commit?changesNotSentForReview=true&changesInReviewBehavior=ERROR_IF_IN_REVIEW`, {
+  // Internal releases publish automatically. Do not set changesNotSentForReview.
+  // Keep the explicit guard: Google's default behavior can cancel an existing review.
+  await jsonRequest(request, `${editUrl}:commit?changesInReviewBehavior=ERROR_IF_IN_REVIEW`, {
     method: 'POST', headers,
   }, 'Play edit commit');
   return { app, package: packageName, track: 'internal', version, versionCode, editId: edit.id };

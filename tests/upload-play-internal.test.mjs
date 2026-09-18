@@ -35,7 +35,10 @@ function fakeGoogle(uploadedCode) {
       return Response.json({ versionCode: uploadedCode });
     }
     if (url.endsWith('/tracks/internal')) return Response.json(JSON.parse(options.body));
-    if (url.includes(':commit?')) return Response.json({ id: 'edit123' });
+    if (url.includes(':commit?')) {
+      if (new URL(url).searchParams.has('changesNotSentForReview')) return new Response('Internal rejects changesNotSentForReview', { status: 400 });
+      return Response.json({ id: 'edit123' });
+    }
     throw new Error('Unexpected API request');
   };
   return { request, calls };
@@ -64,7 +67,7 @@ test('only Internal is changed, with one completed patch release and protected r
     assert.deepEqual(JSON.parse(update.body), { track: 'internal', releases: [{ name: '0.1.6', versionCodes: ['41'], status: 'completed' }] });
     const commit = google.calls.find((call) => call.url.includes(':commit'));
     const query = new URL(commit.url).searchParams;
-    assert.equal(query.get('changesNotSentForReview'), 'true');
+    assert.equal(query.has('changesNotSentForReview'), false);
     assert.equal(query.get('changesInReviewBehavior'), 'ERROR_IF_IN_REVIEW');
     assert.equal(google.calls.every((call) => call.redirect === 'error'), true);
     assert.equal(google.calls.some((call) => /production|\/tracks\/(alpha|beta)/.test(call.url)), false);
@@ -103,5 +106,27 @@ test('unsupported targets fail before authentication and HTTP errors do not echo
       return true;
     });
     assert.equal(requests, 1);
+  } finally { sample.cleanup(); }
+});
+
+
+test('a protected commit rejection is not retried or downgraded', async () => {
+  const sample = fixture();
+  try {
+    const google = fakeGoogle(41);
+    let commits = 0;
+    const request = async (url, options) => {
+      if (url.includes(':commit')) {
+        commits += 1;
+        assert.equal(new URL(url).searchParams.get('changesInReviewBehavior'), 'ERROR_IF_IN_REVIEW');
+        return new Response('secret-response-body', { status: 400 });
+      }
+      return google.request(url, options);
+    };
+    await assert.rejects(uploadPlayInternal(sample.options, request), (error) => {
+      assert.equal(error.message, 'Google Play edit commit failed (HTTP 400)');
+      return true;
+    });
+    assert.equal(commits, 1);
   } finally { sample.cleanup(); }
 });

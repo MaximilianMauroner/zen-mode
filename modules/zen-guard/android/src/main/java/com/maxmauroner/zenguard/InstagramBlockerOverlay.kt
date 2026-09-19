@@ -191,6 +191,8 @@ internal class InstagramBlockerOverlay(
 
   private val enterPhaseTwoRunnable = Runnable { enterPhaseTwo() }
 
+  val isShowing: Boolean get() = root?.isAttachedToWindow == true
+
   private val tick = object : Runnable {
     override fun run() {
       updateCountdown()

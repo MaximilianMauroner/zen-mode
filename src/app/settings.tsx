@@ -77,6 +77,7 @@ export default function SettingsScreen() {
         <RowGroup>
           <Row label="Zen Mode" detail="Version installed on this device" value={Constants.expoConfig?.version ?? 'Unknown'} />
         </RowGroup>
+        <SecondaryButton title="View statistics" onPress={() => router.navigate('/stats')} disabled={busy} />
         <SecondaryButton title="Privacy" onPress={() => router.navigate('/privacy')} disabled={busy} />
         <SecondaryButton title="Send feedback" disabled={busy} onPress={() => runAction(openFeedbackIssue)} />
         <SecondaryButton title="Check YouTube app opener" disabled={disabled} onPress={() => runAction(openYouTube)} />

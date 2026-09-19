@@ -21,22 +21,14 @@ class ZenGuardModule : Module() {
       val homeFeedStatus = HomeFeedStatusStore(context)
       val packageManager = context.packageManager
       val nowElapsedMs = SystemClock.elapsedRealtime()
-      val nowWallMs = System.currentTimeMillis()
-      val instagramHome = homeFeedStatus.instagram(nowElapsedMs, nowWallMs)
-      val xHome = homeFeedStatus.x(nowElapsedMs, nowWallMs)
-      val instagramBreakRemainingMs = instagramHome.blockedUntilElapsedMs?.let { (it - nowElapsedMs).coerceAtLeast(0L) } ?: 0L
-      val xBreakRemainingMs = xHome.blockedUntilElapsedMs?.let { (it - nowElapsedMs).coerceAtLeast(0L) } ?: 0L
-      val instagramUsedMs = if (instagramHome.blockedUntilElapsedMs != null && instagramBreakRemainingMs == 0L) 0L else instagramHome.usedMs
-      val xPendingMs = if (xBreakRemainingMs == 0L && xHome.usageState == HomeFeedUsageState.ACTIVE) {
-        xHome.resumeAtElapsedMs?.let { (nowElapsedMs - it).coerceAtLeast(0L) } ?: 0L
-      } else {
-        0L
-      }
-      val xUsedMs = if (xHome.blockedUntilElapsedMs != null && xBreakRemainingMs == 0L) {
-        0L
-      } else {
-        xHome.usedMs + xPendingMs
-      }
+      val instagramHome = homeFeedStatus.instagram(nowElapsedMs)
+      val xHome = homeFeedStatus.x(nowElapsedMs)
+      val instagramBreakRemainingMs = remainingLockoutMs(instagramHome, nowElapsedMs)
+      val xBreakRemainingMs = remainingLockoutMs(xHome, nowElapsedMs)
+      val instagramUsageState = visibleUsageState(instagramHome)
+      val xUsageState = visibleUsageState(xHome)
+      val instagramUsedMs = if (instagramUsageState == HomeFeedUsageState.UNKNOWN) 0L else instagramHome.usedMs
+      val xUsedMs = if (xUsageState == HomeFeedUsageState.UNKNOWN) 0L else xHome.usedMs
       mapOf(
         "available" to true,
         "serviceEnabled" to isServiceEnabled(context),
@@ -49,7 +41,7 @@ class ZenGuardModule : Module() {
         "xHomeMinutes" to preferences.xHomeMinutes,
         "xHomeUsedMs" to xUsedMs.toDouble(),
         "xHomeBreakRemainingMs" to xBreakRemainingMs.toDouble(),
-        "xHomeUsageState" to xHome.usageState.name.lowercase(),
+        "xHomeUsageState" to xUsageState.name.lowercase(),
         "xObservationMode" to preferences.xObservationMode,
         "xSignalMask" to preferences.xSignalMask,
         "lastEventAt" to preferences.lastEventAt.toDouble(),
@@ -62,6 +54,7 @@ class ZenGuardModule : Module() {
         "instagramHomeMinutes" to preferences.instagramHomeMinutes,
         "instagramHomeUsedMs" to instagramUsedMs.toDouble(),
         "instagramHomeBreakRemainingMs" to instagramBreakRemainingMs.toDouble(),
+        "instagramHomeUsageState" to instagramUsageState.name.lowercase(),
         "instagramExploreBlocked" to preferences.instagramExploreBlocked,
         "instagramLastDetectionAt" to preferences.instagramLastDetectionAt.toDouble(),
         "instagramDetectionCount" to preferences.instagramDetectionCount,
@@ -325,6 +318,19 @@ class ZenGuardModule : Module() {
       }
       Unit
     }
+  }
+
+  private fun remainingLockoutMs(status: HomeFeedStatus, nowElapsedMs: Long): Long =
+    if (status.lockoutState == HomeFeedLockoutState.ACTIVE) {
+      status.blockedUntilElapsedMs?.let { deadline -> if (deadline > nowElapsedMs) deadline - nowElapsedMs else 0L } ?: 0L
+    } else {
+      0L
+    }
+
+  private fun visibleUsageState(status: HomeFeedStatus): HomeFeedUsageState = when {
+    status.storageState == HomeFeedStorageState.UNAVAILABLE -> HomeFeedUsageState.UNKNOWN
+    status.lockoutState == HomeFeedLockoutState.UNKNOWN -> HomeFeedUsageState.UNKNOWN
+    else -> status.usageState
   }
 
   /** Human-readable app name, falling back to the package when it cannot be resolved. */

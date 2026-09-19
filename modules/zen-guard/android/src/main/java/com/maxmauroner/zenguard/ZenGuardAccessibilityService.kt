@@ -21,6 +21,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   private val stateMachine = EnforcementStateMachine()
   private val xStateMachine = XGuardStateMachine()
   private var xHomeUsageState = HomeFeedUsageState.PAUSED
+  private var xStorageAvailable = true
   private lateinit var xOverlay: XBreakOverlay
   private val xHandler = Handler(Looper.getMainLooper())
   private val xTicker = object : Runnable {
@@ -98,17 +99,20 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     adultSiteOverlay = AdultSiteBlockerOverlay(this)
     homeFeedStatusStore = HomeFeedStatusStore(this)
     val nowElapsedMs = SystemClock.elapsedRealtime()
-    val storedX = homeFeedStatusStore.x(nowElapsedMs, System.currentTimeMillis())
-    xHomeUsageState = storedX.usageState
+    val storedX = homeFeedStatusStore.x(nowElapsedMs)
+    xStorageAvailable = storedX.storageState == HomeFeedStorageState.AVAILABLE
+    xHomeUsageState = if (xStorageAvailable) storedX.usageState else HomeFeedUsageState.UNKNOWN
     xStateMachine.restore(
       HomeFeedRuntimeState(
         usedMs = storedX.usedMs,
         blockedUntilElapsedMs = storedX.blockedUntilElapsedMs,
         usageState = storedX.usageState,
-        capturedAtElapsedMs = storedX.resumeAtElapsedMs ?: nowElapsedMs,
+        lockoutState = storedX.lockoutState,
+        storageState = storedX.storageState,
+        capturedAtElapsedMs = nowElapsedMs,
       ),
     )
-    publishXHomeStatus()
+    if (xStorageAvailable) publishXHomeStatus()
     publishInstagramHomeStatus()
     val screenFilter = IntentFilter(Intent.ACTION_SCREEN_OFF)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -429,12 +433,16 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   }
 
   private fun clearXEnforcement(preserveHomeLockout: Boolean = false) {
-    if (preserveHomeLockout) {
+    if (preserveHomeLockout && xStorageAvailable) {
       xStateMachine.pause(SystemClock.elapsedRealtime(), xSettings())
-      if (xHomeUsageState != HomeFeedUsageState.UNKNOWN) xHomeUsageState = HomeFeedUsageState.PAUSED
+      xHomeUsageState = if (xStateMachine.requiresFreshHomeObservation()) {
+        HomeFeedUsageState.UNKNOWN
+      } else {
+        HomeFeedUsageState.PAUSED
+      }
     } else {
       xStateMachine.reset()
-      xHomeUsageState = HomeFeedUsageState.PAUSED
+      xHomeUsageState = if (xStorageAvailable) HomeFeedUsageState.PAUSED else HomeFeedUsageState.UNKNOWN
     }
     if (::xOverlay.isInitialized) xOverlay.hide()
     publishXHomeStatus()
@@ -447,12 +455,16 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     val settings = xSettings()
     if (!isScreenInteractive) {
       xStateMachine.pause(nowMs, settings)
-      if (xHomeUsageState != HomeFeedUsageState.UNKNOWN) xHomeUsageState = HomeFeedUsageState.PAUSED
+      xHomeUsageState = if (xStateMachine.requiresFreshHomeObservation()) {
+        HomeFeedUsageState.UNKNOWN
+      } else {
+        HomeFeedUsageState.PAUSED
+      }
       publishXHomeStatus()
       return
     }
     val root = rootInActiveWindow ?: run {
-      xStateMachine.pause(nowMs, settings)
+      xStateMachine.markUnverifiableGap(nowMs, settings)
       xHomeUsageState = HomeFeedUsageState.UNKNOWN
       publishXHomeStatus()
       return
@@ -460,7 +472,11 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     if (root.packageName?.toString() != X_PACKAGE) {
       if (xOverlay.isShowing && windows.any { it.root?.packageName?.toString() == X_PACKAGE }) return
       xStateMachine.pause(nowMs, settings)
-      if (xHomeUsageState != HomeFeedUsageState.UNKNOWN) xHomeUsageState = HomeFeedUsageState.PAUSED
+      xHomeUsageState = if (xStateMachine.requiresFreshHomeObservation()) {
+        HomeFeedUsageState.UNKNOWN
+      } else {
+        HomeFeedUsageState.PAUSED
+      }
       publishXHomeStatus()
       return
     }
@@ -469,19 +485,24 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     if (surface == XSurface.HOME) preferences.recordXSignal(ZenGuardPreferences.X_HOME_SIGNAL)
     if (pager != null) preferences.recordXSignal(ZenGuardPreferences.X_VIDEO_SIGNAL)
     if (preferences.xObservationMode) { clearXEnforcement(); return }
-    xHomeUsageState = when {
-      surface == XSurface.UNKNOWN -> HomeFeedUsageState.UNKNOWN
-      surface == XSurface.HOME && settings.homeEnabled -> HomeFeedUsageState.ACTIVE
-      else -> HomeFeedUsageState.PAUSED
-    }
     val source = event?.source
     val advanced = pager != null && event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED &&
       source != null && isXVideoPager(source) && event.scrollY > 0
     val action = xStateMachine.next(surface, nowMs, settings, advanced)
+    xHomeUsageState = when {
+      action == XAction.HOME_UNAVAILABLE || surface == XSurface.UNKNOWN -> HomeFeedUsageState.UNKNOWN
+      surface == XSurface.HOME && settings.homeEnabled && !xStateMachine.requiresFreshHomeObservation() -> HomeFeedUsageState.ACTIVE
+      xStateMachine.requiresFreshHomeObservation() -> HomeFeedUsageState.UNKNOWN
+      else -> HomeFeedUsageState.PAUSED
+    }
     when (action) {
       XAction.HOME_BREAK -> {
         xHomeUsageState = HomeFeedUsageState.PAUSED
         xOverlay.show(preferences.xHomeMinutes)
+      }
+      XAction.HOME_UNAVAILABLE -> {
+        xHomeUsageState = HomeFeedUsageState.UNKNOWN
+        xOverlay.showUnavailable()
       }
       XAction.LEAVE_VIDEO -> {
         xOverlay.hide()
@@ -732,10 +753,17 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   }
 
   private fun publishXHomeStatus() {
-    if (!::homeFeedStatusStore.isInitialized) return
+    if (!::homeFeedStatusStore.isInitialized || !xStorageAvailable) return
     val nowElapsedMs = SystemClock.elapsedRealtime()
     val runtime = xStateMachine.homeRuntimeState(nowElapsedMs)
-    homeFeedStatusStore.recordX(runtime.copy(usageState = xHomeUsageState))
+    if (homeFeedStatusStore.recordX(runtime.copy(usageState = xHomeUsageState))) return
+
+    // Once a durable boundary cannot be confirmed, continuing to expose X would let process death
+    // replay an older allowance. Stop the Home rule and keep the UI explicitly unavailable.
+    xStorageAvailable = false
+    xHomeUsageState = HomeFeedUsageState.UNKNOWN
+    xStateMachine.markStorageUnavailable()
+    if (::xOverlay.isInitialized && xOverlay.isShowing) xOverlay.showUnavailable()
   }
 
   /**

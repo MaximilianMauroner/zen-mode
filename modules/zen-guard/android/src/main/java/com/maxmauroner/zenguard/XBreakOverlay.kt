@@ -18,6 +18,16 @@ internal class XBreakOverlay(private val service: AccessibilityService, private 
   val isShowing: Boolean get() = root != null
 
   fun show(minutes: Int) {
+    showDetail(service.resources.getQuantityString(R.plurals.zen_guard_x_home_detail, minutes, minutes))
+  }
+
+  /** Used when accounting cannot be verified; it intentionally contains no countdown. */
+  fun showUnavailable() {
+    if (isShowing) hide()
+    showDetail(service.getString(R.string.zen_guard_x_home_unavailable_detail))
+  }
+
+  private fun showDetail(detail: CharSequence) {
     if (isShowing) return
     val body = LinearLayout(service).apply {
       orientation = LinearLayout.VERTICAL
@@ -32,7 +42,7 @@ internal class XBreakOverlay(private val service: AccessibilityService, private 
       setTextColor(service.getColor(R.color.zen_copy))
     })
     body.addView(TextView(service).apply {
-      text = service.resources.getQuantityString(R.plurals.zen_guard_x_home_detail, minutes, minutes)
+      text = detail
       textSize = 15f
       setPadding(0, dp(12), 0, dp(26))
       setTextColor(service.getColor(R.color.zen_muted))

@@ -16,6 +16,7 @@ class ZenGuardModule extends NativeModule<{}> {
       xHomeMinutes: 5,
       xHomeUsedMs: 0,
       xHomeBreakRemainingMs: 0,
+      xHomeUsageState: 'paused',
       xObservationMode: true,
       xSignalMask: 0,
       lastEventAt: 0,

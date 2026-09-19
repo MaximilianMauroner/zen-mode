@@ -33,6 +33,10 @@ test('a native expired-break snapshot presents the full next visit', () => {
   assert.equal(getHomeFeedTimeLabel({ ...active, xHomeUsedMs: 0, xHomeBreakRemainingMs: 0 }, 'x'), '5m left');
 });
 
+test('an unobserved X interval does not claim a confident countdown', () => {
+  assert.equal(getHomeFeedTimeLabel({ ...active, xHomeUsageState: 'unknown' }, 'x'), 'Time unavailable');
+});
+
 test('never presents runtime time for a rule that is not running', () => {
   assert.equal(getHomeFeedTimeLabel({ ...active, protectionEnabled: false }, 'instagram'), null);
   assert.equal(getHomeFeedTimeLabel({ ...active, xHomeEnabled: false }, 'x'), null);

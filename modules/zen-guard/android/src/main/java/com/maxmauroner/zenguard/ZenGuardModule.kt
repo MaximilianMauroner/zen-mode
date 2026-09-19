@@ -20,13 +20,23 @@ class ZenGuardModule : Module() {
       val adultSites = AdultSiteRuleStore(context)
       val homeFeedStatus = HomeFeedStatusStore(context)
       val packageManager = context.packageManager
-      val instagramHome = homeFeedStatus.instagram()
-      val xHome = homeFeedStatus.x()
       val nowElapsedMs = SystemClock.elapsedRealtime()
+      val nowWallMs = System.currentTimeMillis()
+      val instagramHome = homeFeedStatus.instagram(nowElapsedMs, nowWallMs)
+      val xHome = homeFeedStatus.x(nowElapsedMs, nowWallMs)
       val instagramBreakRemainingMs = instagramHome.blockedUntilElapsedMs?.let { (it - nowElapsedMs).coerceAtLeast(0L) } ?: 0L
       val xBreakRemainingMs = xHome.blockedUntilElapsedMs?.let { (it - nowElapsedMs).coerceAtLeast(0L) } ?: 0L
       val instagramUsedMs = if (instagramHome.blockedUntilElapsedMs != null && instagramBreakRemainingMs == 0L) 0L else instagramHome.usedMs
-      val xUsedMs = if (xHome.blockedUntilElapsedMs != null && xBreakRemainingMs == 0L) 0L else xHome.usedMs
+      val xPendingMs = if (xBreakRemainingMs == 0L && xHome.usageState == HomeFeedUsageState.ACTIVE) {
+        xHome.resumeAtElapsedMs?.let { (nowElapsedMs - it).coerceAtLeast(0L) } ?: 0L
+      } else {
+        0L
+      }
+      val xUsedMs = if (xHome.blockedUntilElapsedMs != null && xBreakRemainingMs == 0L) {
+        0L
+      } else {
+        xHome.usedMs + xPendingMs
+      }
       mapOf(
         "available" to true,
         "serviceEnabled" to isServiceEnabled(context),
@@ -39,6 +49,7 @@ class ZenGuardModule : Module() {
         "xHomeMinutes" to preferences.xHomeMinutes,
         "xHomeUsedMs" to xUsedMs.toDouble(),
         "xHomeBreakRemainingMs" to xBreakRemainingMs.toDouble(),
+        "xHomeUsageState" to xHome.usageState.name.lowercase(),
         "xObservationMode" to preferences.xObservationMode,
         "xSignalMask" to preferences.xSignalMask,
         "lastEventAt" to preferences.lastEventAt.toDouble(),

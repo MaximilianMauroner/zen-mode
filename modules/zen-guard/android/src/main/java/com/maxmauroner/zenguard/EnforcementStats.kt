@@ -18,6 +18,13 @@ internal enum class EnforcementReason(val key: String) {
   TIMED_VISIT("timed_visit"),
 }
 
+/** Only a completed enforcement action is eligible for the statistics ledger. */
+internal enum class EnforcementStatsOutcome {
+  SUCCESS,
+  FAILED,
+  OBSERVED,
+}
+
 internal data class EnforcementStatsSnapshot(
   val total: Long,
   val counts: Map<String, Long>,

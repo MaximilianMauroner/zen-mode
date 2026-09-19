@@ -5,7 +5,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Card, Row, RowGroup } from '@/components/ui/card';
 import { ErrorNote, Screen, ScreenHeader, ScreenTitle } from '@/components/ui/screen';
 import { getEnforcementStats, type EnforcementStats } from '@/features/protection/native';
-import { ENFORCEMENT_STAT_CATEGORIES, formatStatCount, getOtherStatCount, getStatCount } from '@/features/protection/stats-presentation';
+import { getStatsScreenModel } from '@/features/protection/stats-screen-model';
 import { colors } from '@/theme/colors';
 
 export default function StatsScreen() {
@@ -30,7 +30,7 @@ export default function StatsScreen() {
     void load();
   }, [load]));
 
-  const other = stats ? getOtherStatCount(stats) : 0;
+  const screenModel = stats ? getStatsScreenModel(stats) : null;
 
   return (
     <Screen refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void load()} tintColor={colors.accent} />}>
@@ -39,19 +39,19 @@ export default function StatsScreen() {
 
       <Card emphasis>
         <Text className="text-[12px] font-bold tracking-[0.16em] text-accent">ALL TIME</Text>
-        <Text className="mt-2 text-[44px] font-semibold leading-[50px] text-copy">{stats ? formatStatCount(stats.total) : '—'}</Text>
+        <Text className="mt-2 text-[44px] font-semibold leading-[50px] text-copy">{screenModel?.total ?? '—'}</Text>
         <Text className="mt-1 text-[15px] text-muted">total interventions</Text>
       </Card>
 
       <ErrorNote message={error} />
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-[18px] font-semibold text-copy">By protection</Text>
-        {stats ? (
+        {screenModel ? (
           <RowGroup>
-            {ENFORCEMENT_STAT_CATEGORIES.map(({ key, label, detail }) => (
-              <Row key={key} label={label} detail={detail} value={formatStatCount(getStatCount(stats, key))} />
+            {screenModel.rows.map(({ key, label, detail, value }) => (
+              <Row key={key} label={label} detail={detail} value={value} />
             ))}
-            {other > 0 ? <Row label="Other" detail="Additional fixed enforcement reasons." value={formatStatCount(other)} /> : null}
+            {screenModel.other ? <Row {...screenModel.other} /> : null}
           </RowGroup>
         ) : (
           <Card><Text className="text-[14px] text-muted">{loading ? 'Loading statistics…' : 'No statistics available.'}</Text></Card>

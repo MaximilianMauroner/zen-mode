@@ -29,6 +29,8 @@ export type ZenGuardStatus = {
   instagramHomeMinutes: number;
   instagramHomeUsedMs: number;
   instagramHomeBreakRemainingMs: number;
+  /** Missing on older native builds; unknown means the durable timer is not trustworthy. */
+  instagramHomeUsageState?: 'active' | 'paused' | 'unknown';
   instagramExploreBlocked: boolean;
   instagramLastDetectionAt: number;
   instagramDetectionCount: number;

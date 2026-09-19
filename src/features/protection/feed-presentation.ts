@@ -50,6 +50,9 @@ function xPresentation(status: ZenGuardStatus, feed: 'xHome' | 'xVideos') {
     const surface = feed === 'xHome' ? 'the Home feed' : 'one video';
     return { statusLabel: 'Check', detail: `Saved: ${saved}. Open ${surface} in X once to start.`, tone: neutral };
   }
+  if (feed === 'xHome' && status.xHomeUsageState === 'unknown') {
+    return { statusLabel: 'Unavailable', detail: `${saved}. Usage could not be verified; leave X and wait for Zen Mode to reconnect.`, tone: neutral };
+  }
   return { statusLabel: 'Limited', detail: `${saved}.`, tone: 'accent' as const };
 }
 

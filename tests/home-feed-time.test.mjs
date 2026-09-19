@@ -37,6 +37,10 @@ test('an unobserved X interval does not claim a confident countdown', () => {
   assert.equal(getHomeFeedTimeLabel({ ...active, xHomeUsageState: 'unknown' }, 'x'), 'Time unavailable');
 });
 
+test('an unavailable Instagram interval does not claim a confident countdown', () => {
+  assert.equal(getHomeFeedTimeLabel({ ...active, instagramHomeUsageState: 'unknown' }, 'instagram'), 'Time unavailable');
+});
+
 test('never presents runtime time for a rule that is not running', () => {
   assert.equal(getHomeFeedTimeLabel({ ...active, protectionEnabled: false }, 'instagram'), null);
   assert.equal(getHomeFeedTimeLabel({ ...active, xHomeEnabled: false }, 'x'), null);

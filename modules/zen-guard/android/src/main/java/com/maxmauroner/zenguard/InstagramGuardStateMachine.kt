@@ -61,6 +61,7 @@ internal class InstagramGuardStateMachine(
   private var homeElapsedMs = 0L
   private var homeLastActiveAt: Long? = null
   private var homeBlockedUntil: Long? = null
+  private var storageUnavailable = false
 
   private var blocker: InstagramGuardAction.ShowBlocker? = null
   private var blockedSurface: InstagramSurface? = null
@@ -143,6 +144,24 @@ internal class InstagramGuardStateMachine(
 
   fun homeElapsedMs(): Long = homeElapsedMs
 
+  fun markStorageUnavailable() {
+    storageUnavailable = true
+    homeLastActiveAt = null
+    homeBlockedUntil = null
+    blocker = null
+    blockedSurface = null
+  }
+
+  /** Starts a new measurable Home interval after storage has accepted a fresh observation. */
+  fun recoverStorage(nowMs: Long) {
+    storageUnavailable = false
+    homeElapsedMs = 0L
+    homeBlockedUntil = null
+    homeLastActiveAt = nowMs.coerceIn(0L, HOME_FEED_MAX_SAFE_TIMESTAMP_MS)
+    blocker = null
+    blockedSurface = null
+  }
+
   /** Snapshot for presentation only; enforcement continues to use the private state above. */
   fun homeRuntimeState(nowMs: Long): HomeFeedRuntimeState {
     val pendingMs = if (homeBlockedUntil == null) {
@@ -154,6 +173,7 @@ internal class InstagramGuardStateMachine(
       usedMs = saturatingUsageAdd(homeElapsedMs, pendingMs),
       blockedUntilElapsedMs = homeBlockedUntil,
       usageState = if (homeLastActiveAt != null && homeBlockedUntil == null) HomeFeedUsageState.ACTIVE else HomeFeedUsageState.PAUSED,
+      storageState = if (storageUnavailable) HomeFeedStorageState.UNAVAILABLE else HomeFeedStorageState.AVAILABLE,
       capturedAtElapsedMs = nowMs,
     ).normalizedAt(nowMs)
   }
@@ -273,6 +293,10 @@ internal class InstagramGuardStateMachine(
     settings: InstagramGuardSettings,
   ): InstagramGuardAction {
     resetReelsProvenance()
+
+    // A failed durable write must not turn into a fresh allowance in this process. Keep the
+    // existing Home protection semantics fail-closed until a trustworthy state is restored.
+    if (storageUnavailable) return block(InstagramBlockReason.HOME_LIMIT, null)
 
     val blockedUntil = homeBlockedUntil
     if (blockedUntil != null) {

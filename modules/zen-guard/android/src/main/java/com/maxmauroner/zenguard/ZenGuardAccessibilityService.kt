@@ -22,6 +22,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   private val xStateMachine = XGuardStateMachine()
   private var xHomeUsageState = HomeFeedUsageState.PAUSED
   private var xStorageAvailable = true
+  private var instagramStorageAvailable = true
   private lateinit var xOverlay: XBreakOverlay
   private val xHandler = Handler(Looper.getMainLooper())
   private val xTicker = object : Runnable {
@@ -99,6 +100,9 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     adultSiteOverlay = AdultSiteBlockerOverlay(this)
     homeFeedStatusStore = HomeFeedStatusStore(this)
     val nowElapsedMs = SystemClock.elapsedRealtime()
+    val storedInstagram = homeFeedStatusStore.instagram(nowElapsedMs)
+    instagramStorageAvailable = storedInstagram.storageState == HomeFeedStorageState.AVAILABLE
+    if (!instagramStorageAvailable) instagramStateMachine.markStorageUnavailable()
     val storedX = homeFeedStatusStore.x(nowElapsedMs)
     xStorageAvailable = storedX.storageState == HomeFeedStorageState.AVAILABLE
     xHomeUsageState = if (xStorageAvailable) storedX.usageState else HomeFeedUsageState.UNKNOWN
@@ -452,7 +456,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   private fun handleXEvent(event: AccessibilityEvent?) {
     if (!canRunEnforcementAction()) return
     val nowMs = SystemClock.elapsedRealtime()
-    val settings = xSettings()
+    var settings = xSettings()
     if (!isScreenInteractive) {
       xStateMachine.pause(nowMs, settings)
       xHomeUsageState = if (xStateMachine.requiresFreshHomeObservation()) {
@@ -485,6 +489,13 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     if (surface == XSurface.HOME) preferences.recordXSignal(ZenGuardPreferences.X_HOME_SIGNAL)
     if (pager != null) preferences.recordXSignal(ZenGuardPreferences.X_VIDEO_SIGNAL)
     if (preferences.xObservationMode) { clearXEnforcement(); return }
+    settings = xSettings()
+    if (!xStorageAvailable && surface == XSurface.HOME && settings.homeEnabled && event != null) {
+      if (homeFeedStatusStore.recoverX(nowMs)) {
+        xStorageAvailable = true
+        xStateMachine.recoverStorage(nowMs)
+      }
+    }
     val source = event?.source
     val advanced = pager != null && event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED &&
       source != null && isXVideoPager(source) && event.scrollY > 0
@@ -613,6 +624,13 @@ class ZenGuardAccessibilityService : AccessibilityService() {
         action = InstagramGuardAction.None,
       )
       return
+    }
+
+    if (!instagramStorageAvailable && detection.surface == InstagramSurface.HOME_FEED) {
+      if (homeFeedStatusStore.recoverInstagram(nowMs)) {
+        instagramStorageAvailable = true
+        instagramStateMachine.recoverStorage(nowMs)
+      }
     }
 
     val reelPagerVisible = hasReelPager(nodes)
@@ -749,7 +767,13 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     if (!::homeFeedStatusStore.isInitialized) return
     val nowElapsedMs = SystemClock.elapsedRealtime()
     val runtime = instagramStateMachine.homeRuntimeState(nowElapsedMs)
-    homeFeedStatusStore.recordInstagram(runtime)
+    if (homeFeedStatusStore.recordInstagram(runtime)) return
+
+    // Do not continue a confident in-memory Home allowance after the durable boundary failed.
+    // The state machine keeps Instagram's existing blocking semantics while the UI observes the
+    // store's explicit unavailable state.
+    instagramStorageAvailable = false
+    instagramStateMachine.markStorageUnavailable()
   }
 
   private fun publishXHomeStatus() {

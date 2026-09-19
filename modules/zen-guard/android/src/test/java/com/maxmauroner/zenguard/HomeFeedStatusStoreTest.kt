@@ -49,21 +49,123 @@ class HomeFeedStatusStoreTest {
     assertUnavailable(store(FakePersistence(overflowing), boot = 7L).x(100L))
   }
 
-  @Test fun `failed commit latches unavailable state instead of continuing`() {
-    val persistence = FakePersistence(commitResult = false)
-    val store = store(persistence, boot = 7L)
+  @Test fun `paused state with a resume timestamp becomes unavailable`() {
+    val values = validCurrentValues().toMutableMap().apply {
+      this[key(HomeFeedStatusKeys.RESUME_AT_ELAPSED)] = 100L
+      this[key(HomeFeedStatusKeys.CHECKSUM)] = Long.MIN_VALUE
+    }
+
+    assertUnavailable(store(FakePersistence(values), boot = 7L).x(200L))
+  }
+
+  @Test fun `failed status write remains unavailable after process death`() {
+    val persistence = FakePersistence()
+    val writer = store(persistence, boot = 7L)
     val runtime = HomeFeedRuntimeState(
       usedMs = 12_000L,
       blockedUntilElapsedMs = null,
       usageState = HomeFeedUsageState.ACTIVE,
       capturedAtElapsedMs = 100L,
     )
+    assertTrue(writer.recordX(runtime))
 
-    assertFalse(store.recordX(runtime))
-    assertUnavailable(store.x(200L))
-    assertUnavailable(store(FakePersistence(persistence.values), boot = 7L).x(200L))
-    assertFalse(store.recordX(runtime))
-    assertEquals(1, persistence.commitCalls)
+    persistence.commitResult = false
+    assertFalse(writer.recordX(runtime.copy(usedMs = 24_000L, capturedAtElapsedMs = 200L)))
+    assertUnavailable(store(persistence.copyForProcessDeath(), boot = 7L).x(300L))
+  }
+
+  @Test fun `failed integrity write invalidates stale snapshot after process death`() {
+    val persistence = FakePersistence()
+    val writer = store(persistence, boot = 7L)
+    assertTrue(writer.recordX(
+      HomeFeedRuntimeState(
+        usedMs = 12_000L,
+        blockedUntilElapsedMs = null,
+        usageState = HomeFeedUsageState.PAUSED,
+        capturedAtElapsedMs = 100L,
+      ),
+    ))
+
+    persistence.integrityCommitResult = false
+    assertFalse(writer.recordX(
+      HomeFeedRuntimeState(
+        usedMs = 24_000L,
+        blockedUntilElapsedMs = null,
+        usageState = HomeFeedUsageState.PAUSED,
+        capturedAtElapsedMs = 200L,
+      ),
+    ))
+
+    assertUnavailable(store(persistence.copyForProcessDeath(), boot = 7L).x(300L))
+  }
+
+  @Test fun `missing initialized status is unavailable instead of fresh allowance`() {
+    val persistence = FakePersistence()
+    assertTrue(store(persistence, boot = 7L).recordX(
+      HomeFeedRuntimeState(
+        usedMs = 20_000L,
+        blockedUntilElapsedMs = null,
+        usageState = HomeFeedUsageState.PAUSED,
+        capturedAtElapsedMs = 100L,
+      ),
+    ))
+    persistence.values.clear()
+
+    assertUnavailable(store(persistence.copyForProcessDeath(), boot = 7L).x(200L))
+  }
+
+  @Test fun `a fresh trusted record can recover an initialized missing status`() {
+    val persistence = FakePersistence()
+    assertTrue(store(persistence, boot = 7L).recordX(
+      HomeFeedRuntimeState(
+        usedMs = 20_000L,
+        blockedUntilElapsedMs = null,
+        usageState = HomeFeedUsageState.PAUSED,
+        capturedAtElapsedMs = 100L,
+      ),
+    ))
+    persistence.values.clear()
+
+    assertUnavailable(store(persistence.copyForProcessDeath(), boot = 7L).x(200L))
+    assertTrue(store(persistence, boot = 7L).recoverX(200L))
+    val restored = store(persistence.copyForProcessDeath(), boot = 7L).x(300L)
+    assertEquals(HomeFeedStorageState.AVAILABLE, restored.storageState)
+    assertEquals(HomeFeedUsageState.PAUSED, restored.usageState)
+    assertEquals(0L, restored.usedMs)
+  }
+
+  @Test fun `read failure persists unavailable state across process death`() {
+    val healthy = FakePersistence()
+    assertTrue(store(healthy, boot = 7L).recordX(
+      HomeFeedRuntimeState(
+        usedMs = 12_000L,
+        blockedUntilElapsedMs = null,
+        usageState = HomeFeedUsageState.PAUSED,
+        capturedAtElapsedMs = 100L,
+      ),
+    ))
+    val broken = FakePersistence(
+      initial = healthy.values,
+      initialIntegrity = healthy.integrityValues,
+      throwOnRead = true,
+    )
+
+    assertUnavailable(store(broken, boot = 7L).x(200L))
+    assertUnavailable(store(broken.copyForProcessDeath(), boot = 7L).x(300L))
+  }
+
+  @Test fun `failed Instagram record is durable and unavailable after process death`() {
+    val persistence = FakePersistence(commitResult = false)
+    assertFalse(store(persistence, boot = 7L).recordInstagram(
+      HomeFeedRuntimeState(
+        usedMs = 12_000L,
+        blockedUntilElapsedMs = null,
+        usageState = HomeFeedUsageState.ACTIVE,
+        capturedAtElapsedMs = 100L,
+      ),
+    ))
+
+    assertUnavailable(store(persistence.copyForProcessDeath(), boot = 7L).instagram(200L))
   }
 
   @Test fun `read failure is explicit and fail closed`() {
@@ -96,6 +198,7 @@ class HomeFeedStatusStoreTest {
 
   @Test fun `missing boot count is unavailable and changed boot is unknown`() {
     assertUnavailable(store(FakePersistence(), boot = null).x(100L))
+    HomeFeedStatusFailureRegistry.clearForTests()
 
     val persistence = FakePersistence()
     val writer = store(persistence, boot = 7L)
@@ -205,10 +308,15 @@ class HomeFeedStatusStoreTest {
   private class FakePersistence(
     initial: Map<String, Any?> = emptyMap(),
     var commitResult: Boolean = true,
+    private val initialIntegrity: Map<String, Any?> = emptyMap(),
+    var integrityCommitResult: Boolean = true,
     private val throwOnRead: Boolean = false,
+    private val throwOnIntegrityRead: Boolean = false,
   ) : HomeFeedStatusPersistence {
     val values = initial.toMutableMap()
+    val integrityValues = initialIntegrity.toMutableMap()
     var commitCalls = 0
+    var integrityCommitCalls = 0
 
     override fun readAll(): Map<String, Any?> {
       if (throwOnRead) throw IllegalStateException("read failed")
@@ -223,5 +331,26 @@ class HomeFeedStatusStoreTest {
       }
       return true
     }
+
+    override fun readIntegrity(): Map<String, Any?> {
+      if (throwOnIntegrityRead) throw IllegalStateException("integrity read failed")
+      return integrityValues.toMap()
+    }
+
+    override fun commitIntegrity(values: Map<String, Any?>): Boolean {
+      integrityCommitCalls += 1
+      if (!integrityCommitResult) return false
+      values.forEach { (key, value) ->
+        if (value == null) integrityValues.remove(key) else integrityValues[key] = value
+      }
+      return true
+    }
+
+    fun copyForProcessDeath() = FakePersistence(
+      initial = values,
+      initialIntegrity = integrityValues,
+      commitResult = commitResult,
+      integrityCommitResult = integrityCommitResult,
+    )
   }
 }

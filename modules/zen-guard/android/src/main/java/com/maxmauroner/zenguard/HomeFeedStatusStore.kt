@@ -9,16 +9,28 @@ import android.provider.Settings
 internal interface HomeFeedStatusPersistence {
   fun readAll(): Map<String, Any?>
   fun commit(values: Map<String, Any?>): Boolean
+
+  /** Integrity metadata is deliberately independent from the status snapshot. */
+  fun readIntegrity(): Map<String, Any?>
+  fun commitIntegrity(values: Map<String, Any?>): Boolean
 }
 
 private class SharedPreferencesHomeFeedStatusPersistence(
   context: Context,
 ) : HomeFeedStatusPersistence {
   private val preferences = context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
+  private val integrityPreferences = context.getSharedPreferences(INTEGRITY_FILE_NAME, Context.MODE_PRIVATE)
 
   override fun readAll(): Map<String, Any?> = preferences.all.entries.associate { it.key to it.value }
 
-  override fun commit(values: Map<String, Any?>): Boolean = try {
+  override fun commit(values: Map<String, Any?>): Boolean = commitTo(preferences, values)
+
+  override fun readIntegrity(): Map<String, Any?> =
+    integrityPreferences.all.entries.associate { it.key to it.value }
+
+  override fun commitIntegrity(values: Map<String, Any?>): Boolean = commitTo(integrityPreferences, values)
+
+  private fun commitTo(preferences: SharedPreferences, values: Map<String, Any?>): Boolean = try {
     val editor = preferences.edit()
     values.forEach { (key, value) ->
       when (value) {
@@ -29,6 +41,7 @@ private class SharedPreferencesHomeFeedStatusPersistence(
         is Long -> editor.putLong(key, value)
         is String -> editor.putString(key, value)
         is Set<*> -> {
+          if (value.any { it !is String }) return false
           @Suppress("UNCHECKED_CAST")
           editor.putStringSet(key, value as Set<String>)
         }
@@ -43,6 +56,7 @@ private class SharedPreferencesHomeFeedStatusPersistence(
 
   companion object {
     private const val FILE_NAME = "zen_guard_home_feed_status"
+    private const val INTEGRITY_FILE_NAME = "zen_guard_home_feed_integrity"
   }
 }
 
@@ -57,6 +71,8 @@ internal data class HomeFeedStatus(
 
 internal object HomeFeedStatusKeys {
   const val FORMAT_VERSION = "format_version"
+  const val GENERATION = "generation"
+  const val CHECKSUM = "checksum"
   const val BOOT_COUNT = "boot_count"
   const val USED_MS = "used_ms"
   const val USAGE_STATE = "usage_state"
@@ -68,17 +84,94 @@ internal object HomeFeedStatusKeys {
   fun key(prefix: String, suffix: String): String = "${prefix}_$suffix"
 }
 
+internal object HomeFeedStatusIntegrityKeys {
+  const val FORMAT_VERSION = "integrity_format_version"
+  const val INITIALIZED = "integrity_initialized"
+  const val PHASE = "integrity_phase"
+  const val GENERATION = "integrity_generation"
+  const val PENDING_GENERATION = "integrity_pending_generation"
+
+  fun key(prefix: String, suffix: String): String = "${prefix}_$suffix"
+}
+
 internal data class HomeFeedStatusDecode(
   val status: HomeFeedStatus,
-  val migration: Map<String, Any?>? = null,
+  val formatVersion: Int = -1,
+  val generation: Long? = null,
+  val needsMigration: Boolean = false,
 )
 
+internal data class HomeFeedIntegrityState(
+  val phase: Int,
+  val generation: Long,
+  val pendingGeneration: Long,
+)
+
+/** Transaction phases for the independent integrity journal. */
+internal object HomeFeedStatusIntegrityCodec {
+  const val CURRENT_FORMAT_VERSION = 1
+  const val PHASE_STABLE = 0
+  const val PHASE_PENDING = 1
+  const val PHASE_FAILED = 2
+  const val PHASE_UNAVAILABLE = 3
+
+  fun decode(prefix: String, values: Map<String, Any?>): HomeFeedIntegrityState? {
+    val format = readScalarLong(values[HomeFeedStatusIntegrityKeys.key(prefix, HomeFeedStatusIntegrityKeys.FORMAT_VERSION)])
+      ?.takeIf { it in 1L..CURRENT_FORMAT_VERSION.toLong() }
+      ?: return null
+    if (format != CURRENT_FORMAT_VERSION.toLong()) return null
+    if (values[HomeFeedStatusIntegrityKeys.key(prefix, HomeFeedStatusIntegrityKeys.INITIALIZED)] != true) return null
+    val phase = readScalarLong(values[HomeFeedStatusIntegrityKeys.key(prefix, HomeFeedStatusIntegrityKeys.PHASE)])
+      ?.takeIf { it in PHASE_STABLE.toLong()..PHASE_UNAVAILABLE.toLong() }
+      ?.toInt()
+      ?: return null
+    val generation = readScalarLong(values[HomeFeedStatusIntegrityKeys.key(prefix, HomeFeedStatusIntegrityKeys.GENERATION)])
+      ?.takeIf { it in 0L..HOME_FEED_MAX_GENERATION }
+      ?: return null
+    val pendingGeneration = readScalarLong(values[HomeFeedStatusIntegrityKeys.key(prefix, HomeFeedStatusIntegrityKeys.PENDING_GENERATION)])
+      ?.takeIf { it in 0L..HOME_FEED_MAX_GENERATION }
+      ?: return null
+
+    return when (phase) {
+      PHASE_STABLE -> if (pendingGeneration == 0L) {
+        HomeFeedIntegrityState(phase, generation, pendingGeneration)
+      } else {
+        null
+      }
+      PHASE_PENDING,
+      PHASE_FAILED,
+      -> if (generation < HOME_FEED_MAX_GENERATION && pendingGeneration == generation + 1L) {
+        HomeFeedIntegrityState(phase, generation, pendingGeneration)
+      } else {
+        null
+      }
+      PHASE_UNAVAILABLE -> if (pendingGeneration == 0L) {
+        HomeFeedIntegrityState(phase, generation, pendingGeneration)
+      } else {
+        null
+      }
+      else -> null
+    }
+  }
+
+  fun values(prefix: String, phase: Int, generation: Long, pendingGeneration: Long): Map<String, Any?> = mapOf(
+    HomeFeedStatusIntegrityKeys.key(prefix, HomeFeedStatusIntegrityKeys.FORMAT_VERSION) to CURRENT_FORMAT_VERSION,
+    HomeFeedStatusIntegrityKeys.key(prefix, HomeFeedStatusIntegrityKeys.INITIALIZED) to true,
+    HomeFeedStatusIntegrityKeys.key(prefix, HomeFeedStatusIntegrityKeys.PHASE) to phase,
+    HomeFeedStatusIntegrityKeys.key(prefix, HomeFeedStatusIntegrityKeys.GENERATION) to generation,
+    HomeFeedStatusIntegrityKeys.key(prefix, HomeFeedStatusIntegrityKeys.PENDING_GENERATION) to pendingGeneration,
+  )
+}
+
 /**
- * Versioned scalar codec. Wrong types, impossible ranges, and inconsistent state are rejected
- * into an explicit unavailable status; they are never silently converted into zero usage.
+ * Versioned scalar codec. Wrong types, impossible ranges, inconsistent state, and checksum
+ * mismatches are rejected into an explicit unavailable status; they are never silently converted
+ * into zero usage.
  */
 internal object HomeFeedStatusCodec {
-  const val CURRENT_FORMAT_VERSION = 2
+  const val CURRENT_FORMAT_VERSION = 3
+  private const val PREVIOUS_FORMAT_VERSION = 2
+  const val INVALID_FORMAT_VERSION = -1
   const val STATE_PAUSED = 0
   const val STATE_ACTIVE = 1
   const val STATE_UNKNOWN = 2
@@ -104,17 +197,47 @@ internal object HomeFeedStatusCodec {
           blockedUntilElapsedMs = null,
           usageState = HomeFeedUsageState.PAUSED,
         ),
+        formatVersion = 0,
       )
     }
 
     val format = if (!values.containsKey(HomeFeedStatusKeys.key(prefix, HomeFeedStatusKeys.FORMAT_VERSION))) {
       0
     } else {
-      readInt(values[HomeFeedStatusKeys.key(prefix, HomeFeedStatusKeys.FORMAT_VERSION)], 0, CURRENT_FORMAT_VERSION)
+      readScalarLong(values[HomeFeedStatusKeys.key(prefix, HomeFeedStatusKeys.FORMAT_VERSION)])
+        ?.takeIf { it in 0L..CURRENT_FORMAT_VERSION.toLong() }
+        ?.toInt()
         ?: return HomeFeedStatusDecode(unavailableStatus())
     }
-    if (format != 0 && format != CURRENT_FORMAT_VERSION) return HomeFeedStatusDecode(unavailableStatus())
+    if (format != 0 && format != PREVIOUS_FORMAT_VERSION && format != CURRENT_FORMAT_VERSION) {
+      return HomeFeedStatusDecode(unavailableStatus())
+    }
     val legacy = format == 0
+    val current = format == CURRENT_FORMAT_VERSION
+    val generation = if (current) {
+      readValueLong(
+        values,
+        prefix,
+        HomeFeedStatusKeys.GENERATION,
+        1L,
+        HOME_FEED_MAX_GENERATION,
+        allowMissing = false,
+      ) ?: return HomeFeedStatusDecode(unavailableStatus())
+    } else {
+      null
+    }
+    val storedChecksum = if (current) {
+      readValueLong(
+        values,
+        prefix,
+        HomeFeedStatusKeys.CHECKSUM,
+        Long.MIN_VALUE,
+        Long.MAX_VALUE,
+        allowMissing = false,
+      ) ?: return HomeFeedStatusDecode(unavailableStatus())
+    } else {
+      null
+    }
     val boot = readRequiredLong(values, prefix, HomeFeedStatusKeys.BOOT_COUNT, 0L, Int.MAX_VALUE.toLong())
       ?: return HomeFeedStatusDecode(unavailableStatus())
     val used = readValueLong(
@@ -149,7 +272,7 @@ internal object HomeFeedStatusCodec {
       LOCKOUT_UNKNOWN,
       allowMissing = legacy,
     ) ?: return HomeFeedStatusDecode(unavailableStatus())
-    readValueLong(
+    val resumeAt = readValueLong(
       values,
       prefix,
       HomeFeedStatusKeys.RESUME_AT_ELAPSED,
@@ -166,6 +289,13 @@ internal object HomeFeedStatusCodec {
       allowMissing = true,
     ) ?: return HomeFeedStatusDecode(unavailableStatus())
 
+    if ((state == STATE_PAUSED || state == STATE_UNKNOWN) && resumeAt != 0L) {
+      return HomeFeedStatusDecode(unavailableStatus())
+    }
+    if (current && state == STATE_ACTIVE && resumeAt == 0L) {
+      return HomeFeedStatusDecode(unavailableStatus())
+    }
+
     // Legacy records did not have an explicit lockout enum; the elapsed deadline is authoritative
     // while it belongs to this boot. The old wall deadline is deliberately never restored.
     val lockout = if (legacy && blockedUntil > 0L) LOCKOUT_ACTIVE else storedLockout
@@ -173,6 +303,9 @@ internal object HomeFeedStatusCodec {
     if (lockout == LOCKOUT_NONE && blockedUntil > 0L) return HomeFeedStatusDecode(unavailableStatus())
     if (lockout == LOCKOUT_UNKNOWN && blockedUntil > 0L) return HomeFeedStatusDecode(unavailableStatus())
     if (!legacy && legacyWall > 0L) return HomeFeedStatusDecode(unavailableStatus())
+    if (current && storedChecksum != checksum(prefix, generation!!, boot, used, state, lockout, resumeAt, blockedUntil)) {
+      return HomeFeedStatusDecode(unavailableStatus())
+    }
 
     val sameBoot = boot == currentBoot
     if (!sameBoot) {
@@ -185,7 +318,9 @@ internal object HomeFeedStatusCodec {
       )
       return HomeFeedStatusDecode(
         status,
-        migration = if (legacy) encode(prefix, status.toRuntimeState(now), boot, now) else null,
+        formatVersion = format,
+        generation = generation,
+        needsMigration = !current,
       )
     }
 
@@ -198,7 +333,7 @@ internal object HomeFeedStatusCodec {
         usageState = HomeFeedUsageState.UNKNOWN,
         lockoutState = HomeFeedLockoutState.UNKNOWN,
       )
-      return HomeFeedStatusDecode(status, encode(prefix, status.toRuntimeState(now), boot, now))
+      return HomeFeedStatusDecode(status, formatVersion = format, needsMigration = true)
     }
 
     if (lockout == LOCKOUT_ACTIVE && blockedUntil <= now) {
@@ -209,8 +344,12 @@ internal object HomeFeedStatusCodec {
         lockoutState = HomeFeedLockoutState.ACTIVE,
         capturedAtElapsedMs = now,
       ).normalizedAt(now)
-      val status = normalized.toStatus()
-      return HomeFeedStatusDecode(status, encode(prefix, normalized, boot, now))
+      return HomeFeedStatusDecode(
+        normalized.toStatus(),
+        formatVersion = format,
+        generation = generation,
+        needsMigration = true,
+      )
     }
 
     val decodedLockout = when {
@@ -232,7 +371,9 @@ internal object HomeFeedStatusCodec {
     )
     return HomeFeedStatusDecode(
       status,
-      migration = if (legacy) encode(prefix, status.toRuntimeState(now), boot, now) else null,
+      formatVersion = format,
+      generation = generation,
+      needsMigration = !current,
     )
   }
 
@@ -241,11 +382,13 @@ internal object HomeFeedStatusCodec {
     runtime: HomeFeedRuntimeState,
     bootCount: Long?,
     nowElapsedMs: Long,
+    generation: Long = 1L,
   ): Map<String, Any?>? {
     if (runtime.storageState != HomeFeedStorageState.AVAILABLE) return null
     val boot = bootCount ?: return null
     if (boot !in 0L..Int.MAX_VALUE.toLong()) return null
     if (nowElapsedMs !in 0L..HOME_FEED_MAX_SAFE_TIMESTAMP_MS) return null
+    if (generation !in 1L..HOME_FEED_MAX_GENERATION) return null
     if (runtime.usedMs !in 0L..HOME_FEED_MAX_SAFE_USAGE_MS) return null
     val capturedAt = runtime.capturedAtElapsedMs
     if (capturedAt != null && capturedAt !in 0L..HOME_FEED_MAX_SAFE_TIMESTAMP_MS) return null
@@ -271,13 +414,17 @@ internal object HomeFeedStatusCodec {
       HomeFeedLockoutState.ACTIVE -> if (block != null) LOCKOUT_ACTIVE else LOCKOUT_NONE
       HomeFeedLockoutState.UNKNOWN -> LOCKOUT_UNKNOWN
     }
+    val resumeAt = if (state == STATE_ACTIVE) normalizedCapturedAt else 0L
+    val checksum = checksum(prefix, generation, boot, normalized.usedMs, state, lockout, resumeAt, block ?: 0L)
     return mapOf(
       HomeFeedStatusKeys.key(prefix, HomeFeedStatusKeys.FORMAT_VERSION) to CURRENT_FORMAT_VERSION,
+      HomeFeedStatusKeys.key(prefix, HomeFeedStatusKeys.GENERATION) to generation,
+      HomeFeedStatusKeys.key(prefix, HomeFeedStatusKeys.CHECKSUM) to checksum,
       HomeFeedStatusKeys.key(prefix, HomeFeedStatusKeys.BOOT_COUNT) to boot,
       HomeFeedStatusKeys.key(prefix, HomeFeedStatusKeys.USED_MS) to normalized.usedMs,
       HomeFeedStatusKeys.key(prefix, HomeFeedStatusKeys.USAGE_STATE) to state,
       HomeFeedStatusKeys.key(prefix, HomeFeedStatusKeys.LOCKOUT_STATE) to lockout,
-      HomeFeedStatusKeys.key(prefix, HomeFeedStatusKeys.RESUME_AT_ELAPSED) to if (state == STATE_ACTIVE) normalizedCapturedAt else 0L,
+      HomeFeedStatusKeys.key(prefix, HomeFeedStatusKeys.RESUME_AT_ELAPSED) to resumeAt,
       HomeFeedStatusKeys.key(prefix, HomeFeedStatusKeys.BLOCKED_UNTIL_ELAPSED) to (block ?: 0L),
       // Remove the old wall-clock fallback during migration.
       HomeFeedStatusKeys.key(prefix, HomeFeedStatusKeys.LEGACY_BLOCKED_UNTIL_WALL) to null,
@@ -302,14 +449,7 @@ internal object HomeFeedStatusCodec {
   ): Long? {
     val key = HomeFeedStatusKeys.key(prefix, suffix)
     if (!values.containsKey(key)) return if (allowMissing) 0L else null
-    val raw = values[key] ?: return null
-    val value = when (raw) {
-      is Byte -> raw.toLong()
-      is Short -> raw.toLong()
-      is Int -> raw.toLong()
-      is Long -> raw
-      else -> return null
-    }
+    val value = readScalarLong(values[key]) ?: return null
     return value.takeIf { it in min..max }
   }
 
@@ -321,17 +461,6 @@ internal object HomeFeedStatusCodec {
     max: Int,
     allowMissing: Boolean,
   ): Int? = readValueLong(values, prefix, suffix, min.toLong(), max.toLong(), allowMissing)?.toInt()
-
-  private fun readInt(raw: Any?, min: Int, max: Int): Int? {
-    val value = when (raw) {
-      is Byte -> raw.toLong()
-      is Short -> raw.toLong()
-      is Int -> raw.toLong()
-      is Long -> raw
-      else -> return null
-    }
-    return value.takeIf { it in min.toLong()..max.toLong() }?.toInt()
-  }
 
   private fun unavailableStatus() = HomeFeedStatus(
     usedMs = HOME_FEED_SAFE_FAIL_CLOSED_USAGE_MS,
@@ -357,6 +486,40 @@ internal object HomeFeedStatusCodec {
     storageState = storageState,
     lockoutState = lockoutState,
   )
+
+  private fun checksum(
+    prefix: String,
+    generation: Long,
+    boot: Long,
+    used: Long,
+    state: Int,
+    lockout: Int,
+    resumeAt: Long,
+    blockedUntil: Long,
+  ): Long {
+    var hash = -3750763034362895579L
+    fun mix(value: Long) {
+      hash = (hash xor value) * 1099511628211L
+    }
+    prefix.forEach { mix(it.code.toLong()) }
+    mix(generation)
+    mix(boot)
+    mix(used)
+    mix(state.toLong())
+    mix(lockout.toLong())
+    mix(resumeAt)
+    mix(blockedUntil)
+    return hash
+  }
+}
+
+internal fun readHomeFeedBootCount(context: Context): Long? = try {
+  Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT).toLong()
+    .takeIf { it >= 0L }
+} catch (_: Settings.SettingNotFoundException) {
+  null
+} catch (_: RuntimeException) {
+  null
 }
 
 /** Shared in-process signal so a failed service write cannot leave the UI showing an old timer. */
@@ -369,6 +532,10 @@ internal object HomeFeedStatusFailureRegistry {
 
   @Synchronized fun isFailed(prefix: String): Boolean = prefix in failedPrefixes
 
+  @Synchronized fun clear(prefix: String) {
+    failedPrefixes -= prefix
+  }
+
   @Synchronized fun clearForTests() {
     failedPrefixes.clear()
   }
@@ -379,6 +546,8 @@ internal object HomeFeedStatusFailureRegistry {
  *
  * A persisted ACTIVE state is deliberately read as UNKNOWN: a new service instance cannot prove
  * that X stayed in the foreground across the gap, so it must wait for a fresh Home observation.
+ * The independent integrity journal also prevents an older snapshot from becoming trusted after a
+ * failed or interrupted write.
  */
 internal class HomeFeedStatusStore(
   private val persistence: HomeFeedStatusPersistence,
@@ -387,14 +556,7 @@ internal class HomeFeedStatusStore(
 ) {
   internal constructor(context: Context) : this(
     persistence = SharedPreferencesHomeFeedStatusPersistence(context),
-    currentBootCount = {
-      try {
-        Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT).toLong()
-          .takeIf { it >= 0L }
-      } catch (_: RuntimeException) {
-        null
-      }
-    },
+    currentBootCount = { readHomeFeedBootCount(context) },
   )
 
   fun instagram(nowElapsedMs: Long = elapsedNowMs()): HomeFeedStatus = read(INSTAGRAM_PREFIX, nowElapsedMs)
@@ -405,26 +567,249 @@ internal class HomeFeedStatusStore(
 
   fun recordX(runtime: HomeFeedRuntimeState): Boolean = write(X_PREFIX, runtime)
 
+  /**
+   * Establishes a new zeroed baseline after a fresh Home observation. This is the only write path
+   * allowed to recover a provider after a durable corruption or commit failure; ordinary status
+   * publications remain latched unavailable until this explicit boundary succeeds.
+   */
+  fun recoverInstagram(nowElapsedMs: Long = elapsedNowMs()): Boolean = recover(INSTAGRAM_PREFIX, nowElapsedMs)
+
+  fun recoverX(nowElapsedMs: Long = elapsedNowMs()): Boolean = recover(X_PREFIX, nowElapsedMs)
+
   private fun read(prefix: String, nowElapsedMs: Long): HomeFeedStatus {
     if (HomeFeedStatusFailureRegistry.isFailed(prefix)) return failureStatus()
     val values = try {
       persistence.readAll()
     } catch (_: RuntimeException) {
-      HomeFeedStatusFailureRegistry.markFailed(prefix)
-      return failureStatus()
+      return markUnavailable(prefix)
     }
-    val decoded = HomeFeedStatusCodec.decode(prefix, values, safeBootCount(), nowElapsedMs)
-    if (decoded.migration != null && !commit(prefix, decoded.migration)) return failureStatus()
+    val integrityValues = try {
+      persistence.readIntegrity()
+    } catch (_: RuntimeException) {
+      return markUnavailable(prefix)
+    }
+    val hasSnapshot = hasPrefix(values, prefix)
+    val hasIntegrity = hasPrefix(integrityValues, prefix)
+    val currentBoot = safeBootCount()
+    val decoded = HomeFeedStatusCodec.decode(prefix, values, currentBoot, nowElapsedMs)
+    if (decoded.status.storageState == HomeFeedStorageState.UNAVAILABLE) return markUnavailable(prefix)
+
+    if (!hasIntegrity) {
+      // A current-format snapshot without its independent journal is an integrity failure. Older
+      // snapshots can be upgraded once, but only after all scalar fields validate.
+      if (hasSnapshot && decoded.formatVersion == HomeFeedStatusCodec.CURRENT_FORMAT_VERSION) {
+        return markUnavailable(prefix)
+      }
+      if (hasSnapshot) {
+        return if (commitRuntime(prefix, decoded.status.toRuntimeState(nowElapsedMs), 0L, currentBoot, nowElapsedMs)) {
+          decoded.status
+        } else {
+          failureStatus()
+        }
+      }
+      return if (initializeIntegrity(prefix)) {
+        decoded.status
+      } else {
+        failureStatus()
+      }
+    }
+
+    val integrity = HomeFeedStatusIntegrityCodec.decode(prefix, integrityValues)
+      ?: return markUnavailable(prefix)
+    if (integrity.phase != HomeFeedStatusIntegrityCodec.PHASE_STABLE) return markUnavailable(prefix)
+    if (!hasSnapshot) {
+      // Generation zero is the only legitimate no-record state: it is the durable first-run
+      // marker. Once a snapshot was initialized, an empty/truncated record is unavailable.
+      return if (integrity.generation == 0L) decoded.status else markUnavailable(prefix)
+    }
+    if (decoded.generation != integrity.generation) return markUnavailable(prefix)
+    if (decoded.needsMigration) {
+      return if (commitRuntime(prefix, decoded.status.toRuntimeState(nowElapsedMs), integrity.generation, currentBoot, nowElapsedMs)) {
+        decoded.status
+      } else {
+        failureStatus()
+      }
+    }
     return decoded.status
   }
 
-  private fun write(prefix: String, runtime: HomeFeedRuntimeState): Boolean {
-    if (HomeFeedStatusFailureRegistry.isFailed(prefix)) return false
-    val values = HomeFeedStatusCodec.encode(prefix, runtime, safeBootCount(), elapsedNowMs()) ?: run {
-      HomeFeedStatusFailureRegistry.markFailed(prefix)
-      return false
+  private fun write(prefix: String, runtime: HomeFeedRuntimeState, allowRecovery: Boolean = false): Boolean {
+    if (!allowRecovery && HomeFeedStatusFailureRegistry.isFailed(prefix)) return false
+    val nowElapsedMs = elapsedNowMs()
+    val currentBoot = safeBootCount()
+    if (currentBoot == null) return markFailed(prefix)
+
+    val integrityValues = try {
+      persistence.readIntegrity()
+    } catch (_: RuntimeException) {
+      if (!allowRecovery) return markFailed(prefix)
+      emptyMap()
     }
-    return commit(prefix, values)
+    val hasIntegrity = hasPrefix(integrityValues, prefix)
+    val currentGeneration = if (!hasIntegrity) {
+      val snapshotValues = try {
+        persistence.readAll()
+      } catch (_: RuntimeException) {
+        if (!allowRecovery) return markFailed(prefix)
+        emptyMap()
+      }
+      if (hasPrefix(snapshotValues, prefix)) {
+        val decoded = HomeFeedStatusCodec.decode(prefix, snapshotValues, currentBoot, nowElapsedMs)
+        if (!allowRecovery && (decoded.status.storageState == HomeFeedStorageState.UNAVAILABLE ||
+            decoded.formatVersion == HomeFeedStatusCodec.CURRENT_FORMAT_VERSION)
+        ) {
+          return markFailed(prefix)
+        }
+        if (allowRecovery) decoded.generation ?: 0L else 0L
+      } else {
+        0L
+      }
+    } else {
+      val integrity = HomeFeedStatusIntegrityCodec.decode(prefix, integrityValues)
+        ?: return markFailed(prefix)
+      if (!allowRecovery && integrity.phase != HomeFeedStatusIntegrityCodec.PHASE_STABLE) {
+        return markFailed(prefix, integrity.generation)
+      }
+      integrity.generation
+    }
+    val committed = commitRuntime(prefix, runtime, currentGeneration, currentBoot, nowElapsedMs)
+    if (committed && allowRecovery) HomeFeedStatusFailureRegistry.clear(prefix)
+    return committed
+  }
+
+  private fun recover(prefix: String, nowElapsedMs: Long): Boolean = write(
+    prefix = prefix,
+    runtime = HomeFeedRuntimeState(
+      usedMs = 0L,
+      blockedUntilElapsedMs = null,
+      usageState = HomeFeedUsageState.PAUSED,
+      lockoutState = HomeFeedLockoutState.NONE,
+      storageState = HomeFeedStorageState.AVAILABLE,
+      capturedAtElapsedMs = nowElapsedMs,
+    ),
+    allowRecovery = true,
+  )
+
+  private fun commitRuntime(
+    prefix: String,
+    runtime: HomeFeedRuntimeState,
+    currentGeneration: Long,
+    currentBoot: Long?,
+    nowElapsedMs: Long,
+  ): Boolean {
+    val nextGeneration = nextGeneration(currentGeneration) ?: return markFailed(prefix)
+    val values = HomeFeedStatusCodec.encode(prefix, runtime, currentBoot, nowElapsedMs, nextGeneration)
+      ?: return markFailed(prefix)
+    val pending = HomeFeedStatusIntegrityCodec.values(
+      prefix,
+      HomeFeedStatusIntegrityCodec.PHASE_PENDING,
+      currentGeneration,
+      nextGeneration,
+    )
+    if (!safeCommitIntegrity(pending)) {
+      return markCommitFailure(prefix, currentGeneration, nextGeneration)
+    }
+    if (!safeCommit(values)) {
+      return markCommitFailure(prefix, currentGeneration, nextGeneration)
+    }
+    val stable = HomeFeedStatusIntegrityCodec.values(
+      prefix,
+      HomeFeedStatusIntegrityCodec.PHASE_STABLE,
+      nextGeneration,
+      0L,
+    )
+    if (!safeCommitIntegrity(stable)) {
+      return markCommitFailure(prefix, currentGeneration, nextGeneration)
+    }
+    return true
+  }
+
+  private fun initializeIntegrity(prefix: String): Boolean {
+    val initialized = safeCommitIntegrity(
+      HomeFeedStatusIntegrityCodec.values(
+        prefix,
+        HomeFeedStatusIntegrityCodec.PHASE_STABLE,
+        0L,
+        0L,
+      ),
+    )
+    if (!initialized) markFailed(prefix, 0L)
+    return initialized
+  }
+
+  private fun safeCommit(values: Map<String, Any?>): Boolean = try {
+    persistence.commit(values)
+  } catch (_: RuntimeException) {
+    false
+  }
+
+  private fun safeCommitIntegrity(values: Map<String, Any?>): Boolean = try {
+    persistence.commitIntegrity(values)
+  } catch (_: RuntimeException) {
+    false
+  }
+
+  private fun markCommitFailure(prefix: String, currentGeneration: Long, nextGeneration: Long): Boolean {
+    HomeFeedStatusFailureRegistry.markFailed(prefix)
+    persistFailureMarker(prefix, currentGeneration, nextGeneration)
+    return false
+  }
+
+  private fun markFailed(prefix: String, generationHint: Long? = null): Boolean {
+    HomeFeedStatusFailureRegistry.markFailed(prefix)
+    persistFailureMarker(prefix, generationHint)
+    return false
+  }
+
+  private fun markUnavailable(prefix: String): HomeFeedStatus {
+    markFailed(prefix)
+    return failureStatus()
+  }
+
+  /**
+   * Make a failed read/encode/commit durable whenever either persistence seam is still writable.
+   * The metadata journal is independent from the snapshot; invalidating the snapshot is the
+   * fallback if that journal cannot be updated. If both commits fail, no API can manufacture a
+   * durable bit, so the next read remains conservative whenever either boundary is observable.
+   */
+  private fun persistFailureMarker(
+    prefix: String,
+    generationHint: Long? = null,
+    nextGenerationHint: Long? = null,
+  ) {
+    val generation = generationHint?.takeIf { it in 0L..HOME_FEED_MAX_GENERATION } ?: run {
+      try {
+        HomeFeedStatusIntegrityCodec.decode(prefix, persistence.readIntegrity())?.generation
+      } catch (_: RuntimeException) {
+        null
+      }
+    } ?: 0L
+    val nextGeneration = nextGenerationHint
+      ?.takeIf { it in 1L..HOME_FEED_MAX_GENERATION && it == generation + 1L }
+      ?: nextGeneration(generation)
+    val marker = if (nextGeneration != null) {
+      HomeFeedStatusIntegrityCodec.values(
+        prefix,
+        HomeFeedStatusIntegrityCodec.PHASE_FAILED,
+        generation,
+        nextGeneration,
+      )
+    } else {
+      HomeFeedStatusIntegrityCodec.values(
+        prefix,
+        HomeFeedStatusIntegrityCodec.PHASE_UNAVAILABLE,
+        generation,
+        0L,
+      )
+    }
+    if (!safeCommitIntegrity(marker)) {
+      // An invalid format is sufficient to reject an older snapshot even if the journal is
+      // temporarily read-only. This also turns a failed first initialization into a durable
+      // non-empty record instead of a future-looking first run.
+      safeCommit(
+        mapOf(HomeFeedStatusKeys.key(prefix, HomeFeedStatusKeys.FORMAT_VERSION) to HomeFeedStatusCodec.INVALID_FORMAT_VERSION),
+      )
+    }
   }
 
   private fun safeBootCount(): Long? = try {
@@ -433,17 +818,22 @@ internal class HomeFeedStatusStore(
     null
   }
 
-  private fun commit(prefix: String, values: Map<String, Any?>): Boolean = try {
-    if (!persistence.commit(values)) {
-      HomeFeedStatusFailureRegistry.markFailed(prefix)
-      false
-    } else {
-      true
-    }
-  } catch (_: RuntimeException) {
-    HomeFeedStatusFailureRegistry.markFailed(prefix)
-    false
+  private fun nextGeneration(current: Long): Long? =
+    if (current in 0L until HOME_FEED_MAX_GENERATION) current + 1L else null
+
+  private fun hasPrefix(values: Map<String, Any?>, prefix: String): Boolean {
+    val marker = "${prefix}_"
+    return values.keys.any { it.startsWith(marker) }
   }
+
+  private fun HomeFeedStatus.toRuntimeState(nowElapsedMs: Long) = HomeFeedRuntimeState(
+    usedMs = usedMs,
+    blockedUntilElapsedMs = blockedUntilElapsedMs,
+    usageState = usageState,
+    lockoutState = lockoutState,
+    storageState = storageState,
+    capturedAtElapsedMs = nowElapsedMs,
+  )
 
   private fun failureStatus() = HomeFeedStatus(
     usedMs = HOME_FEED_SAFE_FAIL_CLOSED_USAGE_MS,
@@ -457,4 +847,12 @@ internal class HomeFeedStatusStore(
     private const val INSTAGRAM_PREFIX = "instagram"
     private const val X_PREFIX = "x"
   }
+}
+
+private fun readScalarLong(raw: Any?): Long? = when (raw) {
+  is Byte -> raw.toLong()
+  is Short -> raw.toLong()
+  is Int -> raw.toLong()
+  is Long -> raw
+  else -> null
 }

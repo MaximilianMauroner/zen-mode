@@ -8,6 +8,8 @@ internal enum class HomeFeedLockoutState { NONE, ACTIVE, UNKNOWN }
 internal const val HOME_FEED_MAX_SAFE_USAGE_MS = 365L * 24L * 60L * 60L * 1_000L
 internal const val HOME_FEED_MAX_SAFE_TIMESTAMP_MS = Long.MAX_VALUE / 2L
 internal const val HOME_FEED_SAFE_FAIL_CLOSED_USAGE_MS = Long.MAX_VALUE / 4L
+/** One generation per persisted snapshot is enough for decades of one-second updates. */
+internal const val HOME_FEED_MAX_GENERATION = 1_000_000_000L
 
 internal fun elapsedMsSince(nowMs: Long, startMs: Long): Long =
   if (nowMs < 0L || startMs < 0L || nowMs <= startMs) 0L else nowMs - startMs

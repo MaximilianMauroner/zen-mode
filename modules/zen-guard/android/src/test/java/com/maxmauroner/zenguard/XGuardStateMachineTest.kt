@@ -51,6 +51,43 @@ class XGuardStateMachineTest {
     assertEquals(XAction.NONE, guard.next(XSurface.HOME, 500L, settings))
   }
 
+  @Test fun `an unknown tree flushes the known Home interval before pausing`() {
+    val guard = XGuardStateMachine()
+    val settings = XSettings(homeAllowanceMs = 300_000L)
+
+    guard.next(XSurface.HOME, 0L, settings)
+    guard.next(XSurface.UNKNOWN, 60_000L, settings)
+
+    assertEquals(60_000L, guard.homeRuntimeState(60_000L).usedMs)
+  }
+
+  @Test fun `a restored Home snapshot resumes from its durable boundary`() {
+    val settings = XSettings(homeAllowanceMs = 300_000L)
+    val beforeRestart = XGuardStateMachine()
+    beforeRestart.next(XSurface.HOME, 0L, settings)
+    beforeRestart.next(XSurface.HOME, 60_000L, settings)
+
+    val afterRestart = XGuardStateMachine()
+    afterRestart.restore(beforeRestart.homeRuntimeState(60_000L))
+
+    assertEquals(60_000L, afterRestart.homeRuntimeState(60_000L).usedMs)
+    afterRestart.next(XSurface.HOME, 120_000L, settings)
+    assertEquals(120_000L, afterRestart.homeRuntimeState(120_000L).usedMs)
+  }
+
+  @Test fun `a restored Home lockout cannot grant a new allowance`() {
+    val settings = XSettings(homeAllowanceMs = 60_000L)
+    val beforeRestart = XGuardStateMachine()
+    beforeRestart.next(XSurface.HOME, 0L, settings)
+    assertEquals(XAction.HOME_BREAK, beforeRestart.next(XSurface.HOME, 60_000L, settings))
+
+    val afterRestart = XGuardStateMachine()
+    afterRestart.restore(beforeRestart.homeRuntimeState(60_000L))
+
+    assertEquals(XAction.HOME_BREAK, afterRestart.next(XSurface.HOME, 61_000L, settings))
+    assertEquals(XAction.NONE, afterRestart.next(XSurface.HOME, 3_660_000L, settings))
+  }
+
   @Test fun `other X surfaces stay allowed during the Home lockout`() {
     val guard = XGuardStateMachine()
     val settings = XSettings(homeAllowanceMs = 100L)

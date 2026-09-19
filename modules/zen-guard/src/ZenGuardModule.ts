@@ -16,6 +16,7 @@ export type ZenGuardStatus = {
   xHomeMinutes: number;
   xHomeUsedMs: number;
   xHomeBreakRemainingMs: number;
+  xHomeUsageState: 'active' | 'paused' | 'unknown';
   xObservationMode: boolean;
   xSignalMask: number;
   lastEventAt: number;

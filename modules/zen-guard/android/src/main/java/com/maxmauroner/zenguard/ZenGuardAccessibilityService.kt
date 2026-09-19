@@ -20,6 +20,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   private lateinit var preferences: ZenGuardPreferences
   private val stateMachine = EnforcementStateMachine()
   private val xStateMachine = XGuardStateMachine()
+  private var xHomeUsageState = HomeFeedUsageState.PAUSED
   private lateinit var xOverlay: XBreakOverlay
   private val xHandler = Handler(Looper.getMainLooper())
   private val xTicker = object : Runnable {
@@ -60,6 +61,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
       if (intent?.action != Intent.ACTION_SCREEN_OFF || !hasActiveProtection()) return
       val nowMs = SystemClock.elapsedRealtime()
       xStateMachine.pause(nowMs, xSettings())
+      if (xHomeUsageState != HomeFeedUsageState.UNKNOWN) xHomeUsageState = HomeFeedUsageState.PAUSED
       instagramStateMachine.onAppBackground(nowMs, preferences.instagramSettings())
       publishXHomeStatus()
       publishInstagramHomeStatus()
@@ -95,6 +97,17 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     adultSiteStore = AdultSiteRuleStore(this)
     adultSiteOverlay = AdultSiteBlockerOverlay(this)
     homeFeedStatusStore = HomeFeedStatusStore(this)
+    val nowElapsedMs = SystemClock.elapsedRealtime()
+    val storedX = homeFeedStatusStore.x(nowElapsedMs, System.currentTimeMillis())
+    xHomeUsageState = storedX.usageState
+    xStateMachine.restore(
+      HomeFeedRuntimeState(
+        usedMs = storedX.usedMs,
+        blockedUntilElapsedMs = storedX.blockedUntilElapsedMs,
+        usageState = storedX.usageState,
+        capturedAtElapsedMs = storedX.resumeAtElapsedMs ?: nowElapsedMs,
+      ),
+    )
     publishXHomeStatus()
     publishInstagramHomeStatus()
     val screenFilter = IntentFilter(Intent.ACTION_SCREEN_OFF)
@@ -416,7 +429,13 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   }
 
   private fun clearXEnforcement(preserveHomeLockout: Boolean = false) {
-    if (preserveHomeLockout) xStateMachine.pause(SystemClock.elapsedRealtime(), xSettings()) else xStateMachine.reset()
+    if (preserveHomeLockout) {
+      xStateMachine.pause(SystemClock.elapsedRealtime(), xSettings())
+      if (xHomeUsageState != HomeFeedUsageState.UNKNOWN) xHomeUsageState = HomeFeedUsageState.PAUSED
+    } else {
+      xStateMachine.reset()
+      xHomeUsageState = HomeFeedUsageState.PAUSED
+    }
     if (::xOverlay.isInitialized) xOverlay.hide()
     publishXHomeStatus()
   }
@@ -424,11 +443,25 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   /** One-second ticks count a still Home feed; events identify only the full-screen video pager. */
   private fun handleXEvent(event: AccessibilityEvent?) {
     if (!canRunEnforcementAction()) return
-    if (!isScreenInteractive) { xStateMachine.pause(); return }
-    val root = rootInActiveWindow ?: run { xStateMachine.pause(); return }
+    val nowMs = SystemClock.elapsedRealtime()
+    val settings = xSettings()
+    if (!isScreenInteractive) {
+      xStateMachine.pause(nowMs, settings)
+      if (xHomeUsageState != HomeFeedUsageState.UNKNOWN) xHomeUsageState = HomeFeedUsageState.PAUSED
+      publishXHomeStatus()
+      return
+    }
+    val root = rootInActiveWindow ?: run {
+      xStateMachine.pause(nowMs, settings)
+      xHomeUsageState = HomeFeedUsageState.UNKNOWN
+      publishXHomeStatus()
+      return
+    }
     if (root.packageName?.toString() != X_PACKAGE) {
       if (xOverlay.isShowing && windows.any { it.root?.packageName?.toString() == X_PACKAGE }) return
-      xStateMachine.pause()
+      xStateMachine.pause(nowMs, settings)
+      if (xHomeUsageState != HomeFeedUsageState.UNKNOWN) xHomeUsageState = HomeFeedUsageState.PAUSED
+      publishXHomeStatus()
       return
     }
     val surface = XDetector.detect(snapshot(root))
@@ -436,12 +469,20 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     if (surface == XSurface.HOME) preferences.recordXSignal(ZenGuardPreferences.X_HOME_SIGNAL)
     if (pager != null) preferences.recordXSignal(ZenGuardPreferences.X_VIDEO_SIGNAL)
     if (preferences.xObservationMode) { clearXEnforcement(); return }
+    xHomeUsageState = when {
+      surface == XSurface.UNKNOWN -> HomeFeedUsageState.UNKNOWN
+      surface == XSurface.HOME && settings.homeEnabled -> HomeFeedUsageState.ACTIVE
+      else -> HomeFeedUsageState.PAUSED
+    }
     val source = event?.source
     val advanced = pager != null && event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED &&
       source != null && isXVideoPager(source) && event.scrollY > 0
-    val action = xStateMachine.next(surface, SystemClock.elapsedRealtime(), xSettings(), advanced)
+    val action = xStateMachine.next(surface, nowMs, settings, advanced)
     when (action) {
-      XAction.HOME_BREAK -> xOverlay.show(preferences.xHomeMinutes)
+      XAction.HOME_BREAK -> {
+        xHomeUsageState = HomeFeedUsageState.PAUSED
+        xOverlay.show(preferences.xHomeMinutes)
+      }
       XAction.LEAVE_VIDEO -> {
         xOverlay.hide()
         // X's own Back control closes its viewer without docking playback into PiP.
@@ -451,6 +492,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
           val candidate = target ?: return@repeat
           if (candidate.isClickable && candidate.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
             Toast.makeText(this, R.string.zen_guard_x_video_blocked, Toast.LENGTH_SHORT).show()
+            publishXHomeStatus()
             return
           }
           target = candidate.parent
@@ -458,7 +500,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
       }
       XAction.NONE -> if (surface != XSurface.UNKNOWN) xOverlay.hide()
     }
-    if (action == XAction.HOME_BREAK) publishXHomeStatus()
+    publishXHomeStatus()
   }
 
   /** X's observed pager is the full-screen scroll node two levels under VideoTab. */
@@ -649,7 +691,14 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     browserHandler.removeCallbacksAndMessages(null)
     clearAdultSiteEnforcement()
     xHandler.removeCallbacksAndMessages(null)
-    clearXEnforcement()
+    if (::preferences.isInitialized && hasActiveProtection()) {
+      // Keep the last durable X boundary so a reconnect can reconcile the time
+      // spent while this service instance was gone. A disabled guard is cleared
+      // normally and must not retain a stale session.
+      publishXHomeStatus()
+    } else {
+      clearXEnforcement()
+    }
     navigationHandler.removeCallbacksAndMessages(null)
     usageHandler.removeCallbacksAndMessages(null)
     if (::intentOverlay.isInitialized) intentOverlay.hide()
@@ -679,20 +728,14 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     if (!::homeFeedStatusStore.isInitialized) return
     val nowElapsedMs = SystemClock.elapsedRealtime()
     val runtime = instagramStateMachine.homeRuntimeState(nowElapsedMs)
-    homeFeedStatusStore.recordInstagram(
-      usedMs = runtime.usedMs,
-      blockedUntilElapsedMs = runtime.blockedUntilElapsedMs,
-    )
+    homeFeedStatusStore.recordInstagram(runtime)
   }
 
   private fun publishXHomeStatus() {
     if (!::homeFeedStatusStore.isInitialized) return
     val nowElapsedMs = SystemClock.elapsedRealtime()
     val runtime = xStateMachine.homeRuntimeState(nowElapsedMs)
-    homeFeedStatusStore.recordX(
-      usedMs = runtime.usedMs,
-      blockedUntilElapsedMs = runtime.blockedUntilElapsedMs,
-    )
+    homeFeedStatusStore.recordX(runtime.copy(usageState = xHomeUsageState))
   }
 
   /**

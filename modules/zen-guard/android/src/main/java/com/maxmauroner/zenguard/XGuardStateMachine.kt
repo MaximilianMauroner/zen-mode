@@ -18,7 +18,7 @@ internal class XGuardStateMachine {
 
   fun next(surface: XSurface, nowMs: Long, settings: XSettings, videoPagerAdvanced: Boolean = false): XAction {
     if (surface == XSurface.UNKNOWN) {
-      pause()
+      pause(nowMs, settings)
       return XAction.NONE
     }
     if (!settings.homeEnabled) {
@@ -62,6 +62,18 @@ internal class XGuardStateMachine {
   fun leaveBlockedSurface() { lastHomeAt = null }
   fun reset() { resetHomeSession(); homeBlockedUntil = null; lastVideoExitAt = null }
 
+  /** Restores the last durable boundary without re-counting time already in that snapshot. */
+  fun restore(state: HomeFeedRuntimeState) {
+    homeElapsedMs = state.usedMs.coerceAtLeast(0L)
+    homeBlockedUntil = state.blockedUntilElapsedMs
+    lastHomeAt = if (state.usageState == HomeFeedUsageState.ACTIVE) {
+      state.capturedAtElapsedMs
+    } else {
+      null
+    }
+    lastVideoExitAt = null
+  }
+
   /** Snapshot for presentation only; enforcement continues to use the private state above. */
   fun homeRuntimeState(nowMs: Long): HomeFeedRuntimeState {
     val pendingMs = if (homeBlockedUntil == null) {
@@ -69,7 +81,12 @@ internal class XGuardStateMachine {
     } else {
       0L
     }
-    return HomeFeedRuntimeState(homeElapsedMs + pendingMs, homeBlockedUntil)
+    return HomeFeedRuntimeState(
+      usedMs = homeElapsedMs + pendingMs,
+      blockedUntilElapsedMs = homeBlockedUntil,
+      usageState = if (lastHomeAt != null && homeBlockedUntil == null) HomeFeedUsageState.ACTIVE else HomeFeedUsageState.PAUSED,
+      capturedAtElapsedMs = nowMs,
+    )
   }
 
   private fun resetHomeSession() {

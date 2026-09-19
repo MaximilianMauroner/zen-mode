@@ -41,7 +41,7 @@ class XGuardStateMachineTest {
 
   @Test fun `other X surfaces end the Home session while unknown trees only pause it`() {
     val guard = XGuardStateMachine()
-    val settings = XSettings(homeAllowanceMs = 100L)
+    val settings = XSettings(homeAllowanceMs = 120L)
     guard.next(XSurface.HOME, 0L, settings)
     guard.next(XSurface.HOME, 60L, settings)
     guard.next(XSurface.UNKNOWN, 70L, settings)
@@ -154,6 +154,17 @@ class XGuardStateMachineTest {
 
     assertEquals(XAction.HOME_UNAVAILABLE, guard.next(XSurface.HOME, 1_000L, XSettings()))
     assertEquals(XAction.LEAVE_VIDEO, guard.next(XSurface.VIDEO, 2_000L, XSettings(), videoPagerAdvanced = true))
+  }
+
+  @Test fun `fresh Home recovery starts from zero after storage failure`() {
+    val guard = XGuardStateMachine()
+    guard.markStorageUnavailable()
+
+    guard.recoverStorage(1_000L)
+
+    assertEquals(XAction.NONE, guard.next(XSurface.HOME, 1_000L, XSettings()))
+    assertEquals(0L, guard.homeRuntimeState(1_000L).usedMs)
+    assertEquals(HomeFeedStorageState.AVAILABLE, guard.homeRuntimeState(1_000L).storageState)
   }
 
   @Test fun `other X surfaces stay allowed during the Home lockout`() {

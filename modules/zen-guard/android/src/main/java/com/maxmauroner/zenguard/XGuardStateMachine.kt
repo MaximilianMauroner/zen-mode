@@ -36,7 +36,13 @@ internal class XGuardStateMachine {
       unknownLockoutSinceMs = null
       homeObservationRequired = false
     } else if (surface != XSurface.HOME) {
-      resetHomeSession()
+      if (homeObservationRequired) {
+        // Preserve already-consumed durable time while the surface is unverifiable. A later fresh
+        // Home observation starts a new measurable interval; it must not erase prior usage.
+        lastHomeAt = null
+      } else {
+        resetHomeSession()
+      }
     }
     if (surface != XSurface.VIDEO) lastVideoExitAt = null
     if (surface == XSurface.HOME && settings.homeEnabled) {
@@ -133,6 +139,7 @@ internal class XGuardStateMachine {
       null
     }
     homeObservationRequired = storageUnavailable ||
+      normalized.usageState == HomeFeedUsageState.ACTIVE ||
       normalized.usageState == HomeFeedUsageState.UNKNOWN ||
       homeLockoutState == HomeFeedLockoutState.UNKNOWN
     // Never restore the active timestamp. This is the core service-gap boundary.
@@ -147,6 +154,17 @@ internal class XGuardStateMachine {
     unknownLockoutSinceMs = null
     homeObservationRequired = true
     lastHomeAt = null
+  }
+
+  /** Starts a new measurable Home interval after storage has accepted a fresh observation. */
+  fun recoverStorage(nowMs: Long) {
+    homeElapsedMs = 0L
+    homeBlockedUntil = null
+    homeLockoutState = HomeFeedLockoutState.NONE
+    unknownLockoutSinceMs = null
+    storageUnavailable = false
+    homeObservationRequired = false
+    lastHomeAt = nowMs.coerceIn(0L, HOME_FEED_MAX_SAFE_TIMESTAMP_MS)
   }
 
   fun requiresFreshHomeObservation(): Boolean = homeObservationRequired

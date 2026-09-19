@@ -1,5 +1,5 @@
 import { NativeModule, registerWebModule } from 'expo';
-import type { ZenGuardStatus } from './ZenGuardModule';
+import type { EnforcementStats, ZenGuardStatus } from './ZenGuardModule';
 
 // ZenGuardModule is not available on the web platform.
 class ZenGuardModule extends NativeModule<{}> {
@@ -41,6 +41,10 @@ class ZenGuardModule extends NativeModule<{}> {
       appAvailability: { youtube: 'unavailable', instagram: 'unavailable', x: 'unavailable' },
       browserAvailability: { chrome: 'unavailable', samsungInternet: 'unavailable', opera: 'unavailable', firefox: 'unavailable' },
     };
+  }
+
+  async getEnforcementStats(): Promise<EnforcementStats> {
+    return { total: 0, counts: {}, lastEventAt: 0 };
   }
 
   async openAccessibilitySettings() {}

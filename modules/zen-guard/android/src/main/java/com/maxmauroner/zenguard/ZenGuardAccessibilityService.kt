@@ -18,6 +18,13 @@ import java.util.ArrayDeque
 
 class ZenGuardAccessibilityService : AccessibilityService() {
   private lateinit var preferences: ZenGuardPreferences
+  private var enforcementStats: EnforcementStatsStore? = null
+  private var statsActionSequence = 0L
+  private var shortsBlockRecordedPage: Int? = null
+  // These package names are in-memory lifecycle markers only. They are never persisted.
+  private var appLimitStatsPackage: String? = null
+  private var rollingLimitStatsPackage: String? = null
+  private var timedVisitStatsPackage: String? = null
   private val stateMachine = EnforcementStateMachine()
   private val xStateMachine = XGuardStateMachine()
   private var xHomeUsageState = HomeFeedUsageState.PAUSED
@@ -90,6 +97,11 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   override fun onServiceConnected() {
     super.onServiceConnected()
     preferences = ZenGuardPreferences(this)
+    enforcementStats = try {
+      EnforcementStatsStore(this)
+    } catch (_: RuntimeException) {
+      null
+    }
     appLimits = AppLimitStore(this)
     dailyTally = DailyTally(this)
     intentStore = IntentAppStore(this)
@@ -246,6 +258,9 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
     val packageName = event.packageName?.toString() ?: return
+    if (appLimitStatsPackage != packageName) appLimitStatsPackage = null
+    if (rollingLimitStatsPackage != packageName) rollingLimitStatsPackage = null
+    if (timedVisitStatsPackage != packageName) timedVisitStatsPackage = null
     usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())?.let(::bankUsage)
     if (packageName != YOUTUBE_PACKAGE && packageName != this.packageName) stateMachine.reset()
     currentForegroundPackage = packageName
@@ -280,11 +295,18 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   private fun enforceAppLimit(packageName: String?) {
     if (!canRunEnforcementAction()) return
     if (packageName == null || !::appRuleSafety.isInitialized || !appRuleSafety.allowsDailyEnforcement(packageName)) return
-    if (!appLimits.isOverBudget(packageName, System.currentTimeMillis())) return
+    if (!appLimits.isOverBudget(packageName, System.currentTimeMillis())) {
+      if (appLimitStatsPackage == packageName) appLimitStatsPackage = null
+      return
+    }
 
-    performGlobalAction(GLOBAL_ACTION_HOME)
+    val actionSucceeded = performGlobalAction(GLOBAL_ACTION_HOME)
     usageTracker.reset()
     currentForegroundPackage = null
+    if (actionSucceeded && appLimitStatsPackage != packageName) {
+      appLimitStatsPackage = packageName
+      recordEnforcement(EnforcementReason.APP_LIMIT)
+    }
 
     val nowMs = SystemClock.elapsedRealtime()
     if (nowMs - lastLimitToastAtMs < LIMIT_TOAST_INTERVAL_MS) return
@@ -301,12 +323,19 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     if (!canRunEnforcementAction()) return
     if (packageName == null || !::appRuleSafety.isInitialized || !appRuleSafety.allowsRollingEnforcement(packageName)) return
     if (!::rollingLimits.isInitialized) return
-    if (!rollingLimits.isOver(packageName, System.currentTimeMillis())) return
+    if (!rollingLimits.isOver(packageName, System.currentTimeMillis())) {
+      if (rollingLimitStatsPackage == packageName) rollingLimitStatsPackage = null
+      return
+    }
 
-    performGlobalAction(GLOBAL_ACTION_HOME)
+    val actionSucceeded = performGlobalAction(GLOBAL_ACTION_HOME)
     usageTracker.reset()
     currentForegroundPackage = null
     lastExternalPackage = null
+    if (actionSucceeded && rollingLimitStatsPackage != packageName) {
+      rollingLimitStatsPackage = packageName
+      recordEnforcement(EnforcementReason.ROLLING_LIMIT)
+    }
 
     val nowMs = SystemClock.elapsedRealtime()
     if (nowMs - lastLimitToastAtMs < LIMIT_TOAST_INTERVAL_MS) return
@@ -349,6 +378,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     if (cooldownMs > 0L) {
       if (showingForThis && intentOverlay.isCooldown()) return
       intentOverlay.showCooldown(packageName, labelFor(packageName), cooldownMs) { leaveIntent() }
+      if (intentOverlay.shownPackage() == packageName) recordTimedVisit(packageName)
     } else {
       if (showingForThis && !intentOverlay.isCooldown()) return
       intentOverlay.showAsk(
@@ -358,6 +388,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
         onStart = { grantIntentSession(packageName, rule.sessionMinutes) },
         onLeave = { leaveIntent() },
       )
+      if (intentOverlay.shownPackage() == packageName) recordTimedVisit(packageName)
     }
   }
 
@@ -365,6 +396,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   private fun grantIntentSession(packageName: String, minutes: Int) {
     if (!canRunEnforcementAction()) return
     intentSessions.grant(packageName, minutes, SystemClock.elapsedRealtime())
+    timedVisitStatsPackage = null
     if (intentOverlay.shownPackage() == packageName) intentOverlay.hide()
   }
 
@@ -394,8 +426,9 @@ class ZenGuardAccessibilityService : AccessibilityService() {
 
     intentStore.recordSessionEnd(packageName, System.currentTimeMillis())
     intentOverlay.hide()
-    performGlobalAction(GLOBAL_ACTION_HOME)
+    val actionSucceeded = performGlobalAction(GLOBAL_ACTION_HOME)
     lastExternalPackage = null
+    if (actionSucceeded) recordTimedVisit(packageName)
     Toast.makeText(this, R.string.zen_guard_intent_time_up, Toast.LENGTH_SHORT).show()
   }
 
@@ -414,11 +447,13 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     val result = ShortsDetector.detect(snapshot(root))
     if (!result.isShortsViewer) {
       stateMachine.reset()
+      shortsBlockRecordedPage = null
       return
     }
     preferences.recordDetection(nowMs, result.reason)
     if (preferences.observationMode || !preferences.shortsEnabled) {
       stateMachine.reset()
+      shortsBlockRecordedPage = null
       return
     }
     // The pager's collection row stays constant during playback and changes with the video.
@@ -431,6 +466,10 @@ class ZenGuardAccessibilityService : AccessibilityService() {
       val tabs = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/pivot_bar").firstOrNull()
       val homeTab = tabs?.getChild(0)?.getChild(0)
       if (homeTab?.isClickable == true && homeTab.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+        if (pageIndex != null && shortsBlockRecordedPage != pageIndex) {
+          shortsBlockRecordedPage = pageIndex
+          recordEnforcement(EnforcementReason.YOUTUBE_SHORTS)
+        }
         Toast.makeText(this, R.string.zen_guard_shorts_blocked, Toast.LENGTH_SHORT).show()
       }
     }
@@ -508,8 +547,10 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     }
     when (action) {
       XAction.HOME_BREAK -> {
+        val wasShowing = xOverlay.isShowing
         xHomeUsageState = HomeFeedUsageState.PAUSED
         xOverlay.show(preferences.xHomeMinutes)
+        if (!wasShowing && xOverlay.isShowing) recordEnforcement(EnforcementReason.X_HOME)
       }
       XAction.HOME_UNAVAILABLE -> {
         xHomeUsageState = HomeFeedUsageState.UNKNOWN
@@ -520,14 +561,19 @@ class ZenGuardAccessibilityService : AccessibilityService() {
         // X's own Back control closes its viewer without docking playback into PiP.
         val back = findXNode(root) { it.contentDescription?.toString() == "Back" }
         var target = back
-        repeat(MAX_PARENT_CHAIN) {
-          val candidate = target ?: return@repeat
+        var leftVideo = false
+        var attempts = 0
+        while (target != null && attempts++ < MAX_PARENT_CHAIN) {
+          val candidate = target ?: break
           if (candidate.isClickable && candidate.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            Toast.makeText(this, R.string.zen_guard_x_video_blocked, Toast.LENGTH_SHORT).show()
-            publishXHomeStatus()
-            return
+            leftVideo = true
+            break
           }
           target = candidate.parent
+        }
+        if (leftVideo) {
+          recordEnforcement(EnforcementReason.X_VIDEOS)
+          Toast.makeText(this, R.string.zen_guard_x_video_blocked, Toast.LENGTH_SHORT).show()
         }
       }
       XAction.NONE -> if (surface != XSurface.UNKNOWN) xOverlay.hide()
@@ -665,6 +711,8 @@ class ZenGuardAccessibilityService : AccessibilityService() {
         // The state machine re-emits the same blocker on every event while it
         // stays up. Count the stop only when the block appears, not per event.
         val isNewBlock = instagramBlockReason == null
+        val wasShowing = instagramOverlay.isShowing
+        val isNewStatsBlock = isNewBlock || !wasShowing
         instagramBlockReason = action.reason
         val wallNow = System.currentTimeMillis()
         if (isNewBlock) dailyTally.recordStop(wallNow)
@@ -703,6 +751,18 @@ class ZenGuardAccessibilityService : AccessibilityService() {
             null
           },
         )
+        if (isNewStatsBlock && !wasShowing && instagramOverlay.isShowing) {
+          recordEnforcement(
+            when (action.reason) {
+              InstagramBlockReason.REELS_ENTRY,
+              InstagramBlockReason.REELS_SWIPE,
+              InstagramBlockReason.REELS_WINDOW_EXPIRED,
+              -> EnforcementReason.INSTAGRAM_REELS
+              InstagramBlockReason.HOME_LIMIT -> EnforcementReason.INSTAGRAM_HOME
+              InstagramBlockReason.EXPLORE -> EnforcementReason.INSTAGRAM_EXPLORE
+            },
+          )
+        }
       }
       InstagramGuardAction.None -> {
         if (instagramBlockReason != null) {
@@ -718,6 +778,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     clearAdultSiteEnforcement()
     clearXEnforcement(preserveHomeLockout = true)
     stateMachine.reset()
+    clearStatsDedupeState()
     clearInstagramEnforcement(preserveHomeSession = true)
   }
 
@@ -747,6 +808,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     usageHandler.removeCallbacksAndMessages(null)
     if (::intentOverlay.isInitialized) intentOverlay.hide()
     clearInstagramEnforcement()
+    clearStatsDedupeState()
     if (screenReceiverRegistered) {
       unregisterReceiver(screenStateReceiver)
       screenReceiverRegistered = false
@@ -809,10 +871,31 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   private fun hasActiveProtection(): Boolean =
     ::preferences.isInitialized && preferences.hasCurrentConsent && preferences.protectionEnabled
 
+  private fun recordTimedVisit(packageName: String) {
+    if (timedVisitStatsPackage == packageName) return
+    timedVisitStatsPackage = packageName
+    recordEnforcement(EnforcementReason.TIMED_VISIT)
+  }
+
+  private fun clearStatsDedupeState() {
+    shortsBlockRecordedPage = null
+    appLimitStatsPackage = null
+    rollingLimitStatsPackage = null
+    timedVisitStatsPackage = null
+  }
+
+  private fun recordEnforcement(reason: EnforcementReason) {
+    val store = enforcementStats ?: return
+    statsActionSequence = if (statsActionSequence == Long.MAX_VALUE) 1L else statsActionSequence + 1L
+    val nowMs = System.currentTimeMillis()
+    store.record(reason, "${reason.key}:$nowMs:$statsActionSequence", nowMs)
+  }
+
   /** Clear every in-memory action path without inspecting another app's screen. */
   private fun clearInactiveProtection() {
     clearAdultSiteEnforcement()
     stateMachine.reset()
+    clearStatsDedupeState()
     clearXEnforcement()
     usageTracker.reset()
     currentForegroundPackage = null
@@ -832,6 +915,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     browserHandler.removeCallbacksAndMessages(null)
     clearAdultSiteEnforcement()
     stateMachine.reset()
+    clearStatsDedupeState()
     clearXEnforcement(preserveHomeLockout = true)
     usageTracker.reset()
     currentForegroundPackage = null
@@ -871,11 +955,15 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     val detection = BrowserUrlDetector.detect(browserPackage, browserAddressBars(root, browserPackage)) ?: return
     adultSiteStore.recordBrowserSignal(detection.browserMask)
     if (AdultSitePolicy.isBlocked(detection.host, adultSiteStore.customHosts())) {
+      val previousPackage = adultSiteOverlay.shownPackage()
       adultSiteOverlay.show(
         browserPackage = browserPackage,
         onBack = { leaveBlockedSiteBack() },
         onHome = { leaveBlockedSiteHome() },
       )
+      if (previousPackage != browserPackage && adultSiteOverlay.shownPackage() == browserPackage) {
+        recordEnforcement(EnforcementReason.BLOCKED_SITE)
+      }
     } else if (adultSiteOverlay.shownPackage() == browserPackage) {
       adultSiteOverlay.hide()
     }

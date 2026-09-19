@@ -77,6 +77,15 @@ class ZenGuardModule : Module() {
       )
     }
 
+    AsyncFunction("getEnforcementStats") {
+      val snapshot = EnforcementStatsStore(requireNotNull(appContext.reactContext)).snapshot()
+      mapOf(
+        "total" to snapshot.total.toDouble(),
+        "counts" to snapshot.counts.mapValues { (_, count) -> count.toDouble() },
+        "lastEventAt" to snapshot.lastEventAt.toDouble(),
+      )
+    }
+
     AsyncFunction("getAdultSiteSettings") {
       val store = AdultSiteRuleStore(requireNotNull(appContext.reactContext))
       mapOf(

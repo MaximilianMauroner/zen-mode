@@ -44,6 +44,12 @@ export type ZenGuardStatus = {
   browserAvailability?: SupportedBrowserAvailability;
 };
 
+export type EnforcementStats = {
+  total: number;
+  counts: Record<string, number>;
+  lastEventAt: number;
+};
+
 export type AdultSiteSettings = {
   available: boolean;
   enabled: boolean;
@@ -78,6 +84,7 @@ export type RollingLimit = InstalledApp & {
 
 declare class ZenGuardModule extends NativeModule<{}> {
   getStatus(): Promise<ZenGuardStatus>;
+  getEnforcementStats(): Promise<EnforcementStats>;
   openAccessibilitySettings(): Promise<void>;
   openYouTube(): Promise<void>;
   openInstagram(): Promise<void>;

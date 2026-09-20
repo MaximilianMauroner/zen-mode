@@ -246,7 +246,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       YOUTUBE_PACKAGE -> {
         instagramNavigationSuppressedUntilMs = 0L
         clearInstagramEnforcement(preserveHomeSession = true)
-        handleYouTubeEvent()
+        handleYouTubeEvent(event)
       }
       INSTAGRAM_PACKAGE -> handleInstagramEvent(event)
       X_PACKAGE -> {
@@ -454,7 +454,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     packageName
   }
 
-  private fun handleYouTubeEvent() {
+  private fun handleYouTubeEvent(event: AccessibilityEvent) {
     val root = rootInActiveWindow ?: return
     if (root.packageName?.toString() != YOUTUBE_PACKAGE) return
     val nowMs = System.currentTimeMillis()
@@ -476,7 +476,18 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     val page = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/reel_player_page_container")
       .firstOrNull { it.isVisibleToUser }
     val pageIndex = page?.collectionItemInfo?.rowIndex
-    if (stateMachine.next(true, pageIndex, SystemClock.elapsedRealtime()) == EnforcementAction.LEAVE_SHORTS) {
+    val pagerAdvanced = YouTubeShortsPager.isVerifiedAdvance(
+      isViewScrolled = event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED,
+      sourceViewId = event.source?.viewIdResourceName,
+      scrollY = event.scrollY,
+    )
+    if (stateMachine.next(
+        isShorts = true,
+        pageIndex = pageIndex,
+        nowMs = SystemClock.elapsedRealtime(),
+        pagerAdvanced = pagerAdvanced,
+      ) == EnforcementAction.LEAVE_SHORTS
+    ) {
       // Back/Home can put Premium Shorts into PiP. Use YouTube's own Home tab instead.
       val tabs = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/pivot_bar").firstOrNull()
       val homeTab = tabs?.getChild(0)?.getChild(0)

@@ -20,7 +20,6 @@ internal class YouTubeShortsPager {
     fromIndex: Int,
     toIndex: Int,
     scrollY: Int,
-    scrollDeltaY: Int?,
   ): Int? {
     if (!isViewScrolled || fromIndex < 0 || toIndex < 0 || scrollY < 0) return null
     val isPager = sourceViewId
@@ -29,12 +28,7 @@ internal class YouTubeShortsPager {
     if (!isPager) return null
     if (fromIndex != toIndex) {
       if (transitionInProgress) return null
-      val origin = settledPageIndex ?: when {
-        scrollDeltaY == null || scrollDeltaY == 0 -> null
-        scrollDeltaY > 0 -> fromIndex
-        else -> toIndex
-      }
-      if (origin == null) return null
+      val origin = settledPageIndex ?: return null
       transitionInProgress = true
       transitionOriginIndex = origin
       return null

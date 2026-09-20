@@ -170,7 +170,6 @@ internal object HomeFeedStatusIntegrityCodec {
  */
 internal object HomeFeedStatusCodec {
   const val CURRENT_FORMAT_VERSION = 3
-  private const val PREVIOUS_FORMAT_VERSION = 2
   const val INVALID_FORMAT_VERSION = -1
   const val STATE_PAUSED = 0
   const val STATE_ACTIVE = 1
@@ -209,7 +208,7 @@ internal object HomeFeedStatusCodec {
         ?.toInt()
         ?: return HomeFeedStatusDecode(unavailableStatus())
     }
-    if (format != 0 && format != PREVIOUS_FORMAT_VERSION && format != CURRENT_FORMAT_VERSION) {
+    if (format != 0 && format != CURRENT_FORMAT_VERSION) {
       return HomeFeedStatusDecode(unavailableStatus())
     }
     val legacy = format == 0
@@ -559,22 +558,30 @@ internal class HomeFeedStatusStore(
     currentBootCount = { readHomeFeedBootCount(context) },
   )
 
-  fun instagram(nowElapsedMs: Long = elapsedNowMs()): HomeFeedStatus = read(INSTAGRAM_PREFIX, nowElapsedMs)
-  fun x(nowElapsedMs: Long = elapsedNowMs()): HomeFeedStatus = read(X_PREFIX, nowElapsedMs)
+  fun instagram(nowElapsedMs: Long = elapsedNowMs()): HomeFeedStatus =
+    synchronized(JOURNAL_TRANSACTION_LOCK) { read(INSTAGRAM_PREFIX, nowElapsedMs) }
+
+  fun x(nowElapsedMs: Long = elapsedNowMs()): HomeFeedStatus =
+    synchronized(JOURNAL_TRANSACTION_LOCK) { read(X_PREFIX, nowElapsedMs) }
 
   fun recordInstagram(runtime: HomeFeedRuntimeState): Boolean =
-    write(INSTAGRAM_PREFIX, runtime.copy(usageState = HomeFeedUsageState.PAUSED))
+    synchronized(JOURNAL_TRANSACTION_LOCK) {
+      write(INSTAGRAM_PREFIX, runtime.copy(usageState = HomeFeedUsageState.PAUSED))
+    }
 
-  fun recordX(runtime: HomeFeedRuntimeState): Boolean = write(X_PREFIX, runtime)
+  fun recordX(runtime: HomeFeedRuntimeState): Boolean =
+    synchronized(JOURNAL_TRANSACTION_LOCK) { write(X_PREFIX, runtime) }
 
   /**
    * Establishes a new zeroed baseline after a fresh Home observation. This is the only write path
    * allowed to recover a provider after a durable corruption or commit failure; ordinary status
    * publications remain latched unavailable until this explicit boundary succeeds.
    */
-  fun recoverInstagram(nowElapsedMs: Long = elapsedNowMs()): Boolean = recover(INSTAGRAM_PREFIX, nowElapsedMs)
+  fun recoverInstagram(nowElapsedMs: Long = elapsedNowMs()): Boolean =
+    synchronized(JOURNAL_TRANSACTION_LOCK) { recover(INSTAGRAM_PREFIX, nowElapsedMs) }
 
-  fun recoverX(nowElapsedMs: Long = elapsedNowMs()): Boolean = recover(X_PREFIX, nowElapsedMs)
+  fun recoverX(nowElapsedMs: Long = elapsedNowMs()): Boolean =
+    synchronized(JOURNAL_TRANSACTION_LOCK) { recover(X_PREFIX, nowElapsedMs) }
 
   private fun read(prefix: String, nowElapsedMs: Long): HomeFeedStatus {
     if (HomeFeedStatusFailureRegistry.isFailed(prefix)) return failureStatus()
@@ -672,6 +679,16 @@ internal class HomeFeedStatusStore(
       }
       integrity.generation
     }
+    if (!allowRecovery && currentGeneration > 0L && runtimeMatchesPersisted(
+        prefix,
+        runtime,
+        currentGeneration,
+        currentBoot,
+        nowElapsedMs,
+      )
+    ) {
+      return true
+    }
     val committed = commitRuntime(prefix, runtime, currentGeneration, currentBoot, nowElapsedMs)
     if (committed && allowRecovery) HomeFeedStatusFailureRegistry.clear(prefix)
     return committed
@@ -689,6 +706,28 @@ internal class HomeFeedStatusStore(
     ),
     allowRecovery = true,
   )
+
+  /** Avoids a three-commit journal transaction when the durable policy state is unchanged. */
+  private fun runtimeMatchesPersisted(
+    prefix: String,
+    runtime: HomeFeedRuntimeState,
+    generation: Long,
+    bootCount: Long,
+    nowElapsedMs: Long,
+  ): Boolean {
+    val persisted = try {
+      persistence.readAll()
+    } catch (_: RuntimeException) {
+      return false
+    }
+    val desired = HomeFeedStatusCodec.encode(prefix, runtime, bootCount, nowElapsedMs, generation)
+      ?: return false
+    return DURABLE_STATE_KEYS.all { suffix ->
+      val key = HomeFeedStatusKeys.key(prefix, suffix)
+      val desiredValue = desired[key]
+      if (desiredValue == null) !persisted.containsKey(key) else persisted[key] == desiredValue
+    }
+  }
 
   private fun commitRuntime(
     prefix: String,
@@ -844,6 +883,18 @@ internal class HomeFeedStatusStore(
   )
 
   companion object {
+    /** Shared by service and Expo-module store instances in this process. */
+    private val JOURNAL_TRANSACTION_LOCK = Any()
+    private val DURABLE_STATE_KEYS = listOf(
+      HomeFeedStatusKeys.FORMAT_VERSION,
+      HomeFeedStatusKeys.BOOT_COUNT,
+      HomeFeedStatusKeys.USED_MS,
+      HomeFeedStatusKeys.USAGE_STATE,
+      HomeFeedStatusKeys.LOCKOUT_STATE,
+      HomeFeedStatusKeys.RESUME_AT_ELAPSED,
+      HomeFeedStatusKeys.BLOCKED_UNTIL_ELAPSED,
+      HomeFeedStatusKeys.LEGACY_BLOCKED_UNTIL_WALL,
+    )
     private const val INSTAGRAM_PREFIX = "instagram"
     private const val X_PREFIX = "x"
   }

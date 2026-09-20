@@ -49,4 +49,14 @@ class EnforcementStateMachineTest {
     assertEquals(EnforcementAction.LEAVE_SHORTS, state.next(true, 0, 100, pagerTransitionIndex = 0))
   }
 
+  @Test fun aFailedFallbackExitRemainsPendingWithoutAnotherSwipe() {
+    val state = EnforcementStateMachine(cooldownMs = 100)
+    assertEquals(EnforcementAction.NONE, state.next(true, null, 0))
+    assertEquals(EnforcementAction.LEAVE_SHORTS, state.next(true, 1, 100, pagerTransitionIndex = 1))
+    assertEquals(EnforcementAction.NONE, state.next(true, null, 150))
+    assertEquals(EnforcementAction.LEAVE_SHORTS, state.next(true, null, 200))
+    assertEquals(EnforcementAction.NONE, state.next(false, null, 250))
+    assertEquals(EnforcementAction.NONE, state.next(true, null, 300))
+  }
+
 }

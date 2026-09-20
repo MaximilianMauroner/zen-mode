@@ -6,6 +6,7 @@ internal enum class EnforcementAction { NONE, LEAVE_SHORTS }
 internal class EnforcementStateMachine(private val cooldownMs: Long = 900) {
   private var firstPage: Int? = null
   private var viewerObserved = false
+  private var exitPending = false
   private var lastActionAt: Long? = null
 
   fun next(
@@ -20,6 +21,7 @@ internal class EnforcementStateMachine(private val cooldownMs: Long = 900) {
     }
     val wasObserved = viewerObserved
     viewerObserved = true
+    if (exitPending) return leaveShorts(nowMs)
     if (pagerTransitionIndex != null && pagerTransitionIndex > 0 && wasObserved && firstPage == null) {
       return leaveShorts(nowMs)
     }
@@ -35,6 +37,7 @@ internal class EnforcementStateMachine(private val cooldownMs: Long = 900) {
 
   private fun leaveShorts(nowMs: Long): EnforcementAction {
     if (lastActionAt?.let { nowMs - it < cooldownMs } == true) return EnforcementAction.NONE
+    exitPending = true
     lastActionAt = nowMs
     return EnforcementAction.LEAVE_SHORTS
   }
@@ -42,6 +45,7 @@ internal class EnforcementStateMachine(private val cooldownMs: Long = 900) {
   fun reset() {
     firstPage = null
     viewerObserved = false
+    exitPending = false
     lastActionAt = null
   }
 }

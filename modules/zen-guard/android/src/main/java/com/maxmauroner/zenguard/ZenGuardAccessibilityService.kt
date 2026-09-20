@@ -28,6 +28,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   // Dedupe keys are in-memory lifecycle markers only. They are never persisted.
   private val statsDedupeKeys = mutableMapOf<EnforcementReason, String>()
   private val stateMachine = EnforcementStateMachine()
+  private val youtubeShortsPager = YouTubeShortsPager()
   private val xStateMachine = XGuardStateMachine()
   private var xHomeUsageState = HomeFeedUsageState.PAUSED
   private var xStorageAvailable = true
@@ -462,12 +463,14 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     val result = ShortsDetector.detect(snapshot(root))
     if (!result.isShortsViewer) {
       stateMachine.reset()
+      youtubeShortsPager.reset()
       resetStatsDedupe(EnforcementReason.YOUTUBE_SHORTS)
       return
     }
     preferences.recordDetection(nowMs, result.reason)
     if (preferences.observationMode || !preferences.shortsEnabled) {
       stateMachine.reset()
+      youtubeShortsPager.reset()
       resetStatsDedupe(EnforcementReason.YOUTUBE_SHORTS)
       return
     }
@@ -475,7 +478,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     // Titles, like counts, comments, and playback progress must never consume the allowance.
     val page = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/reel_player_page_container")
       .firstOrNull { it.isVisibleToUser }
-    val pagerTransitionIndex = YouTubeShortsPager.stablePageIndex(
+    val pagerTransitionIndex = youtubeShortsPager.stablePageIndex(
       isViewScrolled = event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED,
       sourceViewId = event.source?.viewIdResourceName,
       fromIndex = event.fromIndex,
@@ -494,7 +497,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       val tabs = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/pivot_bar").firstOrNull()
       val homeTab = tabs?.getChild(0)?.getChild(0)
       if (homeTab?.isClickable == true && homeTab.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-        recordYouTubeShortsStats(pageIndex, EnforcementStatsOutcome.SUCCESS)
+        recordYouTubeShortsStats(stateMachine.pendingExitPageIndex(), EnforcementStatsOutcome.SUCCESS)
         Toast.makeText(this, R.string.zen_guard_shorts_blocked, Toast.LENGTH_SHORT).show()
       }
     }

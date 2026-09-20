@@ -69,6 +69,14 @@ class HomeFeedStatusStoreTest {
     assertUnavailable(store(FakePersistence(values), boot = 7L).x(200L))
   }
 
+  @Test fun `truncated legacy usage snapshot becomes unavailable`() {
+    val values = validLegacyValues().toMutableMap().apply {
+      remove(key(HomeFeedStatusKeys.USED_MS))
+    }
+
+    assertUnavailable(store(FakePersistence(values), boot = 7L).x(200L))
+  }
+
   @Test fun `unchanged paused snapshot skips journal commits`() {
     val persistence = FakePersistence()
     val statusStore = store(persistence, boot = 7L)

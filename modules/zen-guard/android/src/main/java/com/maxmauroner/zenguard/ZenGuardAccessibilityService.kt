@@ -271,7 +271,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     if (statsDedupeKeys[EnforcementReason.ROLLING_LIMIT] != packageName) resetStatsDedupe(EnforcementReason.ROLLING_LIMIT)
     if (statsDedupeKeys[EnforcementReason.TIMED_VISIT] != packageName) resetStatsDedupe(EnforcementReason.TIMED_VISIT)
     usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())?.let(::bankUsage)
-    if (packageName != YOUTUBE_PACKAGE && packageName != this.packageName) stateMachine.reset()
+    if (packageName != YOUTUBE_PACKAGE && packageName != this.packageName) resetYouTubeEnforcement()
     currentForegroundPackage = packageName
     enforceAppLimit(packageName)
     enforceRollingLimit(packageName)
@@ -462,15 +462,13 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     preferences.recordEvent(nowMs)
     val result = ShortsDetector.detect(snapshot(root))
     if (!result.isShortsViewer) {
-      stateMachine.reset()
-      youtubeShortsPager.reset()
+      resetYouTubeEnforcement()
       resetStatsDedupe(EnforcementReason.YOUTUBE_SHORTS)
       return
     }
     preferences.recordDetection(nowMs, result.reason)
     if (preferences.observationMode || !preferences.shortsEnabled) {
-      stateMachine.reset()
-      youtubeShortsPager.reset()
+      resetYouTubeEnforcement()
       resetStatsDedupe(EnforcementReason.YOUTUBE_SHORTS)
       return
     }
@@ -801,7 +799,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   override fun onInterrupt() {
     clearAdultSiteEnforcement()
     clearXEnforcement(preserveHomeLockout = true)
-    stateMachine.reset()
+    resetYouTubeEnforcement()
     clearStatsDedupeState()
     clearInstagramEnforcement(preserveHomeSession = true)
   }
@@ -1006,7 +1004,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   /** Clear every in-memory action path without inspecting another app's screen. */
   private fun clearInactiveProtection() {
     clearAdultSiteEnforcement()
-    stateMachine.reset()
+    resetYouTubeEnforcement()
     clearStatsDedupeState()
     clearXEnforcement()
     usageTracker.reset()
@@ -1026,7 +1024,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private fun enterSystemSettings() {
     browserHandler.removeCallbacksAndMessages(null)
     clearAdultSiteEnforcement()
-    stateMachine.reset()
+    resetYouTubeEnforcement()
     clearStatsDedupeState()
     clearXEnforcement(preserveHomeLockout = true)
     usageTracker.reset()
@@ -1036,6 +1034,11 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     navigationHandler.removeCallbacksAndMessages(null)
     instagramNavigationSuppressedUntilMs = 0L
     clearInstagramEnforcement(preserveHomeSession = true)
+  }
+
+  private fun resetYouTubeEnforcement() {
+    stateMachine.reset()
+    youtubeShortsPager.reset()
   }
 
   /** Re-check the live windows at execution time so queued callbacks cannot eject Settings. */

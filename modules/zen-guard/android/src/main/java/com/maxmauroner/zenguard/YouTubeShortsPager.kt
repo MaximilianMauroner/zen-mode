@@ -11,6 +11,7 @@ package com.maxmauroner.zenguard
 internal class YouTubeShortsPager {
   private val reelPagerId = "reel_recycler"
   private var transitionInProgress = false
+  private var settledPageIndex: Int? = null
 
   fun stablePageIndex(
     isViewScrolled: Boolean,
@@ -28,12 +29,18 @@ internal class YouTubeShortsPager {
       transitionInProgress = true
       return null
     }
-    if (!transitionInProgress) return null
+    if (!transitionInProgress) {
+      settledPageIndex = fromIndex
+      return null
+    }
     transitionInProgress = false
-    return fromIndex
+    val previous = settledPageIndex
+    settledPageIndex = fromIndex
+    return if (previous != null && previous != fromIndex) fromIndex else null
   }
 
   fun reset() {
     transitionInProgress = false
+    settledPageIndex = null
   }
 }

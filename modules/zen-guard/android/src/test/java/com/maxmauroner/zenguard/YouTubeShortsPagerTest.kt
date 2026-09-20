@@ -7,6 +7,7 @@ import org.junit.Test
 class YouTubeShortsPagerTest {
   @Test fun returnsTheSettledPageOwnedByThePager() {
     val detector = YouTubeShortsPager()
+    assertNull(detector.stablePageIndex(true, "com.google.android.youtube:id/reel_recycler", 6, 6, 0))
     assertNull(detector.stablePageIndex(true, "com.google.android.youtube:id/reel_recycler", 6, 7, 1))
     assertEquals(7, detector.stablePageIndex(
       isViewScrolled = true,
@@ -15,6 +16,17 @@ class YouTubeShortsPagerTest {
       toIndex = 7,
       scrollY = 1,
     ))
+  }
+
+  @Test fun snapBackAndStaleVisitSequencesFailOpen() {
+    val detector = YouTubeShortsPager()
+    val pager = "com.google.android.youtube:id/reel_recycler"
+    assertNull(detector.stablePageIndex(true, pager, 4, 4, 0))
+    assertNull(detector.stablePageIndex(true, pager, 4, 5, 1))
+    assertNull(detector.stablePageIndex(true, pager, 4, 4, 0))
+    assertNull(detector.stablePageIndex(true, pager, 4, 5, 1))
+    detector.reset()
+    assertNull(detector.stablePageIndex(true, pager, 5, 5, 0))
   }
 
   @Test fun partialPlaybackAndAmbiguousEventsFailOpen() {

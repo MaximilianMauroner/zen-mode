@@ -787,7 +787,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     xStorageAvailable = false
     xHomeUsageState = HomeFeedUsageState.UNKNOWN
     xStateMachine.markStorageUnavailable()
-    if (::xOverlay.isInitialized && xOverlay.isShowing) xOverlay.showUnavailable()
+    if (::xOverlay.isInitialized) xOverlay.showUnavailable()
   }
 
   /**

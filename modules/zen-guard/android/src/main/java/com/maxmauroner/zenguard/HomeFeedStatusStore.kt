@@ -255,37 +255,27 @@ internal object HomeFeedStatusCodec {
       HOME_FEED_MAX_SAFE_TIMESTAMP_MS,
       allowMissing = false,
     ) ?: return HomeFeedStatusDecode(unavailableStatus())
-    val state = readValueInt(
-      values,
-      prefix,
+    val unsupportedLegacyKeys = listOf(
       HomeFeedStatusKeys.USAGE_STATE,
-      STATE_PAUSED,
-      STATE_UNKNOWN,
-      allowMissing = legacy,
-    ) ?: return HomeFeedStatusDecode(unavailableStatus())
-    val storedLockout = readValueInt(
-      values,
-      prefix,
       HomeFeedStatusKeys.LOCKOUT_STATE,
-      LOCKOUT_NONE,
-      LOCKOUT_UNKNOWN,
-      allowMissing = legacy,
-    ) ?: return HomeFeedStatusDecode(unavailableStatus())
-    val resumeAt = readValueLong(
-      values,
-      prefix,
       HomeFeedStatusKeys.RESUME_AT_ELAPSED,
-      0L,
-      HOME_FEED_MAX_SAFE_TIMESTAMP_MS,
-      allowMissing = legacy,
-    ) ?: return HomeFeedStatusDecode(unavailableStatus())
-    val legacyWall = readValueLong(
-      values,
-      prefix,
       HomeFeedStatusKeys.LEGACY_BLOCKED_UNTIL_WALL,
-      0L,
-      HOME_FEED_MAX_SAFE_TIMESTAMP_MS,
-      allowMissing = true,
+      HomeFeedStatusKeys.GENERATION,
+      HomeFeedStatusKeys.CHECKSUM,
+    )
+    if (legacy && unsupportedLegacyKeys.any { values.containsKey(HomeFeedStatusKeys.key(prefix, it)) }) {
+      return HomeFeedStatusDecode(unavailableStatus())
+    }
+    val state = if (legacy) STATE_PAUSED else readValueInt(
+      values, prefix, HomeFeedStatusKeys.USAGE_STATE, STATE_PAUSED, STATE_UNKNOWN, allowMissing = false,
+    ) ?: return HomeFeedStatusDecode(unavailableStatus())
+    val storedLockout = if (legacy) {
+      if (blockedUntil > 0L) LOCKOUT_ACTIVE else LOCKOUT_NONE
+    } else readValueInt(
+      values, prefix, HomeFeedStatusKeys.LOCKOUT_STATE, LOCKOUT_NONE, LOCKOUT_UNKNOWN, allowMissing = false,
+    ) ?: return HomeFeedStatusDecode(unavailableStatus())
+    val resumeAt = if (legacy) 0L else readValueLong(
+      values, prefix, HomeFeedStatusKeys.RESUME_AT_ELAPSED, 0L, HOME_FEED_MAX_SAFE_TIMESTAMP_MS, allowMissing = false,
     ) ?: return HomeFeedStatusDecode(unavailableStatus())
 
     if ((state == STATE_PAUSED || state == STATE_UNKNOWN) && resumeAt != 0L) {
@@ -297,18 +287,20 @@ internal object HomeFeedStatusCodec {
 
     // Legacy records did not have an explicit lockout enum; the elapsed deadline is authoritative
     // while it belongs to this boot. The old wall deadline is deliberately never restored.
-    val lockout = if (legacy && blockedUntil > 0L) LOCKOUT_ACTIVE else storedLockout
+    val lockout = storedLockout
     if (lockout == LOCKOUT_ACTIVE && blockedUntil == 0L) return HomeFeedStatusDecode(unavailableStatus())
     if (lockout == LOCKOUT_NONE && blockedUntil > 0L) return HomeFeedStatusDecode(unavailableStatus())
     if (lockout == LOCKOUT_UNKNOWN && blockedUntil > 0L) return HomeFeedStatusDecode(unavailableStatus())
-    if (!legacy && legacyWall > 0L) return HomeFeedStatusDecode(unavailableStatus())
+    if (!legacy && values.containsKey(HomeFeedStatusKeys.key(prefix, HomeFeedStatusKeys.LEGACY_BLOCKED_UNTIL_WALL))) {
+      return HomeFeedStatusDecode(unavailableStatus())
+    }
     if (current && storedChecksum != checksum(prefix, generation!!, boot, used, state, lockout, resumeAt, blockedUntil)) {
       return HomeFeedStatusDecode(unavailableStatus())
     }
 
     val sameBoot = boot == currentBoot
     if (!sameBoot) {
-      val unresolvedLockout = blockedUntil > 0L || lockout == LOCKOUT_ACTIVE || legacyWall > 0L
+      val unresolvedLockout = blockedUntil > 0L || lockout == LOCKOUT_ACTIVE
       val status = HomeFeedStatus(
         usedMs = used,
         blockedUntilElapsedMs = null,
@@ -321,18 +313,6 @@ internal object HomeFeedStatusCodec {
         generation = generation,
         needsMigration = !current,
       )
-    }
-
-    // A legacy wall deadline with no same-boot monotonic deadline is unverifiable. Keep the
-    // boundary fail-closed and migrate the explicit unknown state; never trust wall time here.
-    if (legacy && legacyWall > 0L && blockedUntil == 0L) {
-      val status = HomeFeedStatus(
-        usedMs = used,
-        blockedUntilElapsedMs = null,
-        usageState = HomeFeedUsageState.UNKNOWN,
-        lockoutState = HomeFeedLockoutState.UNKNOWN,
-      )
-      return HomeFeedStatusDecode(status, formatVersion = format, needsMigration = true)
     }
 
     if (lockout == LOCKOUT_ACTIVE && blockedUntil <= now) {
@@ -722,6 +702,10 @@ internal class HomeFeedStatusStore(
     }
     val desired = HomeFeedStatusCodec.encode(prefix, runtime, bootCount, nowElapsedMs, generation)
       ?: return false
+    val decoded = HomeFeedStatusCodec.decode(prefix, persisted, bootCount, nowElapsedMs)
+    if (decoded.status.storageState != HomeFeedStorageState.AVAILABLE ||
+      decoded.needsMigration || decoded.generation != generation
+    ) return false
     return DURABLE_STATE_KEYS.all { suffix ->
       val key = HomeFeedStatusKeys.key(prefix, suffix)
       val desiredValue = desired[key]

@@ -2,25 +2,16 @@ package com.maxmauroner.zenguard
 
 internal enum class EnforcementAction { NONE, LEAVE_SHORTS }
 
-/** Allow the entry video for each Shorts visit; verified pager movement ends that visit. */
+/** Allow the entry video for each Shorts visit; a different verified page ends that visit. */
 internal class EnforcementStateMachine(private val cooldownMs: Long = 900) {
   private var firstPage: Int? = null
-  private var viewerObserved = false
   private var lastActionAt: Long? = null
 
-  fun next(
-    isShorts: Boolean,
-    pageIndex: Int?,
-    nowMs: Long,
-    pagerAdvanced: Boolean = false,
-  ): EnforcementAction {
+  fun next(isShorts: Boolean, pageIndex: Int?, nowMs: Long): EnforcementAction {
     if (!isShorts) {
       reset()
       return EnforcementAction.NONE
     }
-    val wasObserved = viewerObserved
-    viewerObserved = true
-    if (pagerAdvanced && wasObserved) return leaveShorts(nowMs)
     if (pageIndex == null || pageIndex < 0) return EnforcementAction.NONE
     val first = firstPage
     if (first == null) {
@@ -39,7 +30,6 @@ internal class EnforcementStateMachine(private val cooldownMs: Long = 900) {
 
   fun reset() {
     firstPage = null
-    viewerObserved = false
     lastActionAt = null
   }
 }

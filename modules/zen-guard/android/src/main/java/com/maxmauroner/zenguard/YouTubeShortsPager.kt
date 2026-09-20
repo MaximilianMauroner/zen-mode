@@ -4,16 +4,23 @@ package com.maxmauroner.zenguard
  * Accepts only a scroll owned by YouTube's full-screen Shorts pager.
  *
  * The current YouTube tree does not expose collection metadata on the visible page child. The
- * pager still owns the accessibility scroll event and reports a positive scroll position after a
- * forward swipe. Unknown sources and incomplete events deliberately fail open.
+ * pager still owns the accessibility scroll event and reports its visible item range. A settled
+ * full-screen page has one non-negative visible index; partial transitions expose a range and are
+ * deliberately ignored along with unknown sources and incomplete events.
  */
 internal object YouTubeShortsPager {
   private const val REEL_PAGER_ID = "reel_recycler"
 
-  fun isVerifiedAdvance(isViewScrolled: Boolean, sourceViewId: String?, scrollY: Int): Boolean {
-    if (!isViewScrolled || scrollY <= 0) return false
-    return sourceViewId
+  fun stablePageIndex(
+    isViewScrolled: Boolean,
+    sourceViewId: String?,
+    fromIndex: Int,
+    toIndex: Int,
+  ): Int? {
+    if (!isViewScrolled || fromIndex < 0 || fromIndex != toIndex) return null
+    val isPager = sourceViewId
       ?.substringAfterLast('/')
       ?.equals(REEL_PAGER_ID, ignoreCase = true) == true
+    return if (isPager) fromIndex else null
   }
 }

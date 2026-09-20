@@ -1,22 +1,33 @@
 package com.maxmauroner.zenguard
 
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class YouTubeShortsPagerTest {
-  @Test fun acceptsTheObservedPagerOwnedForwardScroll() {
-    assertTrue(YouTubeShortsPager.isVerifiedAdvance(
+  @Test fun returnsTheSettledPageOwnedByThePager() {
+    assertEquals(7, YouTubeShortsPager.stablePageIndex(
       isViewScrolled = true,
       sourceViewId = "com.google.android.youtube:id/reel_recycler",
-      scrollY = 1,
+      fromIndex = 7,
+      toIndex = 7,
     ))
   }
 
-  @Test fun playbackAndAmbiguousEventsFailOpen() {
-    assertFalse(YouTubeShortsPager.isVerifiedAdvance(false, "com.google.android.youtube:id/reel_recycler", 1))
-    assertFalse(YouTubeShortsPager.isVerifiedAdvance(true, "com.google.android.youtube:id/reel_progress_bar", 1))
-    assertFalse(YouTubeShortsPager.isVerifiedAdvance(true, null, 1))
-    assertFalse(YouTubeShortsPager.isVerifiedAdvance(true, "com.google.android.youtube:id/reel_recycler", 0))
+  @Test fun partialPlaybackAndAmbiguousEventsFailOpen() {
+    assertNull(YouTubeShortsPager.stablePageIndex(true, "com.google.android.youtube:id/reel_recycler", 7, 8))
+    assertNull(YouTubeShortsPager.stablePageIndex(false, "com.google.android.youtube:id/reel_recycler", 8, 8))
+    assertNull(YouTubeShortsPager.stablePageIndex(true, "com.google.android.youtube:id/reel_progress_bar", 8, 8))
+    assertNull(YouTubeShortsPager.stablePageIndex(true, null, 8, 8))
+    assertNull(YouTubeShortsPager.stablePageIndex(true, "com.google.android.youtube:id/reel_recycler", -1, -1))
+  }
+
+  @Test fun pagerFixtureBlocksOnlyAfterACompletedPageTransition() {
+    val state = EnforcementStateMachine()
+    val pager = "com.google.android.youtube:id/reel_recycler"
+    assertEquals(EnforcementAction.NONE, state.next(true, YouTubeShortsPager.stablePageIndex(true, pager, 0, 0), 0))
+    assertEquals(EnforcementAction.NONE, state.next(true, YouTubeShortsPager.stablePageIndex(false, pager, 0, 0), 100))
+    assertEquals(EnforcementAction.NONE, state.next(true, YouTubeShortsPager.stablePageIndex(true, pager, 0, 1), 200))
+    assertEquals(EnforcementAction.LEAVE_SHORTS, state.next(true, YouTubeShortsPager.stablePageIndex(true, pager, 1, 1), 300))
   }
 }

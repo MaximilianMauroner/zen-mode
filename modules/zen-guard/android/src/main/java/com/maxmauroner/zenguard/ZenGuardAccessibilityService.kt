@@ -475,19 +475,13 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     // Titles, like counts, comments, and playback progress must never consume the allowance.
     val page = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/reel_player_page_container")
       .firstOrNull { it.isVisibleToUser }
-    val pageIndex = page?.collectionItemInfo?.rowIndex
-    val pagerAdvanced = YouTubeShortsPager.isVerifiedAdvance(
+    val pageIndex = page?.collectionItemInfo?.rowIndex ?: YouTubeShortsPager.stablePageIndex(
       isViewScrolled = event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED,
       sourceViewId = event.source?.viewIdResourceName,
-      scrollY = event.scrollY,
+      fromIndex = event.fromIndex,
+      toIndex = event.toIndex,
     )
-    if (stateMachine.next(
-        isShorts = true,
-        pageIndex = pageIndex,
-        nowMs = SystemClock.elapsedRealtime(),
-        pagerAdvanced = pagerAdvanced,
-      ) == EnforcementAction.LEAVE_SHORTS
-    ) {
+    if (stateMachine.next(true, pageIndex, SystemClock.elapsedRealtime()) == EnforcementAction.LEAVE_SHORTS) {
       // Back/Home can put Premium Shorts into PiP. Use YouTube's own Home tab instead.
       val tabs = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/pivot_bar").firstOrNull()
       val homeTab = tabs?.getChild(0)?.getChild(0)

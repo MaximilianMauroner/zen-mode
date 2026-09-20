@@ -30,19 +30,4 @@ class EnforcementStateMachineTest {
     assertEquals(EnforcementAction.LEAVE_SHORTS, state.next(true, 5, 500))
   }
 
-  @Test fun pagerOwnedAdvanceWorksWhenPageChildrenDoNotOwnCollectionMetadata() {
-    val state = EnforcementStateMachine()
-    assertEquals(EnforcementAction.NONE, state.next(true, null, 0))
-    assertEquals(EnforcementAction.NONE, state.next(true, null, 100))
-    assertEquals(EnforcementAction.LEAVE_SHORTS, state.next(true, null, 200, pagerAdvanced = true))
-  }
-
-  @Test fun anUnobservedPagerEventCannotConsumeTheFirstShort() {
-    val state = EnforcementStateMachine()
-    assertEquals(EnforcementAction.NONE, state.next(true, null, 0, pagerAdvanced = true))
-    state.reset()
-    assertEquals(EnforcementAction.NONE, state.next(true, null, 100))
-    assertEquals(EnforcementAction.NONE, state.next(false, null, 200, pagerAdvanced = true))
-    assertEquals(EnforcementAction.NONE, state.next(true, null, 300, pagerAdvanced = true))
-  }
 }

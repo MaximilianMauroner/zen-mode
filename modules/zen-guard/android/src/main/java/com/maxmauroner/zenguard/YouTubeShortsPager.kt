@@ -28,6 +28,7 @@ internal class YouTubeShortsPager {
       ?.equals(reelPagerId, ignoreCase = true) == true
     if (!isPager) return null
     if (fromIndex != toIndex) {
+      if (transitionInProgress) return null
       val origin = settledPageIndex ?: when {
         scrollDeltaY == null || scrollDeltaY == 0 -> null
         scrollDeltaY > 0 -> fromIndex

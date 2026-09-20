@@ -28,6 +28,14 @@ class YouTubeShortsPagerTest {
     assertEquals(6, detector.stablePageIndex(true, pager, 6, 6, 0, 0))
   }
 
+  @Test fun repeatedPartialCallbacksCannotReplaceTheFirstGestureOrigin() {
+    val detector = YouTubeShortsPager()
+    val pager = "com.google.android.youtube:id/reel_recycler"
+    assertNull(detector.stablePageIndex(true, pager, 6, 7, 1, 1))
+    assertNull(detector.stablePageIndex(true, pager, 6, 7, 1, -1))
+    assertNull(detector.stablePageIndex(true, pager, 6, 6, 0, 0))
+  }
+
   @Test fun snapBackAndStaleVisitSequencesFailOpen() {
     val detector = YouTubeShortsPager()
     val pager = "com.google.android.youtube:id/reel_recycler"

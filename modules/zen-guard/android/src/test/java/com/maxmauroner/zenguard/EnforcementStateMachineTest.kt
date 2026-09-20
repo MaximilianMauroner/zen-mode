@@ -30,4 +30,17 @@ class EnforcementStateMachineTest {
     assertEquals(EnforcementAction.LEAVE_SHORTS, state.next(true, 5, 500))
   }
 
+  @Test fun firstSettledPagerIdentityIsATransitionAfterTheViewerWasAlreadyObserved() {
+    val state = EnforcementStateMachine()
+    assertEquals(EnforcementAction.NONE, state.next(true, null, 0))
+    assertEquals(EnforcementAction.NONE, state.next(true, null, 100))
+    assertEquals(EnforcementAction.LEAVE_SHORTS, state.next(true, 1, 200, pagerTransitionIndex = 1))
+  }
+
+  @Test fun anInitialPagerCallbackStillAllowsTheEntryShort() {
+    val state = EnforcementStateMachine()
+    assertEquals(EnforcementAction.NONE, state.next(true, 0, 0, pagerTransitionIndex = 0))
+    assertEquals(EnforcementAction.LEAVE_SHORTS, state.next(true, 1, 100, pagerTransitionIndex = 1))
+  }
+
 }

@@ -6,6 +6,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 class HomeFeedStatusStoreTest {
   @Before
@@ -56,6 +59,60 @@ class HomeFeedStatusStoreTest {
     }
 
     assertUnavailable(store(FakePersistence(values), boot = 7L).x(200L))
+  }
+
+  @Test fun `unsupported intermediate format becomes unavailable`() {
+    val values = validCurrentValues().toMutableMap().apply {
+      this[key(HomeFeedStatusKeys.FORMAT_VERSION)] = 2
+    }
+
+    assertUnavailable(store(FakePersistence(values), boot = 7L).x(200L))
+  }
+
+  @Test fun `unchanged paused snapshot skips journal commits`() {
+    val persistence = FakePersistence()
+    val statusStore = store(persistence, boot = 7L)
+    val runtime = HomeFeedRuntimeState(
+      usedMs = 12_000L,
+      blockedUntilElapsedMs = null,
+      usageState = HomeFeedUsageState.PAUSED,
+      capturedAtElapsedMs = 100L,
+    )
+    assertTrue(statusStore.recordX(runtime))
+    val snapshotCommits = persistence.commitCalls
+    val journalCommits = persistence.integrityCommitCalls
+
+    assertTrue(statusStore.recordX(runtime.copy(capturedAtElapsedMs = 200L)))
+
+    assertEquals(snapshotCommits, persistence.commitCalls)
+    assertEquals(journalCommits, persistence.integrityCommitCalls)
+  }
+
+  @Test fun `reader waits for another store journal transaction`() {
+    val persistence = FakePersistence()
+    val writer = store(persistence, boot = 7L)
+    val reader = store(persistence, boot = 7L)
+    assertTrue(writer.recordX(HomeFeedRuntimeState(12_000L, null, capturedAtElapsedMs = 100L)))
+    val pendingWritten = CountDownLatch(1)
+    val allowWriter = CountDownLatch(1)
+    persistence.pauseNextIntegrityCommit = pendingWritten to allowWriter
+    val writeThread = Thread {
+      writer.recordX(HomeFeedRuntimeState(24_000L, null, capturedAtElapsedMs = 200L))
+    }
+    val readResult = AtomicReference<HomeFeedStatus?>()
+    writeThread.start()
+    assertTrue(pendingWritten.await(2, TimeUnit.SECONDS))
+    val readThread = Thread { readResult.set(reader.x(300L)) }
+    readThread.start()
+    Thread.sleep(50L)
+    assertTrue("reader must remain serialized behind pending journal write", readThread.isAlive)
+
+    allowWriter.countDown()
+    writeThread.join(2_000L)
+    readThread.join(2_000L)
+
+    assertEquals(HomeFeedStorageState.AVAILABLE, readResult.get()?.storageState)
+    assertEquals(24_000L, readResult.get()?.usedMs)
   }
 
   @Test fun `failed status write remains unavailable after process death`() {
@@ -317,6 +374,7 @@ class HomeFeedStatusStoreTest {
     val integrityValues = initialIntegrity.toMutableMap()
     var commitCalls = 0
     var integrityCommitCalls = 0
+    var pauseNextIntegrityCommit: Pair<CountDownLatch, CountDownLatch>? = null
 
     override fun readAll(): Map<String, Any?> {
       if (throwOnRead) throw IllegalStateException("read failed")
@@ -339,6 +397,11 @@ class HomeFeedStatusStoreTest {
 
     override fun commitIntegrity(values: Map<String, Any?>): Boolean {
       integrityCommitCalls += 1
+      pauseNextIntegrityCommit?.also { (entered, proceed) ->
+        pauseNextIntegrityCommit = null
+        entered.countDown()
+        proceed.await(2, TimeUnit.SECONDS)
+      }
       if (!integrityCommitResult) return false
       values.forEach { (key, value) ->
         if (value == null) integrityValues.remove(key) else integrityValues[key] = value

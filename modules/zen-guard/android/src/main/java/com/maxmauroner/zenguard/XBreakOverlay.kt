@@ -13,22 +13,24 @@ import android.widget.TextView
 
 /** A Home break has one action: leave the feed and end the session. */
 internal class XBreakOverlay(private val service: AccessibilityService, private val onLeave: () -> Unit) {
+  private enum class Mode { BREAK, UNAVAILABLE }
   private val manager = service.getSystemService(WindowManager::class.java)
   private var root: View? = null
+  private var mode: Mode? = null
   val isShowing: Boolean get() = root != null
 
   fun show(minutes: Int) {
-    showDetail(service.resources.getQuantityString(R.plurals.zen_guard_x_home_detail, minutes, minutes))
+    showDetail(Mode.BREAK, service.resources.getQuantityString(R.plurals.zen_guard_x_home_detail, minutes, minutes))
   }
 
   /** Used when accounting cannot be verified; it intentionally contains no countdown. */
   fun showUnavailable() {
-    if (isShowing) hide()
-    showDetail(service.getString(R.string.zen_guard_x_home_unavailable_detail))
+    showDetail(Mode.UNAVAILABLE, service.getString(R.string.zen_guard_x_home_unavailable_detail))
   }
 
-  private fun showDetail(detail: CharSequence) {
-    if (isShowing) return
+  private fun showDetail(requestedMode: Mode, detail: CharSequence) {
+    if (isShowing && mode == requestedMode) return
+    if (isShowing) hide()
     val body = LinearLayout(service).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER_VERTICAL
@@ -61,11 +63,13 @@ internal class XBreakOverlay(private val service: AccessibilityService, private 
     }, LinearLayout.LayoutParams(-1, -2))
     manager.addView(body, WindowManager.LayoutParams(-1, -1, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT))
     root = body
+    mode = requestedMode
   }
 
   fun hide() {
     val existingRoot = root
     root = null
+    mode = null
     existingRoot?.let {
       try {
         manager.removeView(it)

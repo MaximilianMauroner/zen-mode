@@ -20,7 +20,7 @@ internal class EnforcementStateMachine(private val cooldownMs: Long = 900) {
     }
     val wasObserved = viewerObserved
     viewerObserved = true
-    if (pagerTransitionIndex != null && wasObserved && firstPage == null) {
+    if (pagerTransitionIndex != null && pagerTransitionIndex > 0 && wasObserved && firstPage == null) {
       return leaveShorts(nowMs)
     }
     if (pageIndex == null || pageIndex < 0) return EnforcementAction.NONE

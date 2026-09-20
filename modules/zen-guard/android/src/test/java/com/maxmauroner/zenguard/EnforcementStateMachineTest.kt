@@ -43,4 +43,10 @@ class EnforcementStateMachineTest {
     assertEquals(EnforcementAction.LEAVE_SHORTS, state.next(true, 1, 100, pagerTransitionIndex = 1))
   }
 
+  @Test fun aSettledPagerIndexZeroProvesAReverseTransitionFromAKnownBaseline() {
+    val state = EnforcementStateMachine()
+    assertEquals(EnforcementAction.NONE, state.next(true, 7, 0, pagerTransitionIndex = 7))
+    assertEquals(EnforcementAction.LEAVE_SHORTS, state.next(true, 0, 100, pagerTransitionIndex = 0))
+  }
+
 }

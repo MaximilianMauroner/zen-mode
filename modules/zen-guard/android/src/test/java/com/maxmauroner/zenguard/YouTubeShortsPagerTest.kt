@@ -21,7 +21,7 @@ class YouTubeShortsPagerTest {
     assertNull(YouTubeShortsPager.stablePageIndex(true, "com.google.android.youtube:id/reel_progress_bar", 8, 8, 1))
     assertNull(YouTubeShortsPager.stablePageIndex(true, null, 8, 8, 1))
     assertNull(YouTubeShortsPager.stablePageIndex(true, "com.google.android.youtube:id/reel_recycler", -1, -1, 1))
-    assertNull(YouTubeShortsPager.stablePageIndex(true, "com.google.android.youtube:id/reel_recycler", 0, 0, 0))
+    assertEquals(0, YouTubeShortsPager.stablePageIndex(true, "com.google.android.youtube:id/reel_recycler", 0, 0, 0))
     assertNull(YouTubeShortsPager.stablePageIndex(true, "com.google.android.youtube:id/reel_recycler", 0, 0, -1))
   }
 

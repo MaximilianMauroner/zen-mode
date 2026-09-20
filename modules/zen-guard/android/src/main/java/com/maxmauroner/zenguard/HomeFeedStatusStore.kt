@@ -245,7 +245,7 @@ internal object HomeFeedStatusCodec {
       HomeFeedStatusKeys.USED_MS,
       0L,
       HOME_FEED_MAX_SAFE_USAGE_MS,
-      allowMissing = legacy,
+      allowMissing = false,
     ) ?: return HomeFeedStatusDecode(unavailableStatus())
     val blockedUntil = readValueLong(
       values,
@@ -253,7 +253,7 @@ internal object HomeFeedStatusCodec {
       HomeFeedStatusKeys.BLOCKED_UNTIL_ELAPSED,
       0L,
       HOME_FEED_MAX_SAFE_TIMESTAMP_MS,
-      allowMissing = legacy,
+      allowMissing = false,
     ) ?: return HomeFeedStatusDecode(unavailableStatus())
     val state = readValueInt(
       values,

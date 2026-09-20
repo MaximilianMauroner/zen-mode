@@ -148,8 +148,11 @@ internal class InstagramGuardStateMachine(
     storageUnavailable = true
     homeLastActiveAt = null
     homeBlockedUntil = null
-    blocker = null
-    blockedSurface = null
+    // A Home accounting failure must not dismiss an unrelated Reels or Explore intervention.
+    if (blocker?.reason == InstagramBlockReason.HOME_LIMIT) {
+      blocker = null
+      blockedSurface = null
+    }
   }
 
   /** Starts a new measurable Home interval after storage has accepted a fresh observation. */

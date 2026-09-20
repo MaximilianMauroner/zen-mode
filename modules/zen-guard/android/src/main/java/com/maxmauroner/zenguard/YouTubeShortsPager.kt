@@ -12,6 +12,7 @@ internal class YouTubeShortsPager {
   private val reelPagerId = "reel_recycler"
   private var transitionInProgress = false
   private var settledPageIndex: Int? = null
+  private var transitionOriginIndex: Int? = null
 
   fun stablePageIndex(
     isViewScrolled: Boolean,
@@ -27,6 +28,7 @@ internal class YouTubeShortsPager {
     if (!isPager) return null
     if (fromIndex != toIndex) {
       transitionInProgress = true
+      transitionOriginIndex = settledPageIndex ?: fromIndex
       return null
     }
     if (!transitionInProgress) {
@@ -34,7 +36,8 @@ internal class YouTubeShortsPager {
       return null
     }
     transitionInProgress = false
-    val previous = settledPageIndex
+    val previous = transitionOriginIndex
+    transitionOriginIndex = null
     settledPageIndex = fromIndex
     return if (previous != null && previous != fromIndex) fromIndex else null
   }
@@ -42,5 +45,6 @@ internal class YouTubeShortsPager {
   fun reset() {
     transitionInProgress = false
     settledPageIndex = null
+    transitionOriginIndex = null
   }
 }

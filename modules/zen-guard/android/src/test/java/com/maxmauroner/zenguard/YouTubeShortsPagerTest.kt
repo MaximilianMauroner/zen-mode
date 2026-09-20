@@ -7,7 +7,6 @@ import org.junit.Test
 class YouTubeShortsPagerTest {
   @Test fun returnsTheSettledPageOwnedByThePager() {
     val detector = YouTubeShortsPager()
-    assertNull(detector.stablePageIndex(true, "com.google.android.youtube:id/reel_recycler", 6, 6, 0))
     assertNull(detector.stablePageIndex(true, "com.google.android.youtube:id/reel_recycler", 6, 7, 1))
     assertEquals(7, detector.stablePageIndex(
       isViewScrolled = true,

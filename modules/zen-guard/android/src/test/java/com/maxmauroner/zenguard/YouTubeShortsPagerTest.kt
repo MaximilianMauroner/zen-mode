@@ -11,7 +11,7 @@ class YouTubeShortsPagerTest {
       sourceViewId = "com.google.android.youtube:id/reel_recycler",
       fromIndex = 7,
       toIndex = 7,
-      scrollDeltaY = 1,
+      scrollY = 1,
     ))
   }
 
@@ -22,6 +22,7 @@ class YouTubeShortsPagerTest {
     assertNull(YouTubeShortsPager.stablePageIndex(true, null, 8, 8, 1))
     assertNull(YouTubeShortsPager.stablePageIndex(true, "com.google.android.youtube:id/reel_recycler", -1, -1, 1))
     assertNull(YouTubeShortsPager.stablePageIndex(true, "com.google.android.youtube:id/reel_recycler", 0, 0, 0))
+    assertNull(YouTubeShortsPager.stablePageIndex(true, "com.google.android.youtube:id/reel_recycler", 0, 0, -1))
   }
 
   @Test fun pagerFixtureBlocksOnlyAfterACompletedPageTransition() {

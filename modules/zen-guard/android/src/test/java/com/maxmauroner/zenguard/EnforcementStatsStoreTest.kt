@@ -72,15 +72,38 @@ class EnforcementStatsStoreTest {
     assertEquals(0L, EnforcementStatsStore(preferences).snapshot().total)
   }
 
+  @Test
+  fun `snapshot uses one coherent preferences image across store instances`() {
+    val preferences = MemoryPreferences()
+    EnforcementStatsStore(preferences).record(EnforcementReason.X_HOME, "lockout:1", nowMs = 10_000L)
+    preferences.getAllCalls = 0
+    preferences.getLongCalls = 0
+
+    val snapshot = EnforcementStatsStore(preferences).snapshot()
+
+    assertEquals(1, preferences.getAllCalls)
+    assertEquals(0, preferences.getLongCalls)
+    assertEquals(snapshot.total, snapshot.counts.values.sum())
+    assertEquals(10_000L, snapshot.lastEventAt)
+  }
+
   private class MemoryPreferences(private val commitSucceeds: Boolean = true) : SharedPreferences {
     private val values = mutableMapOf<String, Any?>()
+    var getAllCalls = 0
+    var getLongCalls = 0
 
-    override fun getAll(): MutableMap<String, *> = values.toMutableMap()
+    override fun getAll(): MutableMap<String, *> {
+      getAllCalls += 1
+      return values.toMutableMap()
+    }
     override fun getString(key: String?, defValue: String?): String? = values[key] as? String ?: defValue
     @Suppress("UNCHECKED_CAST")
     override fun getStringSet(key: String?, defValues: MutableSet<String>?): MutableSet<String>? = values[key] as? MutableSet<String> ?: defValues
     override fun getInt(key: String?, defValue: Int): Int = values[key] as? Int ?: defValue
-    override fun getLong(key: String?, defValue: Long): Long = values[key] as? Long ?: defValue
+    override fun getLong(key: String?, defValue: Long): Long {
+      getLongCalls += 1
+      return values[key] as? Long ?: defValue
+    }
     override fun getFloat(key: String?, defValue: Float): Float = values[key] as? Float ?: defValue
     override fun getBoolean(key: String?, defValue: Boolean): Boolean = values[key] as? Boolean ?: defValue
     override fun contains(key: String?): Boolean = values.containsKey(key)

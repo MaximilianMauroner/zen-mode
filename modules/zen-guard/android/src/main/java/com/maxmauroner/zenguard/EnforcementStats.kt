@@ -11,7 +11,6 @@ internal enum class EnforcementReason(val key: String) {
   INSTAGRAM_EXPLORE("instagram_explore"),
   X_HOME("x_home"),
   X_VIDEOS("x_videos"),
-  TIKTOK_FEED("tiktok_feed"),
   BLOCKED_SITE("blocked_site"),
   APP_LIMIT("app_limit"),
   ROLLING_LIMIT("rolling_limit"),
@@ -51,12 +50,16 @@ internal class EnforcementStatsStore {
   }
 
   @Synchronized
-  fun record(reason: EnforcementReason, actionKey: String, nowMs: Long = System.currentTimeMillis()) {
-    if (actionKey.isBlank()) return
+  fun record(reason: EnforcementReason, actionKey: String, nowMs: Long = System.currentTimeMillis()): Boolean {
+    if (actionKey.isBlank()) return false
 
-    try {
-      if (!ensureCurrentSchema()) return
-      if (preferences.getString(KEY_LAST_ACTION, null) == actionKey) return
+    return try {
+      if (!ensureCurrentSchema()) return false
+      val reasonActionKey = reasonActionKey(reason)
+      val previousReasonAction = preferences.getString(reasonActionKey, null)
+      if (previousReasonAction == actionKey ||
+        (previousReasonAction == null && preferences.getString(KEY_LAST_ACTION, null) == actionKey)
+      ) return false
 
       val total = readLong(KEY_TOTAL)
       val categoryTotal = readLong(reason.key)
@@ -64,11 +67,14 @@ internal class EnforcementStatsStore {
         .putLong(KEY_TOTAL, increment(total))
         .putLong(reason.key, increment(categoryTotal))
         .putString(KEY_LAST_ACTION, actionKey)
+        .putString(reasonActionKey, actionKey)
         .putLong(KEY_LAST_EVENT_AT, nowMs.coerceAtLeast(0L))
         // Apply asynchronously so statistics can never hold up the service.
         .apply()
+      true
     } catch (_: RuntimeException) {
       // SharedPreferences corruption or I/O is not an enforcement failure.
+      false
     }
   }
 
@@ -78,10 +84,11 @@ internal class EnforcementStatsStore {
       if (!ensureCurrentSchema()) {
         EMPTY
       } else {
+        val values = preferences.all
         EnforcementStatsSnapshot(
-          total = readLong(KEY_TOTAL),
-          counts = EnforcementReason.values().associate { it.key to readLong(it.key) },
-          lastEventAt = readLong(KEY_LAST_EVENT_AT),
+          total = readLong(values, KEY_TOTAL),
+          counts = EnforcementReason.values().associate { it.key to readLong(values, it.key) },
+          lastEventAt = readLong(values, KEY_LAST_EVENT_AT),
         )
       }
     } catch (_: RuntimeException) {
@@ -120,6 +127,11 @@ internal class EnforcementStatsStore {
   } catch (_: ClassCastException) {
     0L
   }
+
+  private fun readLong(values: Map<String, *>, key: String): Long =
+    (values[key] as? Long)?.coerceAtLeast(0L) ?: 0L
+
+  private fun reasonActionKey(reason: EnforcementReason) = "${KEY_LAST_ACTION}_${reason.key}"
 
   private fun increment(value: Long): Long = if (value == Long.MAX_VALUE) value else value + 1L
 

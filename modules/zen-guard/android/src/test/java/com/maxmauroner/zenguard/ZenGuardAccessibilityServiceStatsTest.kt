@@ -169,6 +169,36 @@ class ZenGuardAccessibilityServiceStatsTest {
     assertEquals(1L, snapshot.counts[EnforcementReason.YOUTUBE_SHORTS.key])
   }
 
+  @Test
+  fun `Instagram dismissal resets the matching dedupe identity`() {
+    val fixture = fixture()
+    val service = fixture.service
+
+    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, false, true, EnforcementStatsOutcome.SUCCESS))
+    assertFalse(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, false, true, EnforcementStatsOutcome.SUCCESS))
+    service.resetInstagramStatsDedupe(InstagramBlockReason.EXPLORE)
+    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, false, true, EnforcementStatsOutcome.SUCCESS))
+
+    assertEquals(2L, fixture.store.snapshot().counts[EnforcementReason.INSTAGRAM_EXPLORE.key])
+  }
+
+  @Test
+  fun `X Home lockout identity survives service reconnection and unrelated stats`() {
+    val preferences = TestPreferences()
+    val firstStore = EnforcementStatsStore(preferences)
+    val firstService = ZenGuardAccessibilityService(firstStore)
+    assertTrue(firstService.recordXHomeStats(false, true, EnforcementStatsOutcome.SUCCESS, 9_000L))
+    assertTrue(firstService.recordXVideoStats("video:1", EnforcementStatsOutcome.SUCCESS))
+
+    val secondStore = EnforcementStatsStore(preferences)
+    val reconnectedService = ZenGuardAccessibilityService(secondStore)
+    assertFalse(reconnectedService.recordXHomeStats(false, true, EnforcementStatsOutcome.SUCCESS, 9_000L))
+
+    val snapshot = secondStore.snapshot()
+    assertEquals(2L, snapshot.total)
+    assertEquals(1L, snapshot.counts[EnforcementReason.X_HOME.key])
+  }
+
   private data class Fixture(
     val service: ZenGuardAccessibilityService,
     val store: EnforcementStatsStore,

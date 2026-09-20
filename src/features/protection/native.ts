@@ -1,8 +1,9 @@
-import ZenGuardModule, { type AdultSiteSettings, type AppLimit, type InstalledApp, type IntentApp, type RollingLimit, type ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
+import ZenGuardModule, { type AdultSiteSettings, type AppLimit, type EnforcementStats, type InstalledApp, type IntentApp, type RollingLimit, type ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
 
-export type { AdultSiteSettings, AppLimit, InstalledApp, IntentApp, RollingLimit, ZenGuardStatus };
+export type { AdultSiteSettings, AppLimit, EnforcementStats, InstalledApp, IntentApp, RollingLimit, ZenGuardStatus };
 
 export const getZenGuardStatus = () => ZenGuardModule.getStatus();
+export const getEnforcementStats = () => ZenGuardModule.getEnforcementStats();
 export const openAccessibilitySettings = () => ZenGuardModule.openAccessibilitySettings();
 export const openYouTube = () => ZenGuardModule.openYouTube();
 export const openInstagram = () => ZenGuardModule.openInstagram();

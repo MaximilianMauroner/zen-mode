@@ -626,7 +626,12 @@ class ZenGuardAccessibilityService : AccessibilityService() {
       return
     }
 
-    if (!instagramStorageAvailable && detection.surface == InstagramSurface.HOME_FEED) {
+    if (shouldRecoverInstagramStorage(
+        storageAvailable = instagramStorageAvailable,
+        surface = detection.surface,
+        isForeground = isScreenInteractive,
+      )
+    ) {
       if (homeFeedStatusStore.recoverInstagram(nowMs)) {
         instagramStorageAvailable = true
         instagramStateMachine.recoverStorage(nowMs)

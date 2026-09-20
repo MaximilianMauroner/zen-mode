@@ -14,6 +14,14 @@ class InstagramGuardStateMachineTest {
   )
 
   @Test
+  fun storageRecoveryRequiresForegroundHomeObservation() {
+    assertFalse(shouldRecoverInstagramStorage(false, InstagramSurface.HOME_FEED, false))
+    assertFalse(shouldRecoverInstagramStorage(false, InstagramSurface.REELS_VIEWER, true))
+    assertFalse(shouldRecoverInstagramStorage(true, InstagramSurface.HOME_FEED, true))
+    assertTrue(shouldRecoverInstagramStorage(false, InstagramSurface.HOME_FEED, true))
+  }
+
+  @Test
   fun dmVisitWithoutThreadClickDoesNotAuthorizeReels() {
     val state = InstagramGuardStateMachine()
     assertEquals(InstagramGuardAction.None, state.next(InstagramSurface.DIRECT_MESSAGES, false, 1_000, settings))

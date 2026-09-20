@@ -36,6 +36,10 @@ class ZenGuardModule : Module() {
         "protectionEnabled" to (preferences.protectionEnabled && preferences.hasCurrentConsent),
         "observationMode" to preferences.observationMode,
         "shortsEnabled" to preferences.shortsEnabled,
+        "youtubeHomeEnabled" to preferences.youtubeHomeEnabled,
+        "youtubeHomeObserved" to preferences.youtubeHomeObserved,
+        // Turn on only with captured fixtures and a verified Android enforcement action.
+        "youtubeHomeDetectionSupported" to false,
         "xHomeEnabled" to preferences.xHomeEnabled,
         "xVideosEnabled" to preferences.xVideosEnabled,
         "xHomeMinutes" to preferences.xHomeMinutes,
@@ -274,8 +278,11 @@ class ZenGuardModule : Module() {
       context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
-    AsyncFunction("setShortsEnabled") { enabled: Boolean ->
-      ZenGuardPreferences(requireNotNull(appContext.reactContext)).shortsEnabled = enabled
+    AsyncFunction("setYouTubeSettings") { shortsEnabled: Boolean, homeEnabled: Boolean ->
+      ZenGuardPreferences(requireNotNull(appContext.reactContext)).apply {
+        this.shortsEnabled = shortsEnabled
+        youtubeHomeEnabled = homeEnabled
+      }
     }
 
     /**

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getYouTubeDrawerGuidance, getYouTubeFeedReadiness } from '../src/features/protection/youtube-readiness.ts';
+import { getYouTubeDrawerGuidance, getYouTubeFeedReadiness, hasAllRequiredYouTubeSignals } from '../src/features/protection/youtube-readiness.ts';
 import { getFeedPresentation } from '../src/features/protection/feed-presentation.ts';
 
 const status = {
@@ -34,4 +34,17 @@ test('an observed Home signal does not make Shorts ready', () => {
   const inverse = { ...status, youtubeHomeObserved: true, lastDetectionAt: 0, observationMode: true };
   assert.equal(getYouTubeFeedReadiness(inverse, 'home'), 'ready');
   assert.equal(getYouTubeFeedReadiness(inverse, 'shorts'), 'awaiting');
+});
+
+test('Start requires every enabled YouTube feed to have a supported observed signal', () => {
+  assert.equal(hasAllRequiredYouTubeSignals(status), false, 'unsupported Home keeps mixed setup pending');
+  assert.equal(hasAllRequiredYouTubeSignals({ ...status, shortsEnabled: false }), false, 'disabled Shorts is not evidence for Home');
+  assert.equal(hasAllRequiredYouTubeSignals({ ...status, youtubeHomeEnabled: false }), true, 'observed enabled Shorts can start');
+  assert.equal(hasAllRequiredYouTubeSignals({
+    ...status,
+    shortsEnabled: false,
+    youtubeHomeDetectionSupported: true,
+    youtubeHomeObserved: true,
+  }), true, 'a supported observed enabled Home rule can start');
+  assert.equal(hasAllRequiredYouTubeSignals({ ...status, shortsEnabled: false, youtubeHomeEnabled: false }), false, 'no enabled rule cannot start');
 });

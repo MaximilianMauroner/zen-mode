@@ -283,6 +283,7 @@ class ZenGuardModule : Module() {
         this.shortsEnabled = shortsEnabled
         youtubeHomeEnabled = homeEnabled
       }
+      Unit
     }
 
     /**

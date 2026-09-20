@@ -107,6 +107,18 @@ test('disabled unobserved feeds do not create prompts', () => {
   assert.equal(getOverviewAction({ ...base, xHomeEnabled: false, xVideosEnabled: false, xSignalMask: 0 }, false), null);
 });
 
+test('unsupported Home-only YouTube does not hide actionable downstream setup', () => {
+  const homeOnly = {
+    ...base,
+    shortsEnabled: false,
+    youtubeHomeEnabled: true,
+    youtubeHomeObserved: false,
+    youtubeHomeDetectionSupported: false,
+    xSignalMask: 1,
+  };
+  assert.equal(getOverviewAction(homeOnly, false), 'set-up-x');
+});
+
 test('fresh native signal refresh clears the prompt', () => {
   const awaitingVideos = { ...base, xSignalMask: 1 };
   assert.equal(getOverviewAction(awaitingVideos, false), 'set-up-x');

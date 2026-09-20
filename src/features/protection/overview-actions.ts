@@ -26,7 +26,7 @@ export function getOverviewAction(status: ZenGuardStatus | null, hasReadError: b
 
   if ((status.shortsEnabled || status.youtubeHomeEnabled) && getSupportedAppAvailability(status, 'youtube') === 'installed') {
     if (status.youtubeHomeEnabled && status.youtubeHomeDetectionSupported && !status.youtubeHomeObserved) return 'check-youtube';
-    if (!isShortsReady(status)) return status.lastDetectionAt === 0 ? 'check-youtube' : 'limit-shorts';
+    if (status.shortsEnabled && !isShortsReady(status)) return status.lastDetectionAt === 0 ? 'check-youtube' : 'limit-shorts';
   }
   const instagramConfigured = status.instagramObservationMode || status.instagramSignalMask !== 0 || status.instagramExploreBlocked === true;
   if (instagramConfigured && getSupportedAppAvailability(status, 'instagram') === 'installed') {

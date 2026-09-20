@@ -10,6 +10,7 @@ import { getHomeFeedTimeLabel } from '@/features/protection/home-feed-time';
 import { isChangeBlocked } from '@/features/protection/lock';
 import { getXDrawerGuidance } from '@/features/protection/x-drawer-guidance';
 import { hasAllRequiredXSignals } from '@/features/protection/x-readiness';
+import { hasAllRequiredYouTubeSignals } from '@/features/protection/youtube-readiness';
 import { getSupportedAppAvailability, type SupportedAppKey } from '@/features/protection/target-availability';
 import { getFeedDrawerTargetPresentation } from '@/features/protection/feed-drawer-presentation';
 import { getZenGuardStatus, openInstagram, setInstagramObservationMode, setInstagramSettings, openX, openYouTube, setObservationMode, setYouTubeSettings, setXObservationMode, setXSettings, type ZenGuardStatus } from '@/features/protection/native';
@@ -33,7 +34,7 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
   const targetAvailability = getSupportedAppAvailability(status, targetApp);
   const observing = isInstagram ? status?.instagramObservationMode : isX ? status?.xObservationMode : status?.observationMode;
   const enabled = isInstagram ? true : isX ? status?.xHomeEnabled || status?.xVideosEnabled : status?.shortsEnabled || status?.youtubeHomeEnabled;
-  const detected = status && (isInstagram ? (status.instagramSignalMask & 3) === 3 : isX ? hasAllRequiredXSignals(status) : !status.shortsEnabled || status.lastDetectionAt > 0);
+  const detected = status && (isInstagram ? (status.instagramSignalMask & 3) === 3 : isX ? hasAllRequiredXSignals(status) : hasAllRequiredYouTubeSignals(status));
   const canStart = detected && status?.serviceEnabled && status.protectionEnabled;
   // After setup, a feed switched on later still needs its own signal. Say so,
   // rather than leaving the user with a rule that quietly enforces nothing.

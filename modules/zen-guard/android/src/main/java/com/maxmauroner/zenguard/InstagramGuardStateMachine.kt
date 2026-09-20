@@ -16,6 +16,12 @@ internal enum class InstagramBlockReason {
   EXPLORE,
 }
 
+internal fun shouldRecoverInstagramStorage(
+  storageAvailable: Boolean,
+  surface: InstagramSurface,
+  isForeground: Boolean,
+): Boolean = !storageAvailable && isForeground && surface == InstagramSurface.HOME_FEED
+
 internal sealed interface InstagramGuardAction {
   data object None : InstagramGuardAction
   data class ShowBlocker(val reason: InstagramBlockReason, val continueAvailableAt: Long?) : InstagramGuardAction

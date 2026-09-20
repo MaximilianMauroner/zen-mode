@@ -96,6 +96,20 @@ class HomeFeedStatusStoreTest {
     assertEquals(journalCommits, persistence.integrityCommitCalls)
   }
 
+  @Test fun `unchanged policy does not skip a corrupted checksum`() {
+    val persistence = FakePersistence()
+    val statusStore = store(persistence, boot = 7L)
+    val runtime = HomeFeedRuntimeState(12_000L, null, capturedAtElapsedMs = 100L)
+    assertTrue(statusStore.recordX(runtime))
+    persistence.values[key(HomeFeedStatusKeys.CHECKSUM)] = Long.MIN_VALUE
+    val snapshotCommits = persistence.commitCalls
+
+    assertTrue(statusStore.recordX(runtime.copy(capturedAtElapsedMs = 200L)))
+
+    assertEquals(snapshotCommits + 1, persistence.commitCalls)
+    assertEquals(HomeFeedStorageState.AVAILABLE, store(persistence, boot = 7L).x(300L).storageState)
+  }
+
   @Test fun `reader waits for another store journal transaction`() {
     val persistence = FakePersistence()
     val writer = store(persistence, boot = 7L)
@@ -241,24 +255,25 @@ class HomeFeedStatusStoreTest {
     assertUnavailable(status)
   }
 
-  @Test fun `legacy scalar state migrates without restoring active usage`() {
-    val persistence = FakePersistence(
-      mapOf(
-        key(HomeFeedStatusKeys.BOOT_COUNT) to 7,
-        key(HomeFeedStatusKeys.USED_MS) to 12_000L,
-        key(HomeFeedStatusKeys.USAGE_STATE) to HomeFeedStatusCodec.STATE_ACTIVE,
-        key(HomeFeedStatusKeys.RESUME_AT_ELAPSED) to 100L,
-        key(HomeFeedStatusKeys.BLOCKED_UNTIL_ELAPSED) to 0L,
-        key(HomeFeedStatusKeys.LEGACY_BLOCKED_UNTIL_WALL) to 9_999_999L,
-      ),
-    )
+  @Test fun `released legacy scalar state migrates as paused usage`() {
+    val persistence = FakePersistence(validLegacyValues().toMutableMap().apply {
+      this[key(HomeFeedStatusKeys.USED_MS)] = 12_000L
+    })
 
     val status = store(persistence, boot = 7L).x(200L)
 
-    assertEquals(HomeFeedUsageState.UNKNOWN, status.usageState)
+    assertEquals(HomeFeedUsageState.PAUSED, status.usageState)
     assertEquals(HomeFeedStorageState.AVAILABLE, status.storageState)
     assertEquals(HomeFeedStatusCodec.CURRENT_FORMAT_VERSION, persistence.values[key(HomeFeedStatusKeys.FORMAT_VERSION)])
     assertFalse(persistence.values.containsKey(key(HomeFeedStatusKeys.LEGACY_BLOCKED_UNTIL_WALL)))
+  }
+
+  @Test fun `intermediate-only fields make an unversioned snapshot unavailable`() {
+    val values = validLegacyValues().toMutableMap().apply {
+      this[key(HomeFeedStatusKeys.USAGE_STATE)] = HomeFeedStatusCodec.STATE_ACTIVE
+    }
+
+    assertUnavailable(store(FakePersistence(values), boot = 7L).x(200L))
   }
 
   @Test fun `missing boot count is unavailable and changed boot is unknown`() {
@@ -286,23 +301,15 @@ class HomeFeedStatusStoreTest {
     assertEquals(HomeFeedStorageState.AVAILABLE, afterReboot.storageState)
   }
 
-  @Test fun `reboot lockout is unknown for both forward and backward wall clock values`() {
-    fun decodeWithLegacyWall(wallMs: Long): HomeFeedStatus {
-      val values = validLegacyValues().toMutableMap().apply {
-        this[key(HomeFeedStatusKeys.BLOCKED_UNTIL_ELAPSED)] = 1_000L
-        this[key(HomeFeedStatusKeys.LEGACY_BLOCKED_UNTIL_WALL)] = wallMs
-      }
-      return store(FakePersistence(values), boot = 8L).x(500L)
+  @Test fun `released legacy monotonic lockout becomes unknown after reboot`() {
+    val values = validLegacyValues().toMutableMap().apply {
+      this[key(HomeFeedStatusKeys.BLOCKED_UNTIL_ELAPSED)] = 1_000L
     }
+    val status = store(FakePersistence(values), boot = 8L).x(500L)
 
-    val forward = decodeWithLegacyWall(Long.MAX_VALUE / 2L)
-    val backward = decodeWithLegacyWall(1L)
-
-    assertEquals(HomeFeedLockoutState.UNKNOWN, forward.lockoutState)
-    assertEquals(HomeFeedUsageState.UNKNOWN, forward.usageState)
-    assertEquals(forward.lockoutState, backward.lockoutState)
-    assertEquals(forward.usageState, backward.usageState)
-    assertEquals(null, forward.blockedUntilElapsedMs)
+    assertEquals(HomeFeedLockoutState.UNKNOWN, status.lockoutState)
+    assertEquals(HomeFeedUsageState.UNKNOWN, status.usageState)
+    assertEquals(null, status.blockedUntilElapsedMs)
   }
 
   @Test fun `same boot lockout uses monotonic deadline and expiry persists clean state`() {
@@ -357,8 +364,6 @@ class HomeFeedStatusStoreTest {
   private fun validLegacyValues(): Map<String, Any?> = mapOf(
     key(HomeFeedStatusKeys.BOOT_COUNT) to 7,
     key(HomeFeedStatusKeys.USED_MS) to 60_000L,
-    key(HomeFeedStatusKeys.USAGE_STATE) to HomeFeedStatusCodec.STATE_PAUSED,
-    key(HomeFeedStatusKeys.RESUME_AT_ELAPSED) to 0L,
     key(HomeFeedStatusKeys.BLOCKED_UNTIL_ELAPSED) to 0L,
   )
 

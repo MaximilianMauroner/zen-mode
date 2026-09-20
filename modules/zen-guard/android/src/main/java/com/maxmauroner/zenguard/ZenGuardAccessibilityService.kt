@@ -532,7 +532,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
       }
       XAction.NONE -> if (surface != XSurface.UNKNOWN) xOverlay.hide()
     }
-    publishXHomeStatus(showUnavailableOnFailure = surface == XSurface.HOME)
+    publishXHomeStatus(showUnavailableOnFailure = surface == XSurface.HOME && settings.homeEnabled)
   }
 
   /** X's observed pager is the full-screen scroll node two levels under VideoTab. */

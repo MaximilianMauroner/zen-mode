@@ -61,6 +61,19 @@ class XGuardStateMachineTest {
     assertEquals(60_000L, guard.homeRuntimeState(60_000L).usedMs)
   }
 
+  @Test fun `a verified non-Home surface resets usage after an unknown tree`() {
+    val guard = XGuardStateMachine()
+    val settings = XSettings(homeAllowanceMs = 120L)
+
+    guard.next(XSurface.HOME, 0L, settings)
+    guard.next(XSurface.UNKNOWN, 60L, settings)
+    guard.next(XSurface.VIDEO, 70L, settings)
+    guard.next(XSurface.HOME, 80L, settings)
+
+    assertEquals(XAction.NONE, guard.next(XSurface.HOME, 140L, settings))
+    assertEquals(60L, guard.homeRuntimeState(140L).usedMs)
+  }
+
   @Test fun `a restored active Home snapshot waits for a fresh observation`() {
     val settings = XSettings(homeAllowanceMs = 300_000L)
     val beforeRestart = XGuardStateMachine()
@@ -90,7 +103,7 @@ class XGuardStateMachineTest {
     assertEquals(XAction.NONE, afterRestart.next(XSurface.HOME, 3_660_000L, settings))
   }
 
-  @Test fun `an unverifiable service gap is not charged before fresh Home observation`() {
+  @Test fun `a verified non-Home surface ends a restored Home visit`() {
     val settings = XSettings(homeAllowanceMs = 300_000L)
     val beforeRestart = XGuardStateMachine()
     beforeRestart.next(XSurface.HOME, 0L, settings)
@@ -99,12 +112,12 @@ class XGuardStateMachineTest {
     restored.restore(beforeRestart.homeRuntimeState(60_000L), 60_000L)
 
     assertEquals(XAction.NONE, restored.next(XSurface.OTHER, 600_000L, settings))
-    assertEquals(HomeFeedUsageState.UNKNOWN, restored.homeRuntimeState(600_000L).usageState)
-    assertEquals(60_000L, restored.homeRuntimeState(600_000L).usedMs)
+    assertEquals(HomeFeedUsageState.PAUSED, restored.homeRuntimeState(600_000L).usageState)
+    assertEquals(0L, restored.homeRuntimeState(600_000L).usedMs)
     assertEquals(XAction.NONE, restored.next(XSurface.HOME, 600_001L, settings))
-    assertEquals(60_000L, restored.homeRuntimeState(600_001L).usedMs)
+    assertEquals(0L, restored.homeRuntimeState(600_001L).usedMs)
     restored.next(XSurface.HOME, 660_001L, settings)
-    assertEquals(120_000L, restored.homeRuntimeState(660_001L).usedMs)
+    assertEquals(60_000L, restored.homeRuntimeState(660_001L).usedMs)
   }
 
   @Test fun `an unverifiable reboot lockout blocks without trusting wall time`() {

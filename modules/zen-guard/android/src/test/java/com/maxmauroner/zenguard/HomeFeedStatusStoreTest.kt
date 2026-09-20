@@ -312,6 +312,34 @@ class HomeFeedStatusStoreTest {
     assertEquals(null, status.blockedUntilElapsedMs)
   }
 
+  @Test fun `unknown lockout remains unknown across subsequent reboots`() {
+    val persistence = FakePersistence()
+    assertTrue(store(persistence, boot = 7L).recordX(
+      HomeFeedRuntimeState(
+        usedMs = 60_000L,
+        blockedUntilElapsedMs = 3_660_000L,
+        lockoutState = HomeFeedLockoutState.ACTIVE,
+        capturedAtElapsedMs = 60_000L,
+      ),
+    ))
+
+    val firstReboot = store(persistence, boot = 8L).x(100L)
+    assertEquals(HomeFeedLockoutState.UNKNOWN, firstReboot.lockoutState)
+    assertTrue(store(persistence, boot = 8L).recordX(
+      HomeFeedRuntimeState(
+        usedMs = firstReboot.usedMs,
+        blockedUntilElapsedMs = null,
+        usageState = firstReboot.usageState,
+        lockoutState = firstReboot.lockoutState,
+        capturedAtElapsedMs = 100L,
+      ),
+    ))
+
+    val secondReboot = store(persistence, boot = 9L).x(100L)
+    assertEquals(HomeFeedLockoutState.UNKNOWN, secondReboot.lockoutState)
+    assertEquals(HomeFeedUsageState.UNKNOWN, secondReboot.usageState)
+  }
+
   @Test fun `same boot lockout uses monotonic deadline and expiry persists clean state`() {
     val persistence = FakePersistence()
     val writer = store(persistence, boot = 7L)

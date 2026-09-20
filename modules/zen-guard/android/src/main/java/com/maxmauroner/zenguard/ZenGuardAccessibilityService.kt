@@ -553,6 +553,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     val advanced = pager != null && event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED &&
       source != null && XVideoAdvanceDetector.isAdvance(
         XVideoScrollSignal(
+          sourceIsPager = isXVideoPager(source),
           sourceOwnedByPager = isXVideoPagerOrDescendant(source),
           scrollY = event.scrollY,
           fromIndex = event.fromIndex,

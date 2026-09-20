@@ -206,6 +206,7 @@ class XGuardStateMachineTest {
       true,
       XVideoAdvanceDetector.isAdvance(
         XVideoScrollSignal(
+          sourceIsPager = false,
           sourceOwnedByPager = true,
           scrollY = 0,
           fromIndex = 0,
@@ -217,10 +218,11 @@ class XGuardStateMachineTest {
 
   @Test fun `video advance detector fails open without pager ownership or forward evidence`() {
     val signals = listOf(
-      XVideoScrollSignal(sourceOwnedByPager = false, scrollY = 20, fromIndex = 0, toIndex = 1),
-      XVideoScrollSignal(sourceOwnedByPager = true, scrollY = 0, fromIndex = -1, toIndex = -1),
-      XVideoScrollSignal(sourceOwnedByPager = true, scrollY = 0, fromIndex = 1, toIndex = 1),
-      XVideoScrollSignal(sourceOwnedByPager = true, scrollY = 0, fromIndex = 1, toIndex = 0),
+      XVideoScrollSignal(sourceIsPager = false, sourceOwnedByPager = false, scrollY = 20, fromIndex = 0, toIndex = 1),
+      XVideoScrollSignal(sourceIsPager = false, sourceOwnedByPager = true, scrollY = 20, fromIndex = -1, toIndex = -1),
+      XVideoScrollSignal(sourceIsPager = false, sourceOwnedByPager = true, scrollY = 0, fromIndex = -1, toIndex = -1),
+      XVideoScrollSignal(sourceIsPager = false, sourceOwnedByPager = true, scrollY = 0, fromIndex = 1, toIndex = 1),
+      XVideoScrollSignal(sourceIsPager = false, sourceOwnedByPager = true, scrollY = 0, fromIndex = 1, toIndex = 0),
     )
 
     signals.forEach { assertEquals(false, XVideoAdvanceDetector.isAdvance(it)) }
@@ -231,6 +233,7 @@ class XGuardStateMachineTest {
       true,
       XVideoAdvanceDetector.isAdvance(
         XVideoScrollSignal(
+          sourceIsPager = true,
           sourceOwnedByPager = true,
           scrollY = 20,
           fromIndex = -1,

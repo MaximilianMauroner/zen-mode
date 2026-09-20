@@ -532,7 +532,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
       }
       XAction.NONE -> if (surface != XSurface.UNKNOWN) xOverlay.hide()
     }
-    publishXHomeStatus()
+    publishXHomeStatus(showUnavailableOnFailure = surface == XSurface.HOME)
   }
 
   /** X's observed pager is the full-screen scroll node two levels under VideoTab. */
@@ -781,7 +781,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     instagramStateMachine.markStorageUnavailable()
   }
 
-  private fun publishXHomeStatus() {
+  private fun publishXHomeStatus(showUnavailableOnFailure: Boolean = false) {
     if (!::homeFeedStatusStore.isInitialized || !xStorageAvailable) return
     val nowElapsedMs = SystemClock.elapsedRealtime()
     val runtime = xStateMachine.homeRuntimeState(nowElapsedMs)
@@ -792,7 +792,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     xStorageAvailable = false
     xHomeUsageState = HomeFeedUsageState.UNKNOWN
     xStateMachine.markStorageUnavailable()
-    if (::xOverlay.isInitialized) xOverlay.showUnavailable()
+    if (showUnavailableOnFailure && ::xOverlay.isInitialized) xOverlay.showUnavailable()
   }
 
   /**

@@ -480,6 +480,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       sourceViewId = event.source?.viewIdResourceName,
       fromIndex = event.fromIndex,
       toIndex = event.toIndex,
+      scrollDeltaY = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) event.scrollDeltaY else 0,
     )
     val pageIndex = page?.collectionItemInfo?.rowIndex ?: pagerTransitionIndex
     if (stateMachine.next(

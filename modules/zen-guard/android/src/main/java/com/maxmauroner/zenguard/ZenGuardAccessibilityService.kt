@@ -155,6 +155,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       onLeave = {
         if (canRunEnforcementAction()) {
           val reason = instagramBlockReason
+          resetInstagramStatsDedupe(reason)
           instagramStateMachine.leaveBlockedSurface()
           instagramBlockReason = null
           instagramOverlay.hide()
@@ -171,6 +172,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       },
       onOpenMessages = {
         if (canRunEnforcementAction()) {
+          resetInstagramStatsDedupe(instagramBlockReason)
           instagramStateMachine.leaveBlockedSurface()
           instagramBlockReason = null
           instagramOverlay.hide()
@@ -180,7 +182,10 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       onContinue = {
         if (canRunEnforcementAction()) {
           val continued = instagramStateMachine.continueReels(SystemClock.elapsedRealtime(), preferences.instagramSettings())
-          if (continued) dailyTally.recordContinue(System.currentTimeMillis())
+          if (continued) {
+            resetInstagramStatsDedupe(instagramBlockReason)
+            dailyTally.recordContinue(System.currentTimeMillis())
+          }
           continued
         } else false
       },
@@ -559,7 +564,8 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
         val wasShowing = xOverlay.isShowing
         xHomeUsageState = HomeFeedUsageState.PAUSED
         xOverlay.show(preferences.xHomeMinutes)
-        recordXHomeStats(wasShowing, xOverlay.isShowing, EnforcementStatsOutcome.SUCCESS)
+        val lockoutDeadline = xStateMachine.homeRuntimeState(nowMs).blockedUntilElapsedMs
+        recordXHomeStats(wasShowing, xOverlay.isShowing, EnforcementStatsOutcome.SUCCESS, lockoutDeadline)
       }
       XAction.HOME_UNAVAILABLE -> {
         xHomeUsageState = HomeFeedUsageState.UNKNOWN
@@ -883,12 +889,12 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     reason: EnforcementReason,
     outcome: EnforcementStatsOutcome,
     dedupeKey: String? = null,
+    durableActionKey: String? = null,
   ): Boolean {
     if (outcome != EnforcementStatsOutcome.SUCCESS) return false
     if (dedupeKey != null && statsDedupeKeys[reason] == dedupeKey) return false
     if (dedupeKey != null) statsDedupeKeys[reason] = dedupeKey
-    recordEnforcement(reason)
-    return true
+    return recordEnforcement(reason, durableActionKey)
   }
 
   internal fun recordYouTubeShortsStats(pageIndex: Int?, outcome: EnforcementStatsOutcome): Boolean {
@@ -900,9 +906,11 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     wasShowing: Boolean,
     overlayAttached: Boolean,
     outcome: EnforcementStatsOutcome,
+    lockoutDeadlineElapsedMs: Long? = null,
   ): Boolean {
     if (wasShowing || !overlayAttached) return false
-    return recordStatsAction(EnforcementReason.X_HOME, outcome, "overlay")
+    val durableKey = lockoutDeadlineElapsedMs?.takeIf { it >= 0L }?.let { "x_home_lockout:$it" }
+    return recordStatsAction(EnforcementReason.X_HOME, outcome, "overlay", durableKey)
   }
 
   internal fun recordXVideoStats(callbackKey: String, outcome: EnforcementStatsOutcome): Boolean =
@@ -955,15 +963,28 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     resetStatsDedupe(EnforcementReason.INSTAGRAM_EXPLORE)
   }
 
+  internal fun resetInstagramStatsDedupe(reason: InstagramBlockReason?) {
+    val statsReason = when (reason) {
+      InstagramBlockReason.REELS_ENTRY,
+      InstagramBlockReason.REELS_SWIPE,
+      InstagramBlockReason.REELS_WINDOW_EXPIRED,
+      -> EnforcementReason.INSTAGRAM_REELS
+      InstagramBlockReason.HOME_LIMIT -> EnforcementReason.INSTAGRAM_HOME
+      InstagramBlockReason.EXPLORE -> EnforcementReason.INSTAGRAM_EXPLORE
+      null -> return
+    }
+    resetStatsDedupe(statsReason)
+  }
+
   private fun clearStatsDedupeState() {
     statsDedupeKeys.clear()
   }
 
-  private fun recordEnforcement(reason: EnforcementReason) {
-    val store = enforcementStats ?: return
+  private fun recordEnforcement(reason: EnforcementReason, durableActionKey: String? = null): Boolean {
+    val store = enforcementStats ?: return false
     statsActionSequence = if (statsActionSequence == Long.MAX_VALUE) 1L else statsActionSequence + 1L
     val nowMs = System.currentTimeMillis()
-    store.record(reason, "${reason.key}:$nowMs:$statsActionSequence", nowMs)
+    return store.record(reason, durableActionKey ?: "${reason.key}:$nowMs:$statsActionSequence", nowMs)
   }
 
   /** Clear every in-memory action path without inspecting another app's screen. */

@@ -20,6 +20,7 @@ test('derives fixed protection counts and unknown categories', () => {
   assert.equal(getStatCount(stats, 'instagram_reels'), 0);
   assert.equal(getOtherStatCount(stats), 3);
   assert.equal(ENFORCEMENT_STAT_CATEGORIES.length >= 6, true);
+  assert.equal(ENFORCEMENT_STAT_CATEGORIES.some(({ key }) => key === 'tiktok_feed'), false);
 });
 
 test('normalizes malformed or fractional values for display', () => {

@@ -2,6 +2,22 @@ package com.maxmauroner.zenguard
 
 internal enum class XSurface { HOME, VIDEO, OTHER, UNKNOWN }
 internal enum class XAction { NONE, HOME_BREAK, HOME_UNAVAILABLE, LEAVE_VIDEO }
+internal data class XVideoScrollSignal(
+  val sourceOwnedByPager: Boolean,
+  val scrollY: Int,
+  val fromIndex: Int,
+  val toIndex: Int,
+)
+
+/** Converts only a pager-owned, forward scroll into a policy transition. */
+internal object XVideoAdvanceDetector {
+  fun isAdvance(signal: XVideoScrollSignal): Boolean {
+    if (!signal.sourceOwnedByPager) return false
+    val indexedAdvance = signal.fromIndex >= 0 && signal.toIndex > signal.fromIndex
+    return indexedAdvance || signal.scrollY > 0
+  }
+}
+
 internal data class XSettings(
   val homeEnabled: Boolean = true,
   val videosEnabled: Boolean = true,

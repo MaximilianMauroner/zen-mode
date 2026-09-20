@@ -201,6 +201,45 @@ class XGuardStateMachineTest {
     assertEquals(XAction.NONE, guard.next(XSurface.VIDEO, 7_200L, settings))
   }
 
+  @Test fun `pager child index transition detects a forward advance without scrollY`() {
+    assertEquals(
+      true,
+      XVideoAdvanceDetector.isAdvance(
+        XVideoScrollSignal(
+          sourceOwnedByPager = true,
+          scrollY = 0,
+          fromIndex = 0,
+          toIndex = 1,
+        ),
+      ),
+    )
+  }
+
+  @Test fun `video advance detector fails open without pager ownership or forward evidence`() {
+    val signals = listOf(
+      XVideoScrollSignal(sourceOwnedByPager = false, scrollY = 20, fromIndex = 0, toIndex = 1),
+      XVideoScrollSignal(sourceOwnedByPager = true, scrollY = 0, fromIndex = -1, toIndex = -1),
+      XVideoScrollSignal(sourceOwnedByPager = true, scrollY = 0, fromIndex = 1, toIndex = 1),
+      XVideoScrollSignal(sourceOwnedByPager = true, scrollY = 0, fromIndex = 1, toIndex = 0),
+    )
+
+    signals.forEach { assertEquals(false, XVideoAdvanceDetector.isAdvance(it)) }
+  }
+
+  @Test fun `legacy positive pager scroll remains a verified advance`() {
+    assertEquals(
+      true,
+      XVideoAdvanceDetector.isAdvance(
+        XVideoScrollSignal(
+          sourceOwnedByPager = true,
+          scrollY = 20,
+          fromIndex = -1,
+          toIndex = -1,
+        ),
+      ),
+    )
+  }
+
   @Test fun `Home and video rules can each be disabled independently`() {
     val guard = XGuardStateMachine()
     val settings = XSettings(homeEnabled = false, videosEnabled = true, homeAllowanceMs = 1L)

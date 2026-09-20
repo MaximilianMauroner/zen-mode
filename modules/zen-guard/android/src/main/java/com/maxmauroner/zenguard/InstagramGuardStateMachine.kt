@@ -16,6 +16,12 @@ internal enum class InstagramBlockReason {
   EXPLORE,
 }
 
+internal fun shouldRecoverInstagramStorage(
+  storageAvailable: Boolean,
+  surface: InstagramSurface,
+  isForeground: Boolean,
+): Boolean = !storageAvailable && isForeground && surface == InstagramSurface.HOME_FEED
+
 internal sealed interface InstagramGuardAction {
   data object None : InstagramGuardAction
   data class ShowBlocker(val reason: InstagramBlockReason, val continueAvailableAt: Long?) : InstagramGuardAction
@@ -61,6 +67,7 @@ internal class InstagramGuardStateMachine(
   private var homeElapsedMs = 0L
   private var homeLastActiveAt: Long? = null
   private var homeBlockedUntil: Long? = null
+  private var storageUnavailable = false
 
   private var blocker: InstagramGuardAction.ShowBlocker? = null
   private var blockedSurface: InstagramSurface? = null
@@ -129,28 +136,55 @@ internal class InstagramGuardStateMachine(
     blockedSurface = null
     reelsAllowedFromDm = true
     dmReelOpenedAt = null
-    reelsWindowUntil = nowMs + settings.reelsWindowMs
+    reelsWindowUntil = saturatingTimestampAdd(nowMs, settings.reelsWindowMs)
     return true
   }
 
   fun debugState(nowMs: Long): InstagramGuardDebugState = InstagramGuardDebugState(
     homeElapsedMs = homeElapsedMs,
-    reelsWindowRemainingMs = reelsWindowUntil?.let { (it - nowMs).coerceAtLeast(0L) },
-    dmProvenanceAgeMs = lastDmThreadClickAt?.let { (nowMs - it).coerceAtLeast(0L) },
+    reelsWindowRemainingMs = reelsWindowUntil?.let { deadline -> if (deadline > nowMs) deadline - nowMs else 0L },
+    dmProvenanceAgeMs = lastDmThreadClickAt?.let { elapsedMsSince(nowMs, it) },
     dmThreadActive = dmThreadActive,
     blockerReason = blocker?.reason,
   )
 
   fun homeElapsedMs(): Long = homeElapsedMs
 
+  fun markStorageUnavailable() {
+    storageUnavailable = true
+    homeLastActiveAt = null
+    homeBlockedUntil = null
+    // A Home accounting failure must not dismiss an unrelated Reels or Explore intervention.
+    if (blocker?.reason == InstagramBlockReason.HOME_LIMIT) {
+      blocker = null
+      blockedSurface = null
+    }
+  }
+
+  /** Starts a new measurable Home interval after storage has accepted a fresh observation. */
+  fun recoverStorage(nowMs: Long) {
+    storageUnavailable = false
+    homeElapsedMs = 0L
+    homeBlockedUntil = null
+    homeLastActiveAt = nowMs.coerceIn(0L, HOME_FEED_MAX_SAFE_TIMESTAMP_MS)
+    blocker = null
+    blockedSurface = null
+  }
+
   /** Snapshot for presentation only; enforcement continues to use the private state above. */
   fun homeRuntimeState(nowMs: Long): HomeFeedRuntimeState {
     val pendingMs = if (homeBlockedUntil == null) {
-      homeLastActiveAt?.let { (nowMs - it).coerceAtLeast(0L) } ?: 0L
+      homeLastActiveAt?.let { elapsedMsSince(nowMs, it) } ?: 0L
     } else {
       0L
     }
-    return HomeFeedRuntimeState(homeElapsedMs + pendingMs, homeBlockedUntil)
+    return HomeFeedRuntimeState(
+      usedMs = saturatingUsageAdd(homeElapsedMs, pendingMs),
+      blockedUntilElapsedMs = homeBlockedUntil,
+      usageState = if (homeLastActiveAt != null && homeBlockedUntil == null) HomeFeedUsageState.ACTIVE else HomeFeedUsageState.PAUSED,
+      storageState = if (storageUnavailable) HomeFeedStorageState.UNAVAILABLE else HomeFeedStorageState.AVAILABLE,
+      capturedAtElapsedMs = nowMs,
+    ).normalizedAt(nowMs)
   }
 
   /** Clears enforcement state when the service loses the Instagram app or a known surface. */
@@ -177,9 +211,9 @@ internal class InstagramGuardStateMachine(
    */
   fun onAppBackground(nowMs: Long? = null, settings: InstagramGuardSettings? = null) {
     if (homeBlockedUntil == null && nowMs != null) {
-      homeLastActiveAt?.let { homeElapsedMs += (nowMs - it).coerceAtLeast(0L) }
+      homeLastActiveAt?.let { homeElapsedMs = saturatingUsageAdd(homeElapsedMs, elapsedMsSince(nowMs, it)) }
       if (settings != null && homeElapsedMs >= settings.homeAllowanceMs) {
-        homeBlockedUntil = nowMs + settings.homeLockoutMs
+        homeBlockedUntil = saturatingTimestampAdd(nowMs, settings.homeLockoutMs)
       }
     }
     blocker = null
@@ -234,15 +268,15 @@ internal class InstagramGuardStateMachine(
     val windowUntil = reelsWindowUntil
     if (windowUntil != null) {
       return if (input.nowMs < windowUntil) InstagramGuardAction.None
-      else block(InstagramBlockReason.REELS_WINDOW_EXPIRED, input.nowMs + settings.waitMs)
+      else block(InstagramBlockReason.REELS_WINDOW_EXPIRED, saturatingTimestampAdd(input.nowMs, settings.waitMs))
     }
 
     if (!reelsAllowedFromDm) {
       val cameFromDmClick = lastDmThreadClickAt?.let { clickAt ->
-        input.nowMs - clickAt in 0..dmProvenanceMs
+        input.nowMs >= clickAt && elapsedMsSince(input.nowMs, clickAt) <= dmProvenanceMs
       } == true
       val cameFromActiveDmThread = dmThreadActive && dmThreadLostAt?.let { lostAt ->
-        input.nowMs - lostAt in 0..dmProvenanceMs
+        input.nowMs >= lostAt && elapsedMsSince(input.nowMs, lostAt) <= dmProvenanceMs
       } != false
       val cameFromDm = cameFromDmClick || cameFromActiveDmThread
       if (!cameFromDm) return block(InstagramBlockReason.REELS_ENTRY, null)
@@ -254,12 +288,12 @@ internal class InstagramGuardStateMachine(
 
     if (!input.reelPagerScrolled) return InstagramGuardAction.None
     val openedAt = dmReelOpenedAt
-    return if (openedAt != null && input.nowMs - openedAt <= reelEntryScrollGraceMs) {
+    return if (openedAt != null && input.nowMs >= openedAt && elapsedMsSince(input.nowMs, openedAt) <= reelEntryScrollGraceMs) {
       // ViewPager can emit a scroll while it settles on the first Reel. Give that automatic
       // transition a small grace window after the pager itself first becomes visible.
       InstagramGuardAction.None
     } else {
-      block(InstagramBlockReason.REELS_SWIPE, input.nowMs + settings.waitMs)
+      block(InstagramBlockReason.REELS_SWIPE, saturatingTimestampAdd(input.nowMs, settings.waitMs))
     }
   }
 
@@ -268,6 +302,10 @@ internal class InstagramGuardStateMachine(
     settings: InstagramGuardSettings,
   ): InstagramGuardAction {
     resetReelsProvenance()
+
+    // A failed durable write must not turn into a fresh allowance in this process. Keep the
+    // existing Home protection semantics fail-closed until a trustworthy state is restored.
+    if (storageUnavailable) return block(InstagramBlockReason.HOME_LIMIT, null)
 
     val blockedUntil = homeBlockedUntil
     if (blockedUntil != null) {
@@ -278,12 +316,12 @@ internal class InstagramGuardStateMachine(
 
     val previousActiveAt = homeLastActiveAt
     if (previousActiveAt != null) {
-      homeElapsedMs += (input.nowMs - previousActiveAt).coerceAtLeast(0L)
+      homeElapsedMs = saturatingUsageAdd(homeElapsedMs, elapsedMsSince(input.nowMs, previousActiveAt))
     }
     homeLastActiveAt = input.nowMs
 
     return if (homeElapsedMs >= settings.homeAllowanceMs) {
-      homeBlockedUntil = input.nowMs + settings.homeLockoutMs
+      homeBlockedUntil = saturatingTimestampAdd(input.nowMs, settings.homeLockoutMs)
       block(InstagramBlockReason.HOME_LIMIT, null)
     } else {
       InstagramGuardAction.None

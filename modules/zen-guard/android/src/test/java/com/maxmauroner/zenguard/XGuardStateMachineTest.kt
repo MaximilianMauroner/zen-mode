@@ -41,7 +41,7 @@ class XGuardStateMachineTest {
 
   @Test fun `other X surfaces end the Home session while unknown trees only pause it`() {
     val guard = XGuardStateMachine()
-    val settings = XSettings(homeAllowanceMs = 100L)
+    val settings = XSettings(homeAllowanceMs = 120L)
     guard.next(XSurface.HOME, 0L, settings)
     guard.next(XSurface.HOME, 60L, settings)
     guard.next(XSurface.UNKNOWN, 70L, settings)
@@ -49,6 +49,135 @@ class XGuardStateMachineTest {
     assertEquals(XAction.NONE, guard.next(XSurface.HOME, 330L, settings))
     guard.next(XSurface.VIDEO, 350L, settings)
     assertEquals(XAction.NONE, guard.next(XSurface.HOME, 500L, settings))
+  }
+
+  @Test fun `an unknown tree flushes the known Home interval before pausing`() {
+    val guard = XGuardStateMachine()
+    val settings = XSettings(homeAllowanceMs = 300_000L)
+
+    guard.next(XSurface.HOME, 0L, settings)
+    guard.next(XSurface.UNKNOWN, 60_000L, settings)
+
+    assertEquals(60_000L, guard.homeRuntimeState(60_000L).usedMs)
+  }
+
+  @Test fun `a verified non-Home surface resets usage after an unknown tree`() {
+    val guard = XGuardStateMachine()
+    val settings = XSettings(homeAllowanceMs = 120L)
+
+    guard.next(XSurface.HOME, 0L, settings)
+    guard.next(XSurface.UNKNOWN, 60L, settings)
+    guard.next(XSurface.VIDEO, 70L, settings)
+    guard.next(XSurface.HOME, 80L, settings)
+
+    assertEquals(XAction.NONE, guard.next(XSurface.HOME, 140L, settings))
+    assertEquals(60L, guard.homeRuntimeState(140L).usedMs)
+  }
+
+  @Test fun `a restored active Home snapshot waits for a fresh observation`() {
+    val settings = XSettings(homeAllowanceMs = 300_000L)
+    val beforeRestart = XGuardStateMachine()
+    beforeRestart.next(XSurface.HOME, 0L, settings)
+    beforeRestart.next(XSurface.HOME, 60_000L, settings)
+
+    val afterRestart = XGuardStateMachine()
+    afterRestart.restore(beforeRestart.homeRuntimeState(60_000L))
+
+    assertEquals(60_000L, afterRestart.homeRuntimeState(60_000L).usedMs)
+    afterRestart.next(XSurface.HOME, 120_000L, settings)
+    assertEquals(60_000L, afterRestart.homeRuntimeState(120_000L).usedMs)
+    afterRestart.next(XSurface.HOME, 180_000L, settings)
+    assertEquals(120_000L, afterRestart.homeRuntimeState(180_000L).usedMs)
+  }
+
+  @Test fun `a restored Home lockout cannot grant a new allowance`() {
+    val settings = XSettings(homeAllowanceMs = 60_000L)
+    val beforeRestart = XGuardStateMachine()
+    beforeRestart.next(XSurface.HOME, 0L, settings)
+    assertEquals(XAction.HOME_BREAK, beforeRestart.next(XSurface.HOME, 60_000L, settings))
+
+    val afterRestart = XGuardStateMachine()
+    afterRestart.restore(beforeRestart.homeRuntimeState(60_000L))
+
+    assertEquals(XAction.HOME_BREAK, afterRestart.next(XSurface.HOME, 61_000L, settings))
+    assertEquals(XAction.NONE, afterRestart.next(XSurface.HOME, 3_660_000L, settings))
+  }
+
+  @Test fun `a verified non-Home surface ends a restored Home visit`() {
+    val settings = XSettings(homeAllowanceMs = 300_000L)
+    val beforeRestart = XGuardStateMachine()
+    beforeRestart.next(XSurface.HOME, 0L, settings)
+    beforeRestart.next(XSurface.HOME, 60_000L, settings)
+    val restored = XGuardStateMachine()
+    restored.restore(beforeRestart.homeRuntimeState(60_000L), 60_000L)
+
+    assertEquals(XAction.NONE, restored.next(XSurface.OTHER, 600_000L, settings))
+    assertEquals(HomeFeedUsageState.PAUSED, restored.homeRuntimeState(600_000L).usageState)
+    assertEquals(0L, restored.homeRuntimeState(600_000L).usedMs)
+    assertEquals(XAction.NONE, restored.next(XSurface.HOME, 600_001L, settings))
+    assertEquals(0L, restored.homeRuntimeState(600_001L).usedMs)
+    restored.next(XSurface.HOME, 660_001L, settings)
+    assertEquals(60_000L, restored.homeRuntimeState(660_001L).usedMs)
+  }
+
+  @Test fun `an unverifiable reboot lockout blocks without trusting wall time`() {
+    val settings = XSettings(homeAllowanceMs = 60_000L, homeLockoutMs = 3_600_000L)
+    val restored = XGuardStateMachine()
+    restored.restore(
+      HomeFeedRuntimeState(
+        usedMs = 60_000L,
+        blockedUntilElapsedMs = null,
+        usageState = HomeFeedUsageState.PAUSED,
+        lockoutState = HomeFeedLockoutState.UNKNOWN,
+        capturedAtElapsedMs = 60_000L,
+      ),
+      60_000L,
+    )
+
+    assertEquals(XAction.HOME_UNAVAILABLE, restored.next(XSurface.HOME, 61_000L, settings))
+    assertEquals(HomeFeedLockoutState.UNKNOWN, restored.homeRuntimeState(61_000L).lockoutState)
+    assertEquals(XAction.NONE, restored.next(XSurface.HOME, 3_660_000L, settings))
+    assertEquals(0L, restored.homeRuntimeState(3_660_000L).usedMs)
+  }
+
+  @Test fun `expired lockout serializes as a clean post-lockout state`() {
+    val settings = XSettings(homeAllowanceMs = 60_000L, homeLockoutMs = 3_600_000L)
+    val guard = XGuardStateMachine()
+    guard.next(XSurface.HOME, 0L, settings)
+    assertEquals(XAction.HOME_BREAK, guard.next(XSurface.HOME, 60_000L, settings))
+
+    val expired = guard.homeRuntimeState(3_660_000L)
+    assertEquals(0L, expired.usedMs)
+    assertEquals(null, expired.blockedUntilElapsedMs)
+    assertEquals(HomeFeedLockoutState.NONE, expired.lockoutState)
+
+    val restored = XGuardStateMachine()
+    restored.restore(expired, 3_660_000L)
+    assertEquals(XAction.NONE, restored.next(XSurface.HOME, 3_660_001L, settings))
+  }
+
+  @Test fun `usage and lockout arithmetic saturates at safe bounds`() {
+    assertEquals(HOME_FEED_MAX_SAFE_USAGE_MS, saturatingUsageAdd(HOME_FEED_MAX_SAFE_USAGE_MS - 1L, Long.MAX_VALUE))
+    assertEquals(HOME_FEED_MAX_SAFE_TIMESTAMP_MS, saturatingTimestampAdd(HOME_FEED_MAX_SAFE_TIMESTAMP_MS, Long.MAX_VALUE))
+  }
+
+  @Test fun `storage failure blocks Home without disabling video protection`() {
+    val guard = XGuardStateMachine()
+    guard.markStorageUnavailable()
+
+    assertEquals(XAction.HOME_UNAVAILABLE, guard.next(XSurface.HOME, 1_000L, XSettings()))
+    assertEquals(XAction.LEAVE_VIDEO, guard.next(XSurface.VIDEO, 2_000L, XSettings(), videoPagerAdvanced = true))
+  }
+
+  @Test fun `fresh Home recovery starts from zero after storage failure`() {
+    val guard = XGuardStateMachine()
+    guard.markStorageUnavailable()
+
+    guard.recoverStorage(1_000L)
+
+    assertEquals(XAction.NONE, guard.next(XSurface.HOME, 1_000L, XSettings()))
+    assertEquals(0L, guard.homeRuntimeState(1_000L).usedMs)
+    assertEquals(HomeFeedStorageState.AVAILABLE, guard.homeRuntimeState(1_000L).storageState)
   }
 
   @Test fun `other X surfaces stay allowed during the Home lockout`() {

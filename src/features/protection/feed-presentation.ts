@@ -24,6 +24,9 @@ export function getFeedPresentation(status: ZenGuardStatus | null, feed: Feed, l
   const saved = feed === 'shorts' ? 'One Short per visit' : feed === 'reels' ? `${status.instagramWaitSeconds}s pause, ${status.instagramReelsMinutes}m viewing window` : feed === 'home' ? `${status.instagramHomeMinutes}m of home-feed viewing` : 'Block Explore';
   const reason = !status.serviceEnabled ? 'Android access is needed.' : !status.protectionEnabled ? 'Protection is paused.' : feed === 'shorts' ? !isShortsReady(status) ? 'Finish feed setup.' : null : status.instagramObservationMode || (status.instagramSignalMask & 3) !== 3 ? 'Finish feed setup.' : null;
   if (reason) return { statusLabel: 'Not running', detail: `Saved: ${saved}. ${reason}`, tone: 'neutral' as const };
+  if (feed === 'home' && status.instagramHomeUsageState === 'unknown') {
+    return { statusLabel: 'Unavailable', detail: `${saved}. Instagram Home usage could not be verified; wait for Zen Mode to reconnect.`, tone: 'neutral' as const };
+  }
   const detail = feed === 'shorts' ? 'Watch one Short. Scrolling to another is blocked.' : feed === 'reels' ? `Wait ${status.instagramWaitSeconds}s, then watch for ${status.instagramReelsMinutes}m.` : feed === 'home' ? `${status.instagramHomeMinutes}m of home-feed viewing.` : 'The Explore grid cannot open.';
   return { statusLabel: feed === 'explore' ? 'Blocked' : 'Limited', detail, tone: 'accent' as const };
 }
@@ -49,6 +52,9 @@ function xPresentation(status: ZenGuardStatus, feed: 'xHome' | 'xVideos') {
   if (getXFeedReadiness(status, feed === 'xHome' ? 'home' : 'videos') === 'awaiting') {
     const surface = feed === 'xHome' ? 'the Home feed' : 'one video';
     return { statusLabel: 'Check', detail: `Saved: ${saved}. Open ${surface} in X once to start.`, tone: neutral };
+  }
+  if (feed === 'xHome' && status.xHomeUsageState === 'unknown') {
+    return { statusLabel: 'Unavailable', detail: `${saved}. X Home usage could not be verified; leave X and wait for Zen Mode to reconnect.`, tone: neutral };
   }
   return { statusLabel: 'Limited', detail: `${saved}.`, tone: 'accent' as const };
 }

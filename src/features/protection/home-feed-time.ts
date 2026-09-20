@@ -12,6 +12,8 @@ export function getHomeFeedTimeLabel(status: ZenGuardStatus | null, feed: HomeFe
   if (feed === 'instagram' && status.instagramObservationMode) return null;
   // A feed that is not enforcing has no allowance to report.
   if (feed === 'x' && (status.xObservationMode || getXFeedReadiness(status, 'home') !== 'ready')) return null;
+  if (feed === 'x' && status.xHomeUsageState === 'unknown') return 'Time unavailable';
+  if (feed === 'instagram' && status.instagramHomeUsageState === 'unknown') return 'Time unavailable';
 
   const allowanceMinutes = feed === 'instagram' ? status.instagramHomeMinutes : status.xHomeMinutes;
   const usedMs = feed === 'instagram' ? status.instagramHomeUsedMs : status.xHomeUsedMs;

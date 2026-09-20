@@ -54,6 +54,17 @@ test('an observed X feed reports limited', () => {
   assert.equal(getFeedPresentation(active, 'xVideos').statusLabel, 'Limited');
 });
 
+test('unknown Home usage is unavailable per provider', () => {
+  assert.equal(getFeedPresentation({ ...active, instagramHomeUsageState: 'unknown' }, 'home').statusLabel, 'Unavailable');
+  assert.equal(getFeedPresentation({ ...active, xHomeUsageState: 'unknown' }, 'xHome').statusLabel, 'Unavailable');
+});
+
+test('X and Instagram Home usage states do not affect each other', () => {
+  assert.equal(getFeedPresentation({ ...active, instagramHomeUsageState: 'unknown' }, 'xHome').statusLabel, 'Limited');
+  assert.equal(getFeedPresentation({ ...active, xHomeUsageState: 'unknown' }, 'home').statusLabel, 'Limited');
+  assert.equal(getFeedPresentation({ ...active, xHomeUsageState: 'unknown' }, 'xVideos').statusLabel, 'Limited');
+});
+
 test('an X feed switched on after setup asks for its own signal', () => {
   // Home was observed during setup; Videos was switched on afterwards.
   const videosPending = { ...active, xSignalMask: 1 };

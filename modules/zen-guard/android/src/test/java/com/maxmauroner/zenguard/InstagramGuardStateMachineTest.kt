@@ -14,6 +14,14 @@ class InstagramGuardStateMachineTest {
   )
 
   @Test
+  fun storageRecoveryRequiresForegroundHomeObservation() {
+    assertFalse(shouldRecoverInstagramStorage(false, InstagramSurface.HOME_FEED, false))
+    assertFalse(shouldRecoverInstagramStorage(false, InstagramSurface.REELS_VIEWER, true))
+    assertFalse(shouldRecoverInstagramStorage(true, InstagramSurface.HOME_FEED, true))
+    assertTrue(shouldRecoverInstagramStorage(false, InstagramSurface.HOME_FEED, true))
+  }
+
+  @Test
   fun dmVisitWithoutThreadClickDoesNotAuthorizeReels() {
     val state = InstagramGuardStateMachine()
     assertEquals(InstagramGuardAction.None, state.next(InstagramSurface.DIRECT_MESSAGES, false, 1_000, settings))
@@ -217,6 +225,37 @@ class InstagramGuardStateMachineTest {
           nowMs = 4_000,
           reelPagerVisible = true,
           reelPagerScrolled = true,
+        ),
+        settings,
+      ),
+    )
+  }
+
+  @Test
+  fun homeStorageFailurePreservesActiveReelsBlocker() {
+    val state = InstagramGuardStateMachine()
+    state.next(InstagramSurface.DIRECT_MESSAGES, false, 1_000, settings, dmThreadClicked = true)
+    state.next(InstagramSurface.REELS_VIEWER, false, 2_000, settings, reelPagerVisible = true)
+    val blocker = state.next(
+      InstagramGuardInput(
+        surface = InstagramSurface.REELS_VIEWER,
+        nowMs = 4_000,
+        reelPagerVisible = true,
+        reelPagerScrolled = true,
+      ),
+      settings,
+    )
+    assertEquals(InstagramGuardAction.ShowBlocker(InstagramBlockReason.REELS_SWIPE, 34_000), blocker)
+
+    state.markStorageUnavailable()
+
+    assertEquals(
+      blocker,
+      state.next(
+        InstagramGuardInput(
+          surface = InstagramSurface.REELS_VIEWER,
+          nowMs = 5_000,
+          reelPagerVisible = true,
         ),
         settings,
       ),

@@ -16,6 +16,7 @@ export type ZenGuardStatus = {
   xHomeMinutes: number;
   xHomeUsedMs: number;
   xHomeBreakRemainingMs: number;
+  xHomeUsageState: 'active' | 'paused' | 'unknown';
   xObservationMode: boolean;
   xSignalMask: number;
   lastEventAt: number;
@@ -28,6 +29,7 @@ export type ZenGuardStatus = {
   instagramHomeMinutes: number;
   instagramHomeUsedMs: number;
   instagramHomeBreakRemainingMs: number;
+  instagramHomeUsageState: 'active' | 'paused' | 'unknown';
   instagramExploreBlocked: boolean;
   instagramLastDetectionAt: number;
   instagramDetectionCount: number;

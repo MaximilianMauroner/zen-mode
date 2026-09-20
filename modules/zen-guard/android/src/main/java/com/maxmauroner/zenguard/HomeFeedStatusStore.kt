@@ -300,7 +300,7 @@ internal object HomeFeedStatusCodec {
 
     val sameBoot = boot == currentBoot
     if (!sameBoot) {
-      val unresolvedLockout = blockedUntil > 0L || lockout == LOCKOUT_ACTIVE
+      val unresolvedLockout = blockedUntil > 0L || lockout == LOCKOUT_ACTIVE || lockout == LOCKOUT_UNKNOWN
       val status = HomeFeedStatus(
         usedMs = used,
         blockedUntilElapsedMs = null,

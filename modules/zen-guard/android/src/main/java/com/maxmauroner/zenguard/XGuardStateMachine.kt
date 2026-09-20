@@ -36,13 +36,10 @@ internal class XGuardStateMachine {
       unknownLockoutSinceMs = null
       homeObservationRequired = false
     } else if (surface != XSurface.HOME) {
-      if (homeObservationRequired) {
-        // Preserve already-consumed durable time while the surface is unverifiable. A later fresh
-        // Home observation starts a new measurable interval; it must not erase prior usage.
-        lastHomeAt = null
-      } else {
-        resetHomeSession()
-      }
+      // UNKNOWN preserves already-consumed time only until a known surface is observed. A verified
+      // non-Home surface ends the visit even when it follows an unverifiable transition tree.
+      resetHomeSession()
+      homeObservationRequired = false
     }
     if (surface != XSurface.VIDEO) lastVideoExitAt = null
     if (surface == XSurface.HOME && settings.homeEnabled) {

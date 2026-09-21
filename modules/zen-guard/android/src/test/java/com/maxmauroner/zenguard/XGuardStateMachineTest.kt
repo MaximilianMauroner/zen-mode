@@ -201,6 +201,20 @@ class XGuardStateMachineTest {
     assertEquals(XAction.NONE, guard.next(XSurface.VIDEO, 7_200L, settings))
   }
 
+  @Test fun `ordinary Home timeline scrolling never becomes a video exit`() {
+    val nodes = listOf(
+      NodeSignal(viewId = "scaffold_home_tabbed"),
+      NodeSignal(viewId = "VideoTab"),
+    )
+    val surface = XDetector.detect(nodes)
+    val guard = XGuardStateMachine()
+
+    assertEquals(XSurface.HOME, surface)
+    assertEquals(XAction.NONE, guard.next(surface, 0L, XSettings(), videoPagerAdvanced = true))
+    assertEquals(XAction.NONE, guard.next(surface, 1_000L, XSettings(), videoPagerAdvanced = true))
+    assertEquals(1_000L, guard.homeRuntimeState(1_000L).usedMs)
+  }
+
   @Test fun `pager child index transition detects a forward advance without scrollY`() {
     assertEquals(
       true,
@@ -297,6 +311,14 @@ class XGuardStateMachineTest {
     assertEquals(XSurface.HOME, XDetector.detect(listOf(NodeSignal(viewId = "scaffold_home_tabbed"))))
     assertEquals(XSurface.VIDEO, XDetector.detect(listOf(NodeSignal(viewId = "VideoTab"))))
     assertEquals(XSurface.OTHER, XDetector.detect(listOf(NodeSignal(viewId = "Search"))))
+    assertEquals(
+      XSurface.HOME,
+      XDetector.detect(listOf(NodeSignal(viewId = "VideoTab"), NodeSignal(viewId = "scaffold_home_tabbed"))),
+    )
+    assertEquals(
+      XSurface.OTHER,
+      XDetector.detect(listOf(NodeSignal(viewId = "VideoTab"), NodeSignal(viewId = "PostDetail"))),
+    )
     assertEquals(XSurface.UNKNOWN, XDetector.detect(listOf(NodeSignal(text = "VideoTab scaffold_home_tabbed"))))
   }
 }

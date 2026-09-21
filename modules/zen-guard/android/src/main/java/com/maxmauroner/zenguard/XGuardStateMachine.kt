@@ -246,9 +246,9 @@ internal class XGuardStateMachine {
 /** IDs observed in X's Compose accessibility tree. Post text is never a surface signal. */
 internal object XDetector {
   fun detect(nodes: List<NodeSignal>): XSurface = when {
-    nodes.any { it.viewId == "VideoTab" } -> XSurface.VIDEO
     nodes.any { it.viewId == "scaffold_home_tabbed" } -> XSurface.HOME
     nodes.any { it.viewId in setOf("Search", "PostDetail", "MainLanding") } -> XSurface.OTHER
+    nodes.any { it.viewId == "VideoTab" } -> XSurface.VIDEO
     else -> XSurface.UNKNOWN
   }
 }

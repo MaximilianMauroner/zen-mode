@@ -5,6 +5,7 @@ import { RECOMMENDED_DEFAULTS, RECOMMENDED_DEFAULTS_SUMMARY } from '../src/featu
 
 test('recommended defaults match the strict native feed rules', () => {
   assert.equal(RECOMMENDED_DEFAULTS.shortsEnabled, true);
+  assert.equal(RECOMMENDED_DEFAULTS.youtubeHomeEnabled, false);
   assert.equal(RECOMMENDED_DEFAULTS.xHomeEnabled, true);
   assert.equal(RECOMMENDED_DEFAULTS.xVideosEnabled, true);
   assert.equal(RECOMMENDED_DEFAULTS.xHomeMinutes, 5);

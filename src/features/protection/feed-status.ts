@@ -1,6 +1,7 @@
 import type { ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
 import { getBrowserReadiness, getSupportedAppAvailability, type PackageAvailability } from './target-availability.ts';
 import { getXFeedReadiness } from './x-readiness.ts';
+import { getYouTubeFeedReadiness } from './youtube-readiness.ts';
 
 /** A global switch does not mean every saved rule is ready to enforce. */
 export type FeedStatus =
@@ -43,6 +44,14 @@ export function getProtectionReadiness(status: ZenGuardStatus): ProtectionReadin
   };
 
   add(status.shortsEnabled, getSupportedAppAvailability(status, 'youtube'), isShortsReady(status));
+  if (status.youtubeHomeEnabled) {
+    if (!status.youtubeHomeDetectionSupported) {
+      result.enabled += 1;
+      result.unavailable += 1;
+    } else {
+      add(true, getSupportedAppAvailability(status, 'youtube'), getYouTubeFeedReadiness(status, 'home') === 'ready');
+    }
+  }
   add(status.xHomeEnabled, getSupportedAppAvailability(status, 'x'), !status.xObservationMode && getXFeedReadiness(status, 'home') === 'ready');
   add(status.xVideosEnabled, getSupportedAppAvailability(status, 'x'), !status.xObservationMode && getXFeedReadiness(status, 'videos') === 'ready');
 

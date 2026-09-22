@@ -10,9 +10,10 @@ import { getHomeFeedTimeLabel } from '@/features/protection/home-feed-time';
 import { isChangeBlocked } from '@/features/protection/lock';
 import { getXDrawerGuidance } from '@/features/protection/x-drawer-guidance';
 import { hasAllRequiredXSignals } from '@/features/protection/x-readiness';
+import { hasAllRequiredYouTubeSignals } from '@/features/protection/youtube-readiness';
 import { getSupportedAppAvailability, type SupportedAppKey } from '@/features/protection/target-availability';
 import { getFeedDrawerTargetPresentation } from '@/features/protection/feed-drawer-presentation';
-import { getZenGuardStatus, openInstagram, setInstagramObservationMode, setInstagramSettings, openX, openYouTube, setObservationMode, setShortsEnabled, setXObservationMode, setXSettings, type ZenGuardStatus } from '@/features/protection/native';
+import { getZenGuardStatus, openInstagram, setInstagramObservationMode, setInstagramSettings, openX, openYouTube, setObservationMode, setYouTubeSettings, setXObservationMode, setXSettings, type ZenGuardStatus } from '@/features/protection/native';
 
 export type FeedDrawer = 'youtube' | 'instagram' | 'x';
 type Props = { feed: FeedDrawer | null; onClose: () => void };
@@ -32,8 +33,8 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
   const targetApp: SupportedAppKey = isInstagram ? 'instagram' : isX ? 'x' : 'youtube';
   const targetAvailability = getSupportedAppAvailability(status, targetApp);
   const observing = isInstagram ? status?.instagramObservationMode : isX ? status?.xObservationMode : status?.observationMode;
-  const enabled = isInstagram ? true : isX ? status?.xHomeEnabled || status?.xVideosEnabled : status?.shortsEnabled;
-  const detected = status && (isInstagram ? (status.instagramSignalMask & 3) === 3 : isX ? hasAllRequiredXSignals(status) : status.lastDetectionAt > 0);
+  const enabled = isInstagram ? true : isX ? status?.xHomeEnabled || status?.xVideosEnabled : status?.shortsEnabled || status?.youtubeHomeEnabled;
+  const detected = status && (isInstagram ? (status.instagramSignalMask & 3) === 3 : isX ? hasAllRequiredXSignals(status) : hasAllRequiredYouTubeSignals(status));
   const canStart = detected && status?.serviceEnabled && status.protectionEnabled;
   // After setup, a feed switched on later still needs its own signal. Say so,
   // rather than leaving the user with a rule that quietly enforces nothing.
@@ -65,15 +66,15 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
       }
     })();
   };
-  const change = (next: Partial<Pick<ZenGuardStatus, 'xHomeEnabled' | 'xVideosEnabled' | 'xHomeMinutes' | 'shortsEnabled' | 'instagramWaitSeconds' | 'instagramReelsMinutes' | 'instagramHomeMinutes' | 'instagramExploreBlocked'>>) => run(async (fresh) => {
+  const change = (next: Partial<Pick<ZenGuardStatus, 'xHomeEnabled' | 'xVideosEnabled' | 'xHomeMinutes' | 'shortsEnabled' | 'youtubeHomeEnabled' | 'instagramWaitSeconds' | 'instagramReelsMinutes' | 'instagramHomeMinutes' | 'instagramExploreBlocked'>>) => run(async (fresh) => {
     const proposed = { ...fresh, ...next };
-    const weaker = (fresh.shortsEnabled && !proposed.shortsEnabled) || (fresh.xHomeEnabled && !proposed.xHomeEnabled) || (fresh.xVideosEnabled && !proposed.xVideosEnabled) || proposed.xHomeMinutes > fresh.xHomeMinutes ||
+    const weaker = (fresh.shortsEnabled && !proposed.shortsEnabled) || (fresh.youtubeHomeEnabled && !proposed.youtubeHomeEnabled) || (fresh.xHomeEnabled && !proposed.xHomeEnabled) || (fresh.xVideosEnabled && !proposed.xVideosEnabled) || proposed.xHomeMinutes > fresh.xHomeMinutes ||
       proposed.instagramWaitSeconds < fresh.instagramWaitSeconds || proposed.instagramReelsMinutes > fresh.instagramReelsMinutes ||
       proposed.instagramHomeMinutes > fresh.instagramHomeMinutes || (fresh.instagramExploreBlocked && !proposed.instagramExploreBlocked);
     if (weaker && await isChangeBlocked()) throw new Error('Settings are locked. Ask to unlock in the Lock tab.');
     if (isInstagram) await setInstagramSettings(proposed.instagramWaitSeconds, proposed.instagramReelsMinutes, proposed.instagramHomeMinutes, proposed.instagramExploreBlocked);
     else if (isX) await setXSettings(proposed.xHomeEnabled, proposed.xVideosEnabled, proposed.xHomeMinutes);
-    else await setShortsEnabled(proposed.shortsEnabled);
+    else await setYouTubeSettings(proposed.shortsEnabled, proposed.youtubeHomeEnabled);
   });
   const close = () => { if (!inFlight.current) onClose(); };
   const result = getFeedPresentation(status, isX ? 'xVideos' : 'shorts');
@@ -94,6 +95,11 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
               <RuleChoice label="X Home rule" limitedLabel="Take breaks" allowedLabel="No breaks" enabled={status?.xHomeEnabled === true} disabled={disabled} onChange={(value) => change({ xHomeEnabled: value })} />
               <Text className="text-[13px] text-muted">Break after</Text>
               <PresetRow label="X Home break interval" values={HOME_MINUTES} selected={status?.xHomeMinutes} suffix="m" disabled={disabled || !status?.xHomeEnabled} onSelect={(value) => change({ xHomeMinutes: value })} />
+            </View> : null}
+            {!isX && !isInstagram ? <View className="mb-5 gap-3">
+              <View className="flex-row items-center justify-between"><Text className="text-[15px] font-semibold text-copy">Home feed</Text><Text className="text-[12px] text-muted">{getFeedPresentation(status, 'youtubeHome').statusLabel}</Text></View>
+              <RuleChoice label="YouTube Home rule" limitedLabel="Block Home" allowedLabel="Allow Home" enabled={status?.youtubeHomeEnabled === true} disabled={disabled} onChange={(value) => change({ youtubeHomeEnabled: value })} />
+              <Text className="text-[13px] text-muted">Search, Subscriptions, library/history, channels, notifications, and opened videos stay available. Home blocking waits for a device-verified signal.</Text>
             </View> : null}
             {isInstagram ? <View className="gap-5">
               <View className="gap-3">
@@ -123,7 +129,10 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
               {isInstagram ? <Text className="text-[13px] text-muted">{detected ? '✓ Messages and Reels detected' : 'Open Direct Messages, then one Reel from a message. Return here when done.'}</Text> : isX ? <>
                 {status?.xHomeEnabled ? <Text className="text-[13px] text-muted">{xGuidance.initialAwaiting.includes('home') ? '○ Open the Home feed' : '✓ Home feed detected'}</Text> : null}
                 {status?.xVideosEnabled ? <Text className="text-[13px] text-muted">{xGuidance.initialAwaiting.includes('videos') ? '○ Open one video' : '✓ Video viewer detected'}</Text> : null}
-              </> : <Text className="text-[13px] text-muted">{detected ? '✓ Shorts detected' : 'Open one Short, then return here.'}</Text>}
+              </> : <>
+                {status?.youtubeHomeEnabled ? <Text className="text-[13px] text-muted">{status.youtubeHomeObserved ? '✓ Home feed detected' : status.youtubeHomeDetectionSupported ? '○ Open the Home feed once' : '○ Home detection awaits physical-device validation'}</Text> : null}
+                {status?.shortsEnabled ? <Text className="text-[13px] text-muted">{status.lastDetectionAt > 0 ? '✓ Shorts detected' : '○ Open one Short, then return here'}</Text> : null}
+              </>}
               {canStart ? <PrimaryButton title="Start protection" disabled={disabled} onPress={() => run(async () => { if (isInstagram) await setInstagramObservationMode(false); else if (isX) await setXObservationMode(false); else await setObservationMode(false); })} /> : detected ? <Text className="text-[13px] text-muted">Turn on protection and Android access in Settings.</Text> : null}
             </View> : null}
             {targetPresentation.showPostSetupGuidance ? <View className="mt-5 gap-2 border-t border-line pt-4">

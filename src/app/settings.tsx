@@ -64,6 +64,7 @@ export default function SettingsScreen() {
         <RowGroup>
           <Row label="Shorts detection" detail={status ? `${status.detectionCount} detections recorded` : 'Status unavailable'} value={status ? status.lastDetectionAt > 0 ? 'FOUND' : 'WAITING' : '—'} />
           <Row label="YouTube Shorts" {...getFeedPresentation(status, 'shorts', loading)} />
+          <Row label="YouTube home feed" {...getFeedPresentation(status, 'youtubeHome', loading)} />
           <Row label="Instagram checks" detail="Messages and a Reel opened from a message" value={status ? `${Number((status.instagramSignalMask & 1) !== 0) + Number((status.instagramSignalMask & 2) !== 0)}/2` : '—'} />
           <Row label="Instagram Reels" {...getFeedPresentation(status, 'reels', loading)} />
           <Row label="Instagram home feed" {...getFeedPresentation(status, 'home', loading)} />

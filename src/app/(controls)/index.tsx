@@ -72,7 +72,7 @@ export default function FeedsScreen() {
       case 'retry': return { title: 'Try again', run: refresh };
       case 'open-accessibility': return { title: 'Open Android settings', run: openAccessibilitySettings };
       case 'resume-protection': return { title: 'Resume protection', run: async () => { await setNativeProtectionEnabled(true); await refresh(); } };
-      case 'check-youtube': return { title: 'Check YouTube Shorts', run: openYouTube };
+      case 'check-youtube': return { title: 'Check YouTube feeds', run: openYouTube };
       case 'limit-shorts': return { title: 'Limit Shorts to one', run: async () => { await setObservationMode(false); await refresh(); } };
       case 'check-instagram': return { title: 'Check Instagram feeds', run: openInstagram };
       case 'start-instagram': return { title: 'Start Instagram protection', run: async () => { await setInstagramObservationMode(false); await refresh(); } };
@@ -97,7 +97,7 @@ export default function FeedsScreen() {
 
       <View className="gap-3">
         <RowGroup>
-          <Row icon={Play} label="YouTube" {...getFeedPresentation(status, 'shorts', loading)} onPress={() => setDrawer('youtube')} disabled={!editable} />
+          <Row icon={Play} label="YouTube" detail={`Home: ${getFeedPresentation(status, 'youtubeHome', loading).statusLabel} · Shorts: ${getFeedPresentation(status, 'shorts', loading).statusLabel}`} onPress={() => setDrawer('youtube')} disabled={!editable} />
           <Row icon={Clapperboard} label="Instagram" detail={`Reels: ${getFeedPresentation(status, 'reels', loading).statusLabel} · Home: ${instagramHomeTime ?? getFeedPresentation(status, 'home', loading).statusLabel} · Explore: ${getFeedPresentation(status, 'explore', loading).statusLabel}`} onPress={() => setDrawer('instagram')} disabled={!editable} />
           <Row icon={House} label="X" detail={`Home: ${xHomeTime ?? getFeedPresentation(status, 'xHome', loading).statusLabel} · Videos: ${getFeedPresentation(status, 'xVideos', loading).statusLabel}`} onPress={() => setDrawer('x')} disabled={!editable} />
           <Row

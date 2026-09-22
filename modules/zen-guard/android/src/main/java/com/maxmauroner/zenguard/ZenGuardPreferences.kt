@@ -31,6 +31,18 @@ internal class ZenGuardPreferences(context: Context) {
     get() = preferences.getBoolean("shorts_enabled", true)
     set(value) = preferences.edit().putBoolean("shorts_enabled", value).apply()
 
+  /** Defaults off: Home must not become active on upgrade before its signal is device-proven. */
+  var youtubeHomeEnabled: Boolean
+    get() = preferences.getBoolean(KEY_YOUTUBE_HOME_ENABLED, false)
+    set(value) = preferences.edit().putBoolean(KEY_YOUTUBE_HOME_ENABLED, value).apply()
+
+  val youtubeHomeObserved: Boolean
+    get() = preferences.getBoolean(KEY_YOUTUBE_HOME_OBSERVED, false)
+
+  fun recordYouTubeHomeObserved() {
+    preferences.edit().putBoolean(KEY_YOUTUBE_HOME_OBSERVED, true).apply()
+  }
+
   var xHomeEnabled: Boolean
     get() = preferences.getBoolean("x_home_enabled", true)
     set(value) = preferences.edit().putBoolean("x_home_enabled", value).apply()
@@ -129,6 +141,8 @@ internal class ZenGuardPreferences(context: Context) {
     private const val KEY_LAST_DETECTION_AT = "last_detection_at"
     private const val KEY_DETECTION_COUNT = "detection_count"
     private const val KEY_LAST_DETECTION_REASON = "last_detection_reason"
+    private const val KEY_YOUTUBE_HOME_ENABLED = "youtube_home_enabled"
+    private const val KEY_YOUTUBE_HOME_OBSERVED = "youtube_home_observed"
     private const val KEY_INSTAGRAM_OBSERVATION_MODE = "instagram_observation_mode"
     private const val KEY_INSTAGRAM_WAIT_SECONDS = "instagram_wait_seconds"
     private const val KEY_INSTAGRAM_REELS_MINUTES = "instagram_reels_minutes"

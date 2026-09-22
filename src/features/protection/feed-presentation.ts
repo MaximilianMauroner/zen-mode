@@ -1,26 +1,35 @@
 import type { ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
 import { getSupportedAppAvailability, type SupportedAppKey } from './target-availability.ts';
 import { getXFeedReadiness } from './x-readiness.ts';
+import { getYouTubeFeedReadiness } from './youtube-readiness.ts';
 
-type Feed = 'shorts' | 'reels' | 'home' | 'explore' | 'xHome' | 'xVideos';
+type Feed = 'youtubeHome' | 'shorts' | 'reels' | 'home' | 'explore' | 'xHome' | 'xVideos';
 
 /** Describe the effective result separately from a saved rule that cannot run. */
 export function getFeedPresentation(status: ZenGuardStatus | null, feed: Feed, loading = false) {
   if (!status) return { statusLabel: loading ? 'Checking' : 'Unavailable', detail: loading ? 'Reading the current status.' : 'The current status could not be read.', tone: 'neutral' as const };
   if (!status.available) return { statusLabel: 'Unavailable', detail: 'Feed protection needs the Android app.', tone: 'neutral' as const };
-  if ((feed === 'shorts' && !status.shortsEnabled) || (feed === 'xHome' && !status.xHomeEnabled) || (feed === 'xVideos' && !status.xVideosEnabled)) {
-    return { statusLabel: 'Allowed', detail: feed === 'xHome' ? 'No Home-feed breaks are set.' : 'Scrolling has no feed limit.', tone: 'neutral' as const };
+  if ((feed === 'youtubeHome' && !status.youtubeHomeEnabled) || (feed === 'shorts' && !status.shortsEnabled) || (feed === 'xHome' && !status.xHomeEnabled) || (feed === 'xVideos' && !status.xVideosEnabled)) {
+    return { statusLabel: 'Allowed', detail: feed === 'youtubeHome' ? 'The recommendation feed is allowed.' : feed === 'xHome' ? 'No Home-feed breaks are set.' : 'Scrolling has no feed limit.', tone: 'neutral' as const };
   }
   if (feed === 'explore' && !status.instagramExploreBlocked) {
     return { statusLabel: 'Allowed', detail: 'No Explore block is set.', tone: 'neutral' as const };
   }
-  const target = feed === 'shorts' ? 'youtube' : feed === 'xHome' || feed === 'xVideos' ? 'x' : 'instagram';
+  const target = feed === 'shorts' || feed === 'youtubeHome' ? 'youtube' : feed === 'xHome' || feed === 'xVideos' ? 'x' : 'instagram';
   const availability = getSupportedAppAvailability(status, target);
   if (availability === 'absent') return unavailableTarget('not installed', target);
   if (availability === 'disabled') return unavailableTarget('disabled in Android', target);
   if (availability === 'unknown') return unavailableTarget('availability could not be confirmed', target);
   if (availability === 'unavailable') return { statusLabel: 'Unavailable', detail: 'Feed protection needs the Android app.', tone: 'neutral' as const };
   if (feed === 'xHome' || feed === 'xVideos') return xPresentation(status, feed);
+  if (feed === 'youtubeHome') {
+    const saved = 'Block the Home recommendation feed';
+    if (!status.youtubeHomeDetectionSupported) return { statusLabel: 'Unavailable', detail: `Saved: ${saved}. This build has no device-verified Home signal, so no Home action will run.`, tone: 'neutral' as const };
+    if (!status.serviceEnabled) return { statusLabel: 'Not running', detail: `Saved: ${saved}. Android access is needed.`, tone: 'neutral' as const };
+    if (!status.protectionEnabled) return { statusLabel: 'Not running', detail: `Saved: ${saved}. Protection is paused.`, tone: 'neutral' as const };
+    if (getYouTubeFeedReadiness(status, 'home') === 'awaiting') return { statusLabel: 'Check', detail: `Saved: ${saved}. Device-verified Home detection is not available yet; no Home action will run.`, tone: 'neutral' as const };
+    return { statusLabel: 'Blocked', detail: 'The Home recommendation feed is blocked.', tone: 'accent' as const };
+  }
   const saved = feed === 'shorts' ? 'One Short per visit' : feed === 'reels' ? `${status.instagramWaitSeconds}s pause, ${status.instagramReelsMinutes}m viewing window` : feed === 'home' ? `${status.instagramHomeMinutes}m of home-feed viewing` : 'Block Explore';
   const reason = !status.serviceEnabled ? 'Android access is needed.' : !status.protectionEnabled ? 'Protection is paused.' : feed === 'shorts' ? !isShortsReady(status) ? 'Finish feed setup.' : null : status.instagramObservationMode || (status.instagramSignalMask & 3) !== 3 ? 'Finish feed setup.' : null;
   if (reason) return { statusLabel: 'Not running', detail: `Saved: ${saved}. ${reason}`, tone: 'neutral' as const };

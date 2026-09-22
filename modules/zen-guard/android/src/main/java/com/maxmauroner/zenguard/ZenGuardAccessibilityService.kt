@@ -28,6 +28,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   // Dedupe keys are in-memory lifecycle markers only. They are never persisted.
   private val statsDedupeKeys = mutableMapOf<EnforcementReason, String>()
   private val stateMachine = EnforcementStateMachine()
+  private val youtubeShortsPager = YouTubeShortsPager()
   private val xStateMachine = XGuardStateMachine()
   private var xHomeUsageState = HomeFeedUsageState.PAUSED
   private var xStorageAvailable = true
@@ -246,7 +247,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       YOUTUBE_PACKAGE -> {
         instagramNavigationSuppressedUntilMs = 0L
         clearInstagramEnforcement(preserveHomeSession = true)
-        handleYouTubeEvent()
+        handleYouTubeEvent(event)
       }
       INSTAGRAM_PACKAGE -> handleInstagramEvent(event)
       X_PACKAGE -> {
@@ -270,7 +271,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     if (statsDedupeKeys[EnforcementReason.ROLLING_LIMIT] != packageName) resetStatsDedupe(EnforcementReason.ROLLING_LIMIT)
     if (statsDedupeKeys[EnforcementReason.TIMED_VISIT] != packageName) resetStatsDedupe(EnforcementReason.TIMED_VISIT)
     usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())?.let(::bankUsage)
-    if (packageName != YOUTUBE_PACKAGE && packageName != this.packageName) stateMachine.reset()
+    if (packageName != YOUTUBE_PACKAGE && packageName != this.packageName) resetYouTubeEnforcement()
     currentForegroundPackage = packageName
     enforceAppLimit(packageName)
     enforceRollingLimit(packageName)
@@ -454,20 +455,20 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     packageName
   }
 
-  private fun handleYouTubeEvent() {
+  private fun handleYouTubeEvent(event: AccessibilityEvent) {
     val root = rootInActiveWindow ?: return
     if (root.packageName?.toString() != YOUTUBE_PACKAGE) return
     val nowMs = System.currentTimeMillis()
     preferences.recordEvent(nowMs)
     val result = ShortsDetector.detect(snapshot(root))
     if (!result.isShortsViewer) {
-      stateMachine.reset()
+      resetYouTubeEnforcement()
       resetStatsDedupe(EnforcementReason.YOUTUBE_SHORTS)
       return
     }
     preferences.recordDetection(nowMs, result.reason)
     if (preferences.observationMode || !preferences.shortsEnabled) {
-      stateMachine.reset()
+      resetYouTubeEnforcement()
       resetStatsDedupe(EnforcementReason.YOUTUBE_SHORTS)
       return
     }
@@ -475,13 +476,26 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     // Titles, like counts, comments, and playback progress must never consume the allowance.
     val page = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/reel_player_page_container")
       .firstOrNull { it.isVisibleToUser }
-    val pageIndex = page?.collectionItemInfo?.rowIndex
-    if (stateMachine.next(true, pageIndex, SystemClock.elapsedRealtime()) == EnforcementAction.LEAVE_SHORTS) {
+    val pagerTransitionIndex = youtubeShortsPager.stablePageIndex(
+      isViewScrolled = event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED,
+      sourceViewId = event.source?.viewIdResourceName,
+      fromIndex = event.fromIndex,
+      toIndex = event.toIndex,
+      scrollY = event.scrollY,
+    )
+    val pageIndex = page?.collectionItemInfo?.rowIndex ?: pagerTransitionIndex
+    if (stateMachine.next(
+        isShorts = true,
+        pageIndex = pageIndex,
+        nowMs = SystemClock.elapsedRealtime(),
+        pagerTransitionIndex = pagerTransitionIndex,
+      ) == EnforcementAction.LEAVE_SHORTS
+    ) {
       // Back/Home can put Premium Shorts into PiP. Use YouTube's own Home tab instead.
       val tabs = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/pivot_bar").firstOrNull()
       val homeTab = tabs?.getChild(0)?.getChild(0)
       if (homeTab?.isClickable == true && homeTab.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-        recordYouTubeShortsStats(pageIndex, EnforcementStatsOutcome.SUCCESS)
+        recordYouTubeShortsStats(stateMachine.pendingExitPageIndex(), EnforcementStatsOutcome.SUCCESS)
         Toast.makeText(this, R.string.zen_guard_shorts_blocked, Toast.LENGTH_SHORT).show()
       }
     }
@@ -804,7 +818,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   override fun onInterrupt() {
     clearAdultSiteEnforcement()
     clearXEnforcement(preserveHomeLockout = true)
-    stateMachine.reset()
+    resetYouTubeEnforcement()
     clearStatsDedupeState()
     clearInstagramEnforcement(preserveHomeSession = true)
   }
@@ -1009,7 +1023,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   /** Clear every in-memory action path without inspecting another app's screen. */
   private fun clearInactiveProtection() {
     clearAdultSiteEnforcement()
-    stateMachine.reset()
+    resetYouTubeEnforcement()
     clearStatsDedupeState()
     clearXEnforcement()
     usageTracker.reset()
@@ -1029,7 +1043,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private fun enterSystemSettings() {
     browserHandler.removeCallbacksAndMessages(null)
     clearAdultSiteEnforcement()
-    stateMachine.reset()
+    resetYouTubeEnforcement()
     clearStatsDedupeState()
     clearXEnforcement(preserveHomeLockout = true)
     usageTracker.reset()
@@ -1039,6 +1053,11 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     navigationHandler.removeCallbacksAndMessages(null)
     instagramNavigationSuppressedUntilMs = 0L
     clearInstagramEnforcement(preserveHomeSession = true)
+  }
+
+  private fun resetYouTubeEnforcement() {
+    stateMachine.reset()
+    youtubeShortsPager.reset()
   }
 
   /** Re-check the live windows at execution time so queued callbacks cannot eject Settings. */

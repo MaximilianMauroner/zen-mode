@@ -6,6 +6,8 @@
  */
 export const RECOMMENDED_DEFAULTS = {
   shortsEnabled: true,
+  // Home stays off until a positive accessibility signal and safe action are proven on-device.
+  youtubeHomeEnabled: false,
   xHomeEnabled: true,
   xVideosEnabled: true,
   xHomeMinutes: 5,
@@ -31,7 +33,7 @@ export const RECOMMENDED_DEFAULTS_SUMMARY: readonly string[] = [
  */
 export async function applyRecommendedDefaults(): Promise<void> {
   const native = await import('./native');
-  await native.setShortsEnabled(RECOMMENDED_DEFAULTS.shortsEnabled);
+  await native.setYouTubeSettings(RECOMMENDED_DEFAULTS.shortsEnabled, RECOMMENDED_DEFAULTS.youtubeHomeEnabled);
   await native.setXSettings(
     RECOMMENDED_DEFAULTS.xHomeEnabled,
     RECOMMENDED_DEFAULTS.xVideosEnabled,

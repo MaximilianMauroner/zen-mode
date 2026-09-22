@@ -11,6 +11,9 @@ export type ZenGuardStatus = {
   protectionEnabled: boolean;
   observationMode: boolean;
   shortsEnabled: boolean;
+  youtubeHomeEnabled: boolean;
+  youtubeHomeObserved: boolean;
+  youtubeHomeDetectionSupported: boolean;
   xHomeEnabled: boolean;
   xVideosEnabled: boolean;
   xHomeMinutes: number;
@@ -89,7 +92,7 @@ declare class ZenGuardModule extends NativeModule<{}> {
   openYouTube(): Promise<void>;
   openInstagram(): Promise<void>;
   openX(): Promise<void>;
-  setShortsEnabled(enabled: boolean): Promise<void>;
+  setYouTubeSettings(shortsEnabled: boolean, homeEnabled: boolean): Promise<void>;
   setXSettings(homeEnabled: boolean, videosEnabled: boolean, homeMinutes: number): Promise<void>;
   setXObservationMode(enabled: boolean): Promise<void>;
   hasCurrentConsent(): Promise<boolean>;

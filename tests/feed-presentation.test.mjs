@@ -76,6 +76,13 @@ test('an X feed switched on after setup asks for its own signal', () => {
   assert.equal(getFeedPresentation(videosPending, 'xHome').statusLabel, 'Limited');
 });
 
+test('unknown X video evidence fails open without changing Home readiness', () => {
+  const videosUnverified = { ...active, xSignalMask: 1 };
+
+  assert.equal(getFeedPresentation(videosUnverified, 'xVideos').statusLabel, 'Check');
+  assert.equal(getFeedPresentation(videosUnverified, 'xHome').statusLabel, 'Limited');
+});
+
 test('an unobserved X feed still reports the blocker that outranks it', () => {
   const videosPending = { ...active, xSignalMask: 1 };
   assert.equal(getFeedPresentation({ ...videosPending, serviceEnabled: false }, 'xVideos').statusLabel, 'Not running');

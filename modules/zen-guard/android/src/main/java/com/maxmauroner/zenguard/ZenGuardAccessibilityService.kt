@@ -551,7 +551,15 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     }
     val source = event?.source
     val advanced = pager != null && event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED &&
-      source != null && isXVideoPager(source) && event.scrollY > 0
+      source != null && XVideoAdvanceDetector.isAdvance(
+        XVideoScrollSignal(
+          sourceIsPager = isXVideoPager(source),
+          sourceOwnedByPager = isXVideoPagerOrDescendant(source),
+          scrollY = event.scrollY,
+          fromIndex = event.fromIndex,
+          toIndex = event.toIndex,
+        ),
+      )
     val action = xStateMachine.next(surface, nowMs, settings, advanced)
     xHomeUsageState = when {
       action == XAction.HOME_UNAVAILABLE || surface == XSurface.UNKNOWN -> HomeFeedUsageState.UNKNOWN
@@ -603,6 +611,17 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   /** X's observed pager is the full-screen scroll node two levels under VideoTab. */
   private fun isXVideoPager(node: AccessibilityNodeInfo): Boolean =
     node.isVisibleToUser && node.isScrollable && node.parent?.parent?.viewIdResourceName == "VideoTab"
+
+  /** X can emit the pager's scroll event from one of its descendants. */
+  private fun isXVideoPagerOrDescendant(node: AccessibilityNodeInfo): Boolean {
+    var candidate: AccessibilityNodeInfo? = node
+    var depth = 0
+    while (candidate != null && depth++ <= MAX_PARENT_CHAIN) {
+      if (isXVideoPager(candidate)) return true
+      candidate = candidate.parent
+    }
+    return false
+  }
 
   private fun findXNode(root: AccessibilityNodeInfo, matches: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
     val queue = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()

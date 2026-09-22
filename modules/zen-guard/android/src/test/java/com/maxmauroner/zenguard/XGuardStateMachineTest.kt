@@ -201,6 +201,62 @@ class XGuardStateMachineTest {
     assertEquals(XAction.NONE, guard.next(XSurface.VIDEO, 7_200L, settings))
   }
 
+  @Test fun `ordinary Home timeline scrolling never becomes a video exit`() {
+    val nodes = listOf(
+      NodeSignal(viewId = "scaffold_home_tabbed"),
+      NodeSignal(viewId = "VideoTab"),
+    )
+    val surface = XDetector.detect(nodes)
+    val guard = XGuardStateMachine()
+
+    assertEquals(XSurface.HOME, surface)
+    assertEquals(XAction.NONE, guard.next(surface, 0L, XSettings(), videoPagerAdvanced = true))
+    assertEquals(XAction.NONE, guard.next(surface, 1_000L, XSettings(), videoPagerAdvanced = true))
+    assertEquals(1_000L, guard.homeRuntimeState(1_000L).usedMs)
+  }
+
+  @Test fun `pager child index transition detects a forward advance without scrollY`() {
+    assertEquals(
+      true,
+      XVideoAdvanceDetector.isAdvance(
+        XVideoScrollSignal(
+          sourceIsPager = false,
+          sourceOwnedByPager = true,
+          scrollY = 0,
+          fromIndex = 0,
+          toIndex = 1,
+        ),
+      ),
+    )
+  }
+
+  @Test fun `video advance detector fails open without pager ownership or forward evidence`() {
+    val signals = listOf(
+      XVideoScrollSignal(sourceIsPager = false, sourceOwnedByPager = false, scrollY = 20, fromIndex = 0, toIndex = 1),
+      XVideoScrollSignal(sourceIsPager = false, sourceOwnedByPager = true, scrollY = 20, fromIndex = -1, toIndex = -1),
+      XVideoScrollSignal(sourceIsPager = false, sourceOwnedByPager = true, scrollY = 0, fromIndex = -1, toIndex = -1),
+      XVideoScrollSignal(sourceIsPager = false, sourceOwnedByPager = true, scrollY = 0, fromIndex = 1, toIndex = 1),
+      XVideoScrollSignal(sourceIsPager = false, sourceOwnedByPager = true, scrollY = 0, fromIndex = 1, toIndex = 0),
+    )
+
+    signals.forEach { assertEquals(false, XVideoAdvanceDetector.isAdvance(it)) }
+  }
+
+  @Test fun `legacy positive pager scroll remains a verified advance`() {
+    assertEquals(
+      true,
+      XVideoAdvanceDetector.isAdvance(
+        XVideoScrollSignal(
+          sourceIsPager = true,
+          sourceOwnedByPager = true,
+          scrollY = 20,
+          fromIndex = -1,
+          toIndex = -1,
+        ),
+      ),
+    )
+  }
+
   @Test fun `Home and video rules can each be disabled independently`() {
     val guard = XGuardStateMachine()
     val settings = XSettings(homeEnabled = false, videosEnabled = true, homeAllowanceMs = 1L)
@@ -255,6 +311,14 @@ class XGuardStateMachineTest {
     assertEquals(XSurface.HOME, XDetector.detect(listOf(NodeSignal(viewId = "scaffold_home_tabbed"))))
     assertEquals(XSurface.VIDEO, XDetector.detect(listOf(NodeSignal(viewId = "VideoTab"))))
     assertEquals(XSurface.OTHER, XDetector.detect(listOf(NodeSignal(viewId = "Search"))))
+    assertEquals(
+      XSurface.HOME,
+      XDetector.detect(listOf(NodeSignal(viewId = "VideoTab"), NodeSignal(viewId = "scaffold_home_tabbed"))),
+    )
+    assertEquals(
+      XSurface.OTHER,
+      XDetector.detect(listOf(NodeSignal(viewId = "VideoTab"), NodeSignal(viewId = "PostDetail"))),
+    )
     assertEquals(XSurface.UNKNOWN, XDetector.detect(listOf(NodeSignal(text = "VideoTab scaffold_home_tabbed"))))
   }
 }

@@ -2,6 +2,23 @@ package com.maxmauroner.zenguard
 
 internal enum class XSurface { HOME, VIDEO, OTHER, UNKNOWN }
 internal enum class XAction { NONE, HOME_BREAK, HOME_UNAVAILABLE, LEAVE_VIDEO }
+internal data class XVideoScrollSignal(
+  val sourceIsPager: Boolean,
+  val sourceOwnedByPager: Boolean,
+  val scrollY: Int,
+  val fromIndex: Int,
+  val toIndex: Int,
+)
+
+/** Converts only a pager-owned, forward scroll into a policy transition. */
+internal object XVideoAdvanceDetector {
+  fun isAdvance(signal: XVideoScrollSignal): Boolean {
+    if (!signal.sourceOwnedByPager) return false
+    val indexedAdvance = signal.fromIndex >= 0 && signal.toIndex > signal.fromIndex
+    return indexedAdvance || (signal.sourceIsPager && signal.scrollY > 0)
+  }
+}
+
 internal data class XSettings(
   val homeEnabled: Boolean = true,
   val videosEnabled: Boolean = true,
@@ -229,9 +246,9 @@ internal class XGuardStateMachine {
 /** IDs observed in X's Compose accessibility tree. Post text is never a surface signal. */
 internal object XDetector {
   fun detect(nodes: List<NodeSignal>): XSurface = when {
-    nodes.any { it.viewId == "VideoTab" } -> XSurface.VIDEO
     nodes.any { it.viewId == "scaffold_home_tabbed" } -> XSurface.HOME
     nodes.any { it.viewId in setOf("Search", "PostDetail", "MainLanding") } -> XSurface.OTHER
+    nodes.any { it.viewId == "VideoTab" } -> XSurface.VIDEO
     else -> XSurface.UNKNOWN
   }
 }

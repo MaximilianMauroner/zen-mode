@@ -17,6 +17,7 @@ import { getOverviewAction } from '@/features/protection/overview-actions';
 import { getAdultSitePresentation } from '@/features/protection/adult-site-presentation';
 import { useSharedGuardStatus } from '@/features/protection/guard-status-context';
 import { hasCompletedSetup } from '@/features/protection/setup';
+import { shouldShowCustomizePrompt } from '@/features/protection/setup-policy';
 import { openAccessibilitySettings, openBrowserCheck, openInstagram, openYouTube, setInstagramObservationMode, setNativeProtectionEnabled, setObservationMode } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
 
@@ -87,7 +88,7 @@ export default function FeedsScreen() {
     <Screen edges={[]} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => { if (!busy) void refresh(); }} tintColor={colors.accent} />}>
       <TopTabs.Screen options={{ swipeEnabled: !busy && drawer === null && !siteDrawerOpen }} />
 
-      {setup === 'customize' ? <View className="rounded-2xl border border-line2 bg-panel2 p-4">
+      {shouldShowCustomizePrompt(setup, status) ? <View className="rounded-2xl border border-line2 bg-panel2 p-4">
         <Text className="text-[15px] font-semibold text-copy">Choose your rules</Text>
         <Text className="mt-1 text-[13px] leading-[19px] text-muted">Open YouTube, Instagram, X, and Sites below to review their starting values. Protection is paused until you decide to resume it.</Text>
       </View> : null}

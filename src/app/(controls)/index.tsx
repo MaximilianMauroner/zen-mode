@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { Pressable, RefreshControl, Text, View } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Clapperboard, Globe2, House, LockKeyhole, Play } from 'lucide-react-native';
 
 import { AdultSiteControlsDrawer } from '@/components/ui/adult-site-controls-drawer';
@@ -21,6 +21,7 @@ import { openAccessibilitySettings, openBrowserCheck, openInstagram, openYouTube
 import { colors } from '@/theme/colors';
 
 export default function FeedsScreen() {
+  const { setup } = useLocalSearchParams<{ setup?: string }>();
   const { status, loading, readError, refresh } = useSharedGuardStatus();
   const [lock, setLock] = useState<LockState | null>(null);
   const [error, setError] = useState('');
@@ -86,6 +87,10 @@ export default function FeedsScreen() {
     <Screen edges={[]} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => { if (!busy) void refresh(); }} tintColor={colors.accent} />}>
       <TopTabs.Screen options={{ swipeEnabled: !busy && drawer === null && !siteDrawerOpen }} />
 
+      {setup === 'customize' ? <View className="rounded-2xl border border-line2 bg-panel2 p-4">
+        <Text className="text-[15px] font-semibold text-copy">Choose your rules</Text>
+        <Text className="mt-1 text-[13px] leading-[19px] text-muted">Open YouTube, Instagram, X, and Sites below to review their starting values. Protection is paused until you decide to resume it.</Text>
+      </View> : null}
       {status ? <Text accessibilityLiveRegion="polite" className="text-[13px] leading-[19px] text-muted">{getFeedStatusDetail(status)}</Text> : null}
       {nextAction ? (
         <View className="gap-2">

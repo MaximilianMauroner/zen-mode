@@ -86,6 +86,8 @@ attempt, so a new nightly starts on a later day after a new commit.
 
 Generate one LaunchAgent. It runs both apps in sequence so a failed app does not
 stop the other app. The Mac must use the Europe/Vienna time zone.
+Point each argument at a checkout that contains `scripts/nightly-release.mjs`.
+Use a separate release checkout if a development checkout is behind `origin/main`.
 
 ```sh
 node scripts/write-nightly-launch-agent.mjs /absolute/moodinator /absolute/zen-mode
@@ -111,7 +113,9 @@ launchctl bootout "gui/$(id -u)/net.lab4code.nightly"
 
 To run the pair manually, use
 `node scripts/run-nightlies.mjs /absolute/moodinator /absolute/zen-mode`.
-The normal daily and source gates still apply to manual runs.
+The runner fetches `origin/main` and builds it in an isolated worktree. Local
+changes in either checkout do not block the run. The normal daily and source
+gates still apply to manual runs.
 
 ## Artifacts and recovery
 

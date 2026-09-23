@@ -2,9 +2,10 @@ import { DangerButton, PrimaryButton, SecondaryButton } from '@/components/ui/bu
 import { Card, SectionLabel } from '@/components/ui/card';
 import { ErrorNote, Screen, ScreenHeader } from '@/components/ui/screen';
 import { AppPicker } from '@/components/ui/app-picker';
+import { useWeakeningGate, WeakeningGateDialog } from '@/components/ui/weakening-gate';
 import { TopTabs } from 'expo-router/js-top-tabs';
 import { StatusPill } from '@/components/ui/pill';
-import { isChangeBlocked } from '@/features/protection/lock';
+import { authorizeWeakening } from '@/features/protection/authorize-weakening';
 import { appRuleLockRefusal, type AppRule } from '@/features/protection/lock-policy';
 import {
   getAppLimits,
@@ -100,6 +101,7 @@ export default function AppLimitsScreen() {
   const [lockBlocked, setLockBlocked] = useState(false);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const gate = useWeakeningGate();
   const refreshInFlightRef = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -170,7 +172,9 @@ export default function AppLimitsScreen() {
       try {
         await task();
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : fallbackMessage);
+        const message = cause instanceof Error ? cause.message : fallbackMessage;
+        if (message.includes('locked')) setLockBlocked(true);
+        setError(message);
       } finally {
         busyRef.current = false;
         setBusy(false);
@@ -251,9 +255,12 @@ export default function AppLimitsScreen() {
       // Read what is stored right now. The cached list can be a refresh behind,
       // and the lock must judge the change that is actually being made.
       const refusal = appRuleLockRefusal(await readStoredRules(packageName), proposed);
-      if (refusal !== null && (await isChangeBlocked())) {
-        setLockBlocked(true);
-        throw new Error(refusal);
+      const action = mode === 'daily' ? `set ${selected.label}'s daily limit to ${minutes} minutes` :
+        mode === 'visit' ? `change ${selected.label}'s timed visit to ${session} minutes` :
+          `change ${selected.label}'s rolling allowance to ${allowance} minutes`;
+      if (!await authorizeWeakening(refusal !== null, action, gate.request)) return;
+      if (refusal !== null && appRuleLockRefusal(await readStoredRules(packageName), proposed) !== refusal) {
+        throw new Error('The app rule changed. Review it and try again.');
       }
       if (mode === 'daily') {
         await setAppLimit(packageName, minutes);
@@ -276,9 +283,12 @@ export default function AppLimitsScreen() {
   // Removing rules loosens the guard, so the lock has a say.
   const dropRules = (packageName: string) =>
     runAction(async () => {
-      if (await isChangeBlocked()) {
-        setLockBlocked(true);
-        throw new Error('Removing a rule loosens the guard. Ask to unlock, then wait a day.');
+      const stored = await readStoredRules(packageName);
+      if (stored.length === 0) return;
+      const label = guardedByPackage.get(packageName)?.label ?? packageName;
+      if (!await authorizeWeakening(true, `remove all limits for ${label}`, gate.request)) return;
+      if (JSON.stringify(await readStoredRules(packageName)) !== JSON.stringify(stored)) {
+        throw new Error('The app rules changed. Review them and try again.');
       }
       await removeAppLimit(packageName);
       await removeIntentApp(packageName);
@@ -290,6 +300,7 @@ export default function AppLimitsScreen() {
 
   return (
     <Screen edges={[]}>
+      <WeakeningGateDialog gate={gate} />
       <TopTabs.Screen options={{ swipeEnabled: !busy }} />
       {selected ? <ScreenHeader label={selected.label} onBack={() => setSelected(null)} backDisabled={busy} /> : null}
 

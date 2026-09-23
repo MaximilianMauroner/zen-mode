@@ -29,6 +29,8 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private val statsDedupeKeys = mutableMapOf<EnforcementReason, String>()
   private val stateMachine = EnforcementStateMachine()
   private val youtubeShortsPager = YouTubeShortsPager()
+  private val youtubeShortsExitResult = YouTubeShortsExitResult()
+  private lateinit var youtubeShortsResultOverlay: YouTubeShortsResultOverlay
   private val xStateMachine = XGuardStateMachine()
   private var xHomeUsageState = HomeFeedUsageState.PAUSED
   private var xStorageAvailable = true
@@ -113,6 +115,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     intentOverlay = IntentOverlay(this)
     adultSiteStore = AdultSiteRuleStore(this)
     adultSiteOverlay = AdultSiteBlockerOverlay(this)
+    youtubeShortsResultOverlay = YouTubeShortsResultOverlay(this)
     homeFeedStatusStore = HomeFeedStatusStore(this)
     val nowElapsedMs = SystemClock.elapsedRealtime()
     val storedInstagram = homeFeedStatusStore.instagram(nowElapsedMs)
@@ -462,7 +465,15 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     preferences.recordEvent(nowMs)
     val result = ShortsDetector.detect(snapshot(root))
     if (!result.isShortsViewer) {
-      resetYouTubeEnforcement()
+      val homeTab = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/pivot_bar")
+        .firstOrNull()?.getChild(0)?.getChild(0)
+      val homeSelected = homeTab?.isSelected == true || homeTab?.getChild(0)?.isSelected == true
+      youtubeShortsExitResult.confirmed(homeSelected, SystemClock.elapsedRealtime())?.let { exit ->
+        recordYouTubeShortsStats(exit.pageIndex, EnforcementStatsOutcome.SUCCESS)
+        youtubeShortsResultOverlay.show()
+      }
+      stateMachine.reset()
+      youtubeShortsPager.reset()
       resetStatsDedupe(EnforcementReason.YOUTUBE_SHORTS)
       return
     }
@@ -495,8 +506,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       val tabs = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/pivot_bar").firstOrNull()
       val homeTab = tabs?.getChild(0)?.getChild(0)
       if (homeTab?.isClickable == true && homeTab.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-        recordYouTubeShortsStats(stateMachine.pendingExitPageIndex(), EnforcementStatsOutcome.SUCCESS)
-        Toast.makeText(this, R.string.zen_guard_shorts_blocked, Toast.LENGTH_SHORT).show()
+        youtubeShortsExitResult.requested(stateMachine.pendingExitPageIndex(), SystemClock.elapsedRealtime())
       }
     }
   }
@@ -836,6 +846,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   override fun onDestroy() {
     browserHandler.removeCallbacksAndMessages(null)
     clearAdultSiteEnforcement()
+    resetYouTubeEnforcement()
     xHandler.removeCallbacksAndMessages(null)
     if (::preferences.isInitialized && hasActiveProtection()) {
       // Keep the last durable X boundary so a reconnect can reconcile the time
@@ -1058,6 +1069,8 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private fun resetYouTubeEnforcement() {
     stateMachine.reset()
     youtubeShortsPager.reset()
+    youtubeShortsExitResult.clear()
+    if (::youtubeShortsResultOverlay.isInitialized) youtubeShortsResultOverlay.hide()
   }
 
   /** Re-check the live windows at execution time so queued callbacks cannot eject Settings. */

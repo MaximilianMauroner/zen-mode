@@ -131,7 +131,7 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
                 {status?.xVideosEnabled ? <Text className="text-[13px] text-muted">{xGuidance.initialAwaiting.includes('videos') ? '○ Open one video' : '✓ Video viewer detected'}</Text> : null}
               </> : <>
                 {status?.youtubeHomeEnabled ? <Text className="text-[13px] text-muted">{status.youtubeHomeObserved ? '✓ Home feed detected' : status.youtubeHomeDetectionSupported ? '○ Open the Home feed once' : '○ Home detection awaits physical-device validation'}</Text> : null}
-                {status?.shortsEnabled ? <Text className="text-[13px] text-muted">{status.lastDetectionAt > 0 ? '✓ Shorts detected' : '○ Open one Short, then return here'}</Text> : null}
+                {status?.shortsEnabled ? <Text className="text-[13px] text-muted">{status.lastDetectionAt > 0 ? '✓ Shorts detected' : '○ Open one Short, then return here. Zen Mode checks this YouTube screen before limiting scrolling; unknown layouts stay unblocked.'}</Text> : null}
               </>}
               {canStart ? <PrimaryButton title="Start protection" disabled={disabled} onPress={() => run(async () => { if (isInstagram) await setInstagramObservationMode(false); else if (isX) await setXObservationMode(false); else await setObservationMode(false); })} /> : detected ? <Text className="text-[13px] text-muted">Turn on protection and Android access in Settings.</Text> : null}
             </View> : null}

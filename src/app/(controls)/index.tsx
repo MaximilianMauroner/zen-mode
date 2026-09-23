@@ -89,7 +89,7 @@ export default function FeedsScreen() {
       {status ? <Text accessibilityLiveRegion="polite" className="text-[13px] leading-[19px] text-muted">{getFeedStatusDetail(status)}</Text> : null}
       {nextAction ? (
         <View className="gap-2">
-          {state === 'setup' && (status?.shortsEnabled && status.observationMode || status?.instagramObservationMode) ? <Text className="text-[13px] leading-[19px] text-muted">{status?.observationMode ? status.lastDetectionAt ? 'Shorts detected. Blocking is ready.' : 'Open Shorts once, then return here.' : ((status?.instagramSignalMask ?? 0) & 3) === 3 ? 'Instagram checks passed. Protection is ready.' : 'Open Direct Messages, then one Reel from a message. Return here when done.'}</Text> : null}
+          {state === 'setup' && (status?.shortsEnabled && status.observationMode || status?.instagramObservationMode) ? <Text className="text-[13px] leading-[19px] text-muted">{status?.observationMode ? status.lastDetectionAt ? 'Shorts detected. Blocking is ready.' : 'Open one Short, then return here. Zen Mode checks the current YouTube screen before limiting scrolling; unknown layouts stay unblocked.' : ((status?.instagramSignalMask ?? 0) & 3) === 3 ? 'Instagram checks passed. Protection is ready.' : 'Open Direct Messages, then one Reel from a message. Return here when done.'}</Text> : null}
           <PrimaryButton title={busy ? 'Working…' : nextAction.title} disabled={busy || loading} onPress={() => runAction(nextAction.run)} />
         </View>
       ) : null}

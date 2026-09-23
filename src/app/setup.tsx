@@ -107,6 +107,7 @@ export default function SetupScreen() {
   };
 
   const busy = setupReadState === 'loading' || saving;
+  const selectionDisabled = busy || accessRequested;
 
   return (
     <Screen>
@@ -119,11 +120,11 @@ export default function SetupScreen() {
       <Card>
         <Text accessibilityRole="header" className="text-[15px] font-semibold text-copy">How would you like to start?</Text>
         <View accessibilityRole="radiogroup" accessibilityLabel="Starting rules" className="mt-3 gap-2">
-          <Pressable accessibilityRole="radio" accessibilityState={{ checked: choice === 'defaults', disabled: busy }} disabled={busy} onPress={() => setChoice('defaults')} className={`min-h-12 rounded-xl border p-3 ${choice === 'defaults' ? 'border-accent bg-panel2' : 'border-line bg-panel'}`}>
+          <Pressable accessibilityRole="radio" accessibilityState={{ checked: choice === 'defaults', disabled: selectionDisabled }} disabled={selectionDisabled} onPress={() => setChoice('defaults')} className={`min-h-12 rounded-xl border p-3 ${choice === 'defaults' ? 'border-accent bg-panel2' : 'border-line bg-panel'}`}>
             <Text className="text-[15px] font-semibold text-copy">Use healthy defaults</Text>
             <Text className="mt-1 text-[13px] leading-[19px] text-muted">Start with the rules listed below. You can adjust them later.</Text>
           </Pressable>
-          <Pressable accessibilityRole="radio" accessibilityState={{ checked: choice === 'customize', disabled: busy }} disabled={busy} onPress={() => setChoice('customize')} className={`min-h-12 rounded-xl border p-3 ${choice === 'customize' ? 'border-accent bg-panel2' : 'border-line bg-panel'}`}>
+          <Pressable accessibilityRole="radio" accessibilityState={{ checked: choice === 'customize', disabled: selectionDisabled }} disabled={selectionDisabled} onPress={() => setChoice('customize')} className={`min-h-12 rounded-xl border p-3 ${choice === 'customize' ? 'border-accent bg-panel2' : 'border-line bg-panel'}`}>
             <Text className="text-[15px] font-semibold text-copy">Customize</Text>
             <Text className="mt-1 text-[13px] leading-[19px] text-muted">Open Feeds and Sites after access. Protection stays paused while you choose rules.</Text>
           </Pressable>
@@ -148,9 +149,9 @@ export default function SetupScreen() {
         {showDetails ? <Text className="text-[13px] leading-[19px] text-muted">When you add an app limit or timed visit, Zen Mode lists launchable apps on this device so you can choose one. It stores guard settings and local usage and detection summaries, not visited addresses, screen text, or the installed-app inventory. It does not inspect browser page content.</Text> : null}
         <Pressable
           accessibilityRole="checkbox"
-          accessibilityState={{ checked: consented, disabled: busy }}
-          className={`mt-4 flex-row items-center ${busy ? 'opacity-40' : 'active:opacity-70'}`}
-          disabled={busy}
+          accessibilityState={{ checked: consented, disabled: selectionDisabled }}
+          className={`mt-4 flex-row items-center ${selectionDisabled ? 'opacity-40' : 'active:opacity-70'}`}
+          disabled={selectionDisabled}
           onPress={() => setConsented((value) => !value)}>
           <View className={`h-6 w-6 items-center justify-center rounded-lg border ${consented ? 'border-accent bg-accent' : 'border-line2 bg-panel2'}`}>
             {consented ? <Check color={colors.onAccent} size={15} strokeWidth={3} /> : null}

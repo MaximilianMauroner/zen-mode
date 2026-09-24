@@ -53,8 +53,9 @@ target, not a claim of a reproduced visual defect.
 
 ## Capture and decision boundary
 
-Four **web interface-preview** samples from the SDK 57 static export are
-attached under [`evidence/design-31-web-preview/`](evidence/design-31-web-preview/):
+Four **web interface-preview** samples from the SDK 57 static export at
+`33a5e52` are attached under
+[`evidence/design-31-web-preview/`](evidence/design-31-web-preview/):
 Setup and Stats at 320 × 800 and 1280 × 800. They show the current compact
 column and Stats text wrapping; the narrow Setup image captures only the first
 scroll viewport. The 1280 Setup sample shows a web-only setup-read error. These

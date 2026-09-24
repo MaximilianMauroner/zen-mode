@@ -5,6 +5,7 @@ import { ArrowLeft, type LucideProps } from 'lucide-react-native';
 
 import { StatusPill, type PillTone } from '@/components/ui/pill';
 import { colors } from '@/theme/colors';
+import { metrics } from '@/theme/metrics';
 
 /** Scrolling page frame. Every screen shares the same width, gutter, and rhythm. */
 export function Screen({ children, refreshControl, edges = ['top'] }: { children: ReactNode; refreshControl?: ScrollViewProps['refreshControl']; edges?: Edge[] }) {
@@ -31,10 +32,13 @@ export function IconTile({ icon: Icon, onPress, disabled, accessibilityLabel }: 
     <Pressable
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
-      className={`${tile} ${disabled ? 'opacity-40' : 'active:opacity-60'}`}
+      className={`items-center justify-center ${disabled ? 'opacity-40' : 'active:opacity-60'}`}
       disabled={disabled}
-      onPress={onPress}>
-      <Icon color={colors.accent} size={19} />
+      onPress={onPress}
+      style={{ minHeight: metrics.touchTarget, minWidth: metrics.touchTarget }}>
+      <View className={tile}>
+        <Icon color={colors.accent} size={19} />
+      </View>
     </Pressable>
   );
 }
@@ -81,7 +85,7 @@ export function ScreenHeader({
 export function ScreenTitle({ title, highlight, description }: { title: string; highlight?: string; description?: string }) {
   return (
     <View>
-      <Text className="text-[34px] font-semibold leading-[40px] tracking-tight text-copy">
+      <Text accessibilityRole="header" className="text-[34px] font-semibold leading-[40px] tracking-tight text-copy">
         {title}
         {highlight ? <Text className="text-accent">{`\n${highlight}`}</Text> : null}
       </Text>

@@ -35,6 +35,9 @@ export default function SettingsScreen() {
   const shortsDetection = !status?.available
     ? { detail: loading ? 'Reading the current status.' : 'Status unavailable', value: loading ? 'CHECKING' : 'UNAVAILABLE' }
     : { detail: `${status.detectionCount} detections recorded`, value: status.lastDetectionAt > 0 ? 'FOUND' : 'WAITING' };
+  const instagramChecks = !status?.available
+    ? { detail: loading ? 'Reading the current status.' : 'Status unavailable', value: loading ? 'CHECKING' : 'UNAVAILABLE' }
+    : { detail: 'Messages and a Reel opened from a message', value: `${Number((status.instagramSignalMask & 1) !== 0) + Number((status.instagramSignalMask & 2) !== 0)}/2` };
   const disabled = busy || loading || !status?.available;
   const changeProtection = () => runAction(async () => {
     const fresh = await getZenGuardStatus();
@@ -70,7 +73,7 @@ export default function SettingsScreen() {
           <Row label="Shorts detection" {...shortsDetection} />
           <Row label="YouTube Shorts" {...getFeedPresentation(status, 'shorts', loading)} />
           <Row label="YouTube home feed" {...getFeedPresentation(status, 'youtubeHome', loading)} />
-          <Row label="Instagram checks" detail="Messages and a Reel opened from a message" value={status ? `${Number((status.instagramSignalMask & 1) !== 0) + Number((status.instagramSignalMask & 2) !== 0)}/2` : '—'} />
+          <Row label="Instagram checks" {...instagramChecks} />
           <Row label="Instagram Reels" {...getFeedPresentation(status, 'reels', loading)} />
           <Row label="Instagram home feed" {...getFeedPresentation(status, 'home', loading)} />
           <Row label="Instagram Explore" {...getFeedPresentation(status, 'explore', loading)} />

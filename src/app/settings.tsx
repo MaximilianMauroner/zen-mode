@@ -32,6 +32,9 @@ export default function SettingsScreen() {
   };
   const statusKnown = Boolean(status?.available);
   const protectionLabel = !statusKnown ? loading ? 'Checking' : 'Unavailable' : !status?.serviceEnabled ? 'Access needed' : status.protectionEnabled ? 'Running' : 'Paused';
+  const shortsDetection = !status?.available
+    ? { detail: loading ? 'Reading the current status.' : 'Status unavailable', value: loading ? 'CHECKING' : 'UNAVAILABLE' }
+    : { detail: `${status.detectionCount} detections recorded`, value: status.lastDetectionAt > 0 ? 'FOUND' : 'WAITING' };
   const disabled = busy || loading || !status?.available;
   const changeProtection = () => runAction(async () => {
     const fresh = await getZenGuardStatus();
@@ -64,7 +67,7 @@ export default function SettingsScreen() {
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-[18px] font-semibold text-copy">Guard details</Text>
         <RowGroup>
-          <Row label="Shorts detection" detail={status ? `${status.detectionCount} detections recorded` : 'Status unavailable'} value={status ? status.lastDetectionAt > 0 ? 'FOUND' : 'WAITING' : '—'} />
+          <Row label="Shorts detection" {...shortsDetection} />
           <Row label="YouTube Shorts" {...getFeedPresentation(status, 'shorts', loading)} />
           <Row label="YouTube home feed" {...getFeedPresentation(status, 'youtubeHome', loading)} />
           <Row label="Instagram checks" detail="Messages and a Reel opened from a message" value={status ? `${Number((status.instagramSignalMask & 1) !== 0) + Number((status.instagramSignalMask & 2) !== 0)}/2` : '—'} />

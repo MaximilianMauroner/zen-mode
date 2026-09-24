@@ -53,9 +53,14 @@ target, not a claim of a reproduced visual defect.
 
 ## Capture and decision boundary
 
-No visual capture is attached to this source audit. T3 device access was off,
-and the browser preview failed to navigate in this environment. Capture the
-matrix before approving either of two candidate Feeds directions: (A) keep the
+Four **web interface-preview** samples from the SDK 57 static export are
+attached under [`evidence/design-31-web-preview/`](evidence/design-31-web-preview/):
+Setup and Stats at 320 × 800 and 1280 × 800. They show the current compact
+column and Stats text wrapping; the narrow Setup image captures only the first
+scroll viewport. The 1280 Setup sample shows a web-only setup-read error. These
+samples do not exercise Android protection or cover the state matrix. T3 device
+access was off, so no native capture is available. Capture the remaining matrix
+before approving either of two candidate Feeds directions: (A) keep the
 existing compact status header and improve its responsive spacing, or (B) place
 the current protection state in a larger first card and keep the route tabs
 visually quieter. Both must preserve the same action and status semantics.

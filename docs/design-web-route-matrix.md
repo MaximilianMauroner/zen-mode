@@ -21,15 +21,16 @@ its internal scrolled content. These images cannot establish Android behavior.
 
 - **P2, status wording to reconcile:** Settings labels Android access and
   protection `Unavailable`, but the Shorts detection row says `WAITING` and
-  `0 detections recorded` in the same web state. The source uses a non-null
-  status object for that row (`src/app/settings.tsx`). Make the detection value
-  say unavailable when its source cannot be read; keep the existing feed
-  readiness and enforcement rules untouched. Coordinate with PR #45, which
-  edits Settings, before changing that file.
+  `0 detections recorded`, while Instagram checks says `0/2`, in the same web
+  state. Both rows use a non-null status object without checking
+  `status.available` (`src/app/settings.tsx`). Show unavailable for both raw
+  check metrics when their source cannot be read; keep feed readiness and
+  enforcement rules untouched. Coordinate with PR #45, which edits Settings,
+  before changing that file.
 - At 320 px, the visible first viewports show no horizontal clipping in these
-  seven captured states. The compact Feeds tabs and grouped rows remain
-  reachable in the preview. This does not establish below-the-fold reachability
-  or Android font-scale behavior.
+  seven captured states. The compact Feeds tabs and the visible portion of
+  grouped rows fit horizontally. Below-the-fold reachability, keyboard input,
+  and Android font-scale behavior remain untested by these captures.
 - At 1280 px, the existing centered `max-w-xl` column remains readable. The
   comparison does not decide whether tablet/foldable Android should keep one
   column or use an expanded composition; that is still an owner design choice.

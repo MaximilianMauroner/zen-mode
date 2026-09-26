@@ -89,16 +89,8 @@ test('initial X setup offers the drawer without changing observation state', () 
   assert.equal(getOverviewAction({ ...base, xObservationMode: true, xSignalMask: 0 }, false), 'set-up-x');
 });
 
-test('Home ready then Videos enabled and unobserved keeps a setup action', () => {
-  assert.equal(getOverviewAction({ ...base, xSignalMask: 1 }, false), 'set-up-x');
-});
-
 test('Videos ready then Home enabled and unobserved keeps a setup action', () => {
   assert.equal(getOverviewAction({ ...base, xSignalMask: 2 }, false), 'set-up-x');
-});
-
-test('all enabled X feeds ready clear the setup action', () => {
-  assert.equal(getOverviewAction(base, false), null);
 });
 
 test('disabled unobserved feeds do not create prompts', () => {

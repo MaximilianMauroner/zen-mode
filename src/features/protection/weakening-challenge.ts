@@ -66,8 +66,13 @@ export function submitChallengeAnswer(session: ChallengeSession, input: string, 
 export function alternateChallenge(session: ChallengeSession, random: () => number = Math.random): ChallengeSession {
   if (session.phase !== 'challenge' || !session.challenge) return session;
   const current = KINDS.indexOf(session.challenge.kind);
-  const next = KINDS[(current + 1) % KINDS.length];
-  return { ...session, challenge: createChallenge(next, random) };
+  const alternatives = [...KINDS.slice(current + 1), ...KINDS.slice(0, current)];
+  const next = alternatives.find((kind) => session.kinds.slice(session.step + 1).includes(kind)) ?? alternatives[0];
+  const kinds = [...session.kinds];
+  const future = kinds.indexOf(next, session.step + 1);
+  if (future >= 0) kinds[future] = kinds[session.step];
+  kinds[session.step] = next;
+  return { ...session, kinds, challenge: createChallenge(next, random) };
 }
 
 /** The caller may save only after the separate final confirmation. */

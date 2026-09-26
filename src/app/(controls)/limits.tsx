@@ -254,12 +254,13 @@ export default function AppLimitsScreen() {
     runAction(async () => {
       // Read what is stored right now. The cached list can be a refresh behind,
       // and the lock must judge the change that is actually being made.
-      const refusal = appRuleLockRefusal(await readStoredRules(packageName), proposed);
+      const stored = await readStoredRules(packageName);
+      const refusal = appRuleLockRefusal(stored, proposed);
       const action = mode === 'daily' ? `set ${selected.label}'s daily limit to ${minutes} minutes` :
         mode === 'visit' ? `change ${selected.label}'s timed visit to ${session} minutes` :
           `change ${selected.label}'s rolling allowance to ${allowance} minutes`;
       if (!await authorizeWeakening(refusal !== null, action, gate.request)) return;
-      if (refusal !== null && appRuleLockRefusal(await readStoredRules(packageName), proposed) !== refusal) {
+      if (JSON.stringify(await readStoredRules(packageName)) !== JSON.stringify(stored)) {
         throw new Error('The app rule changed. Review it and try again.');
       }
       if (mode === 'daily') {

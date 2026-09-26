@@ -112,16 +112,26 @@ disposable-emulator data-reset procedure is a separate test.
 
 ## Review and release gates
 
-At inspection, #43–#50 were open and conflict-free with no hosted check runs.
+At the initial inspection, #43–#50 were open and conflict-free with no hosted check runs.
 Stacks are `main → #45 → #49` and `main → #47 → #48 → #50`; #43, #44 and
 #46 independently target main. #44/#45 remain draft. Existing exact-head
-Prometheus requests on #43/#46/#47/#48/#49/#50 were unanswered. There was no
-external Prometheus-authored PASS. A Codex review or internal agent opinion is
-not that approval. Retain the requests; do not send duplicates.
+GitHub `@prometheus` comments on #43/#46/#47/#48/#49/#50 did not invoke the
+configured reviewer and are not approval. Prometheus is the independent native
+Codex reviewer (GPT-6 Astra/high), distinct from the implementation agent.
+Invoke that reviewer directly and retain its PASS or HOLD with the exact head
+and review source. An implementation agent's self-review or an unrelated
+automatic Codex review does not substitute for that independent review.
+
+Subsequently, #46 received an independent native Prometheus PASS and merged in
+main `7254eb2643c87d8534319c257fe034b934340bca`. #35 stays closed as the accepted
+API no-go; this adds no device-validation claim.
 
 Merge requires independent Prometheus PASS explicitly naming the current head,
 required checks, no blocking concerns/conflicts, and applicable parent, device
 and design gates. Refresh heads and reviews immediately before any merge.
+Feature acceptance and release device/Console gates remain with their owning
+issues and PRs. They do not require physical acceptance before merging an
+accurate documentation-only handoff such as this one.
 This document does not close any acceptance issue or authorize Play publication.
 
 Owner/Console-only decisions still needed for release: confirm account testing

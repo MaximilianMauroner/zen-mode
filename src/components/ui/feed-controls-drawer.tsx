@@ -7,7 +7,9 @@ import { ErrorNote } from './screen';
 import { useSharedGuardStatus } from '@/features/protection/guard-status-context';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { getHomeFeedTimeLabel } from '@/features/protection/home-feed-time';
-import { isChangeBlocked } from '@/features/protection/lock';
+import { authorizeWeakening } from '@/features/protection/authorize-weakening';
+import { feedWeakeningAction } from '@/features/protection/feed-weakening';
+import { useWeakeningGate, WeakeningGateDialog } from './weakening-gate';
 import { getXDrawerGuidance } from '@/features/protection/x-drawer-guidance';
 import { hasAllRequiredXSignals } from '@/features/protection/x-readiness';
 import { hasAllRequiredYouTubeSignals } from '@/features/protection/youtube-readiness';
@@ -27,6 +29,7 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
   const [error, setError] = useState('');
   const inFlight = useRef(false);
   const reduceMotion = useReducedMotion();
+  const gate = useWeakeningGate();
   const disabled = busy || loading || !status?.available || Boolean(readError);
   const isX = feed === 'x';
   const isInstagram = feed === 'instagram';
@@ -68,20 +71,24 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
   };
   const change = (next: Partial<Pick<ZenGuardStatus, 'xHomeEnabled' | 'xVideosEnabled' | 'xHomeMinutes' | 'shortsEnabled' | 'youtubeHomeEnabled' | 'instagramWaitSeconds' | 'instagramReelsMinutes' | 'instagramHomeMinutes' | 'instagramExploreBlocked'>>) => run(async (fresh) => {
     const proposed = { ...fresh, ...next };
-    const weaker = (fresh.shortsEnabled && !proposed.shortsEnabled) || (fresh.youtubeHomeEnabled && !proposed.youtubeHomeEnabled) || (fresh.xHomeEnabled && !proposed.xHomeEnabled) || (fresh.xVideosEnabled && !proposed.xVideosEnabled) || proposed.xHomeMinutes > fresh.xHomeMinutes ||
-      proposed.instagramWaitSeconds < fresh.instagramWaitSeconds || proposed.instagramReelsMinutes > fresh.instagramReelsMinutes ||
-      proposed.instagramHomeMinutes > fresh.instagramHomeMinutes || (fresh.instagramExploreBlocked && !proposed.instagramExploreBlocked);
-    if (weaker && await isChangeBlocked()) throw new Error('Settings are locked. Ask to unlock in the Lock tab.');
-    if (isInstagram) await setInstagramSettings(proposed.instagramWaitSeconds, proposed.instagramReelsMinutes, proposed.instagramHomeMinutes, proposed.instagramExploreBlocked);
-    else if (isX) await setXSettings(proposed.xHomeEnabled, proposed.xVideosEnabled, proposed.xHomeMinutes);
-    else await setYouTubeSettings(proposed.shortsEnabled, proposed.youtubeHomeEnabled);
+    const weakening = feedWeakeningAction(fresh, proposed);
+    if (!await authorizeWeakening(weakening !== null, weakening ?? '', gate.request)) return;
+    const current = weakening ? await getZenGuardStatus() : fresh;
+    if (weakening && Object.keys(next).some((key) =>
+      current[key as keyof ZenGuardStatus] !== fresh[key as keyof ZenGuardStatus])) {
+      throw new Error('The rule changed while you were answering. Review it and try again.');
+    }
+    const approved = { ...current, ...next };
+    if (isInstagram) await setInstagramSettings(approved.instagramWaitSeconds, approved.instagramReelsMinutes, approved.instagramHomeMinutes, approved.instagramExploreBlocked);
+    else if (isX) await setXSettings(approved.xHomeEnabled, approved.xVideosEnabled, approved.xHomeMinutes);
+    else await setYouTubeSettings(approved.shortsEnabled, approved.youtubeHomeEnabled);
   });
   const close = () => { if (!inFlight.current) onClose(); };
   const result = getFeedPresentation(status, isX ? 'xVideos' : 'shorts');
   const homeTime = isInstagram ? getHomeFeedTimeLabel(status, 'instagram') : isX ? getHomeFeedTimeLabel(status, 'x') : null;
 
   return (
-    <Modal visible={feed !== null} transparent animationType={reduceMotion ? 'none' : 'slide'} onRequestClose={close} onShow={() => { setError(''); void refresh(); }} statusBarTranslucent>
+    <Modal visible={feed !== null} transparent animationType={reduceMotion ? 'none' : 'slide'} onRequestClose={() => { if (gate.session) gate.finish(false); else close(); }} onShow={() => { setError(''); void refresh(); }} statusBarTranslucent>
       <View className="flex-1 justify-end bg-black/50">
         <Pressable accessibilityRole="button" accessibilityLabel="Close feed controls" onPress={close} disabled={busy} className="absolute inset-0" />
         <SafeAreaView edges={['bottom']} style={{ maxHeight: '88%' }} className="rounded-t-3xl border-t border-line2 bg-panel px-5 pt-3">
@@ -150,6 +157,7 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
             <ErrorNote message={error || readError} />
           </ScrollView>
         </SafeAreaView>
+        <WeakeningGateDialog gate={gate} embedded />
       </View>
     </Modal>
   );

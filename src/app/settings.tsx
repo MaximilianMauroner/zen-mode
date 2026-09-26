@@ -6,10 +6,11 @@ import { router } from 'expo-router';
 import { DangerButton, PrimaryButton, SecondaryButton } from '@/components/ui/button';
 import { Row, RowGroup } from '@/components/ui/card';
 import { ErrorNote, Screen, ScreenHeader } from '@/components/ui/screen';
+import { useWeakeningGate, WeakeningGateDialog } from '@/components/ui/weakening-gate';
 import { openFeedbackIssue } from '@/features/feedback/github-issue';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
-import { isChangeBlocked } from '@/features/protection/lock';
-import { openAccessibilitySettings, openInstagram, openYouTube, openX, setNativeProtectionEnabled } from '@/features/protection/native';
+import { authorizeWeakening } from '@/features/protection/authorize-weakening';
+import { getZenGuardStatus, openAccessibilitySettings, openInstagram, openYouTube, openX, setNativeProtectionEnabled } from '@/features/protection/native';
 import { useGuardStatus } from '@/features/protection/use-guard-status';
 import { colors } from '@/theme/colors';
 
@@ -19,6 +20,7 @@ export default function SettingsScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const busyRef = useRef(false);
+  const gate = useWeakeningGate();
   const runAction = (task: () => Promise<void>) => {
     if (busyRef.current) return;
     busyRef.current = true;
@@ -32,13 +34,12 @@ export default function SettingsScreen() {
   const protectionLabel = !statusKnown ? loading ? 'Checking' : 'Unavailable' : !status?.serviceEnabled ? 'Access needed' : status.protectionEnabled ? 'Running' : 'Paused';
   const disabled = busy || loading || !status?.available;
   const changeProtection = () => runAction(async () => {
-    if (!status?.available) return;
-    if (status.protectionEnabled && await isChangeBlocked()) {
-      // Read the lock at the point of change. A read failure must stop this action.
-      setError('The lock holds these settings. Manage the lock before turning protection off.');
-      return;
-    }
-    await setNativeProtectionEnabled(!status.protectionEnabled);
+    const fresh = await getZenGuardStatus();
+    if (!fresh.available) return;
+    if (!await authorizeWeakening(fresh.protectionEnabled, 'pause protection', gate.request)) return;
+    const current = await getZenGuardStatus();
+    if (current.protectionEnabled !== fresh.protectionEnabled) throw new Error('Protection changed. Review it and try again.');
+    await setNativeProtectionEnabled(!current.protectionEnabled);
     await refresh();
   });
 
@@ -57,6 +58,7 @@ export default function SettingsScreen() {
         <PrimaryButton title={busy ? 'Working…' : 'Resume protection'} disabled={disabled} onPress={changeProtection} />
       ) : null}
       <ErrorNote message={error || readError} />
+      <WeakeningGateDialog gate={gate} />
       {error ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
       {readError ? <SecondaryButton title="Try again" disabled={busy || loading} onPress={() => void refresh()} /> : null}
       <View className="gap-3">

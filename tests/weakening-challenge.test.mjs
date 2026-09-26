@@ -42,6 +42,23 @@ test('three mixed questions, retry, alternate and final consent stay separate', 
   assert.equal(isChallengeConfirmed(session, true), true);
 });
 
+test('an alternate question updates the schedule before the next answer', () => {
+  let session = startChallengeSession(() => 0);
+  const original = session.challenge.kind;
+  session = alternateChallenge(session, () => 0);
+  assert.notEqual(session.challenge.kind, original);
+  assert.equal(session.kinds[0], session.challenge.kind);
+  assert.equal(new Set(session.kinds).size, 3);
+
+  const asked = [];
+  for (let index = 0; index < 3; index++) {
+    asked.push(session.challenge.kind);
+    session = submitChallengeAnswer(session, session.challenge.answer, () => 0).session;
+  }
+  assert.equal(new Set(asked).size, 3, 'the fallback must not repeat the next scheduled family');
+  assert.equal(session.phase, 'confirm');
+});
+
 test('only weaker feed edits need the shared gate', () => {
   const stored = {
     shortsEnabled: true, youtubeHomeEnabled: true, xHomeEnabled: true, xVideosEnabled: true,

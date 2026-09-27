@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useReducedMotion } from 'react-native-reanimated';
 import { getInstalledApps, type InstalledApp } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
+import { metrics } from '@/theme/metrics';
 
 type AppPickerProps = {
   visible: boolean;
@@ -37,7 +38,7 @@ export function AppPicker({ visible, configuredPackages, onClose, onSelect }: Ap
           <SafeAreaView edges={['bottom']} className="flex-1 rounded-t-3xl border-t border-line2 bg-panel px-5 pt-3">
             <View className="mb-3 flex-row items-center justify-between">
               <Text accessibilityRole="header" className="text-[20px] font-semibold text-copy">Add app</Text>
-              <Pressable accessibilityRole="button" accessibilityLabel="Close app picker" onPress={onClose} className="min-h-11 min-w-11 items-center justify-center"><Text className="text-[28px] text-muted">×</Text></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Close app picker" onPress={onClose} style={{ minHeight: metrics.touchTarget, minWidth: metrics.touchTarget }} className="items-center justify-center"><Text className="text-[28px] text-muted">×</Text></Pressable>
             </View>
             <TextInput accessibilityLabel="Search apps" placeholder="Search apps" placeholderTextColor={colors.faint} value={query} onChangeText={setQuery} autoCorrect={false} autoCapitalize="none" className="mb-2 rounded-2xl border border-line bg-night px-4 py-3.5 text-[15px] text-copy" />
             {error ? <Pressable accessibilityRole="button" onPress={() => { void loadApps(); }} className="py-3"><Text className="text-[13px] text-danger">{error}</Text></Pressable> : null}

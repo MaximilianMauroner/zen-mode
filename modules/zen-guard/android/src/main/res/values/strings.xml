@@ -4,7 +4,8 @@
   <string name="zen_guard_accessibility_service_description">Processes screen content locally to recognize guarded YouTube, Instagram, and X feeds. When website blocking is on, it reads current addresses from known browser address bars, not page content. Zen Mode checks foreground apps to apply limits and lists launchable apps when you choose one. Screen content, browser addresses, and app inventory are not sent off this device.</string>
   <string name="zen_guard_app_limit_reached">Daily limit reached</string>
   <string name="zen_guard_rolling_limit_reached">Limit reached, refills over time</string>
-  <string name="zen_guard_shorts_blocked">One Short per visit. Scrolling is blocked.</string>
+  <string name="zen_guard_shorts_result_title">One Short limit reached</string>
+  <string name="zen_guard_shorts_result_detail">Zen Mode returned you to YouTube Home after the next Short. You can still use other YouTube areas.</string>
 
   <!-- Blocked screen, phase one: one line to read and nothing to work out. -->
   <string name="zen_guard_instagram_reels_blocked">Take a\nbreath.</string>

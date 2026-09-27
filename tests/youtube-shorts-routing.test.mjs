@@ -15,5 +15,7 @@ test('YouTube routes the owning accessibility event into conservative pager veri
   assert.match(service, /toIndex = event\.toIndex/);
   assert.match(service, /scrollY = event\.scrollY/);
   assert.match(service, /pagerTransitionIndex = pagerTransitionIndex/);
-  assert.match(service, /recordYouTubeShortsStats\(stateMachine\.pendingExitPageIndex\(\), EnforcementStatsOutcome\.SUCCESS\)/);
+  assert.match(service, /youtubeShortsExitResult\.requested\(stateMachine\.pendingExitPageIndex\(\), SystemClock\.elapsedRealtime\(\)\)/);
+  assert.match(service, /youtubeShortsExitResult\.confirmed\(homeSelected, SystemClock\.elapsedRealtime\(\)\)/);
+  assert.match(service, /recordYouTubeShortsStats\(exit\.pageIndex, EnforcementStatsOutcome\.SUCCESS\)/);
 });

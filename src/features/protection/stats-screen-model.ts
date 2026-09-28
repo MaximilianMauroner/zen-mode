@@ -22,7 +22,7 @@ export type StatsScreenModel = {
 
 /** Keep interface previews from presenting synthetic web counts as device data. */
 export function getStatsScreenState(platform: string, stats: EnforcementStats | null, loading: boolean) {
-  if (platform !== 'android') {
+  if (platform === 'web') {
     return { available: false, model: null, message: 'Statistics are available in the Android app.' };
   }
 

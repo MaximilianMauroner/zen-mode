@@ -6,16 +6,14 @@ import {
 } from '../src/features/protection/stats-presentation.ts';
 import { getStatsScreenModel, getStatsScreenState } from '../src/features/protection/stats-screen-model.ts';
 
-test('/stats does not present synthetic web or iOS zeroes as Android data', () => {
+test('/stats does not present synthetic web zeroes as Android data', () => {
   const synthetic = { total: 0, counts: {}, lastEventAt: 0 };
 
-  for (const platform of ['web', 'ios']) {
-    assert.deepEqual(getStatsScreenState(platform, synthetic, false), {
-      available: false,
-      model: null,
-      message: 'Statistics are available in the Android app.',
-    });
-  }
+  assert.deepEqual(getStatsScreenState('web', synthetic, false), {
+    available: false,
+    model: null,
+    message: 'Statistics are available in the Android app.',
+  });
 });
 
 test('/stats distinguishes a real Android zero from loading and read failure', () => {

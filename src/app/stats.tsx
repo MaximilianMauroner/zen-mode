@@ -10,11 +10,11 @@ import { colors } from '@/theme/colors';
 
 export default function StatsScreen() {
   const [stats, setStats] = useState<EnforcementStats | null>(null);
-  const [loading, setLoading] = useState(Platform.OS === 'android');
+  const [loading, setLoading] = useState(Platform.OS !== 'web');
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
-    if (Platform.OS !== 'android') return;
+    if (Platform.OS === 'web') return;
     setLoading(true);
     setError('');
     try {

@@ -20,6 +20,16 @@ export type StatsScreenModel = {
   other: StatsScreenRow | null;
 };
 
+/** Keep interface previews from presenting synthetic web counts as device data. */
+export function getStatsScreenState(platform: string, stats: EnforcementStats | null, loading: boolean) {
+  if (platform !== 'android') {
+    return { available: false, model: null, message: 'Statistics are available in the Android app.' };
+  }
+
+  if (stats) return { available: true, model: getStatsScreenModel(stats), message: '' };
+  return { available: true, model: null, message: loading ? 'Loading statistics…' : 'No statistics available.' };
+}
+
 /** The exact aggregate values rendered by the /stats protection rows. */
 export function getStatsScreenModel(stats: EnforcementStats): StatsScreenModel {
   const other = getOtherStatCount(stats);

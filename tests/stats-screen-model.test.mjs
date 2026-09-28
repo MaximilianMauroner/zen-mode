@@ -4,7 +4,27 @@ import test from 'node:test';
 import {
   ENFORCEMENT_STAT_CATEGORIES,
 } from '../src/features/protection/stats-presentation.ts';
-import { getStatsScreenModel } from '../src/features/protection/stats-screen-model.ts';
+import { getStatsScreenModel, getStatsScreenState } from '../src/features/protection/stats-screen-model.ts';
+
+test('/stats does not present synthetic web or iOS zeroes as Android data', () => {
+  const synthetic = { total: 0, counts: {}, lastEventAt: 0 };
+
+  for (const platform of ['web', 'ios']) {
+    assert.deepEqual(getStatsScreenState(platform, synthetic, false), {
+      available: false,
+      model: null,
+      message: 'Statistics are available in the Android app.',
+    });
+  }
+});
+
+test('/stats distinguishes a real Android zero from loading and read failure', () => {
+  const realZero = { total: 0, counts: {}, lastEventAt: 0 };
+
+  assert.equal(getStatsScreenState('android', realZero, false).model?.total, '0');
+  assert.equal(getStatsScreenState('android', null, true).message, 'Loading statistics…');
+  assert.equal(getStatsScreenState('android', null, false).message, 'No statistics available.');
+});
 
 test('/stats renders every fixed protection row when all categories are zero', () => {
   const model = getStatsScreenModel({ total: 0, counts: {}, lastEventAt: 0 });

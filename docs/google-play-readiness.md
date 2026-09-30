@@ -1,7 +1,11 @@
 # Google Play readiness
 
 Internal release-preparation checklist for the Android app. This records the
-current repository state. It does not publish or send anything externally.
+repository state and dated release evidence. It does not publish or send anything externally.
+
+For the 2026-09-26 release/QA identity audit and short physical acceptance
+journeys, start with [Android acceptance handoff](android-acceptance-handoff.md).
+Historical code-7 evidence below does not identify today's installed Play build.
 
 ## Current facts
 
@@ -21,7 +25,7 @@ current repository state. It does not publish or send anything externally.
 | Package visibility | The module queries only YouTube, Instagram, X, Chrome, Samsung Internet, Opera, Firefox, launcher activities, and exact Android Settings intents used to preserve the Accessibility escape path. Settings handlers are exempted only when Android identifies them as system or updated-system apps. `app.json` blocks unrelated storage and overlay permissions. Verify the merged release manifest. |
 | Listing decisions | Free, Productivity, support@lab4code.com, repository website, no ads/AD_ID, no account requirement, target ages 13–15/16–17/18+, IARC PEGI 3 / ESRB Everyone. Console operator reports these plus the listing text, icon, and public policy URL saved as a draft. |
 | Public policy identity | Maximilian Mauroner (Lab4Code), Italy, support@lab4code.com; explicitly approved for publication. No street address is published. |
-| Build state | Release signing is fail-closed. EAS holds an app-specific Zen upload key. The historical signed code-7 Expo replacement audited in `docs/evidence/android-release-candidate-0.1.5-vc7-20260916.md` remains the active Internal artifact; no code-8 upload is claimed, and Play-installed testing remains pending. Code-5 build/device and code-6 superseded-candidate evidence remain preserved separately. The key is not stored in this repository or VM workspace. |
+| Build state | Release signing is fail-closed. EAS holds an app-specific Zen upload key. The local release ledger inspected on 2026-09-26 records code 11 (`0.1.8`, source `8d0206c`) as its latest success and code 12 as failed. This is runner evidence, not a fresh Console or Play-installed observation. The code-7 audit is historical; see the acceptance handoff for exact identities. Play-installed acceptance remains pending. Code-5 build/device and code-6 superseded-candidate evidence remain preserved separately. The key is not stored in this repository or VM workspace. |
 | Internal access | Opt-in: <https://play.google.com/apps/internaltest/4700894893507986209>. The sole selected list is `Max internal testing`, containing only `maximilian.mauroner@gmail.com`; a second mistyped address was never added. |
 
 The repeatable build, signer verification, and key-custody boundary are in
@@ -56,8 +60,9 @@ lint, web export, and native Kotlin unit suite must pass before this PR is
 reviewed. The native service's enforcement state machines and Settings escape
 path were not changed. Native visual interaction, a clean-install journey,
 permission revocation/restart, touch/back/font-scaling/contrast checks, and
-third-party browser/app-version coverage are not verified here because the
-dedicated `moodqa` AVD is owned by another QA thread.
+third-party browser/app-version coverage are not verified here. This document
+carries source-check evidence, not a fresh device run. On 2026-09-26 no device
+was attached; earlier emulator evidence is dated separately.
 
 Publishing remains unverified. This repository does not establish current Play
 Console track/account state. Before publication, the owner still needs a
@@ -146,7 +151,8 @@ test data needs manual migration or retention.
 - [x] Inspect the merged release manifest. Confirm the accessibility service is
       present and no unwanted debug, storage, overlay, or broad package-query
       permissions were added.
-- [ ] Install and test the exact code-7 signed candidate. Check that debug-only
+- [ ] Identify, install from Play, and test the current exact signed candidate;
+      record its package, version, source and Play signer rather than assuming code 7. Check that debug-only
       diagnostics are absent; Instagram trace and blocker diagnostics are gated
       by the debug build flag. The earlier code-5 API-35 harness used
       `adb -i com.android.vending`, which assigns synthetic installer-package
@@ -211,9 +217,9 @@ test data needs manual migration or retention.
       explicit external/user-initiated-sharing distinction.
 - [x] Finalize the owner-approved [privacy policy](../PRIVACY.md) and align the
       in-app privacy screen. The parent saved the public GitHub URL in Console.
-      The superseded code-6 candidate and the active code-7 Expo 57.0.23
-      artifact both package `Italy` and are recorded in their respective
-      candidate evidence. Play-installed code-7 testing remains the owner's
+      The historical code-6 and code-7 Expo 57.0.23
+      artifacts both package `Italy` and are recorded in their respective
+      candidate evidence. Current Play-installed candidate testing remains the owner's
       separate work.
 - [ ] Ensure the listing and review notes say that protection needs Android
       Accessibility access, an installed native Android build, and observation
@@ -243,7 +249,10 @@ and 1 minute for timed visits where available.
 
 ### Setup and permission path
 
-1. Clear Zen Mode app data or use a fresh install. Launch the app.
+1. Use a disposable test profile/device or a separate QA package for a fresh
+   install. Do not clear or uninstall the owner's Play app. QA packages do not
+   establish Play delivery or upgrade acceptance; use the exact signed candidate
+   in a disposable profile for that release gate. Launch the app.
 2. Confirm the setup disclosure is visible and that the guard cannot be
    enabled until the consent checkbox is selected.
 3. Tap `Turn on the guard`, enable Zen Mode in Android Accessibility settings,

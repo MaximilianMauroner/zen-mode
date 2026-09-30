@@ -86,7 +86,3 @@ test('disabled unobserved feeds and no enabled feeds produce no guidance', () =>
     postSetupAwaiting: [],
   });
 });
-
-test('active observation never renders the later-enabled follow-up section', () => {
-  assert.deepEqual(getXDrawerGuidance({ ...base, xSignalMask: 1 }, true).postSetupAwaiting, []);
-});

@@ -152,8 +152,12 @@ async function buildRelease() {
     // Record the attempt even when dependency installation, checks, build, or upload fails.
     // If SSH itself fails here, the active reservation safely blocks another upload.
     try {
-      if (output) writeFileSync(join(output, 'release.json'), `${JSON.stringify({ ...reservation, status: outcome, ...(failure ? { failure } : {}), finishedAt: new Date().toISOString() }, null, 2)}\n`);
-      ledger('finish', [reservation.id, outcome]);
+      try {
+        if (output) writeFileSync(join(output, 'release.json'), `${JSON.stringify({ ...reservation, status: outcome, ...(failure ? { failure } : {}), finishedAt: new Date().toISOString() }, null, 2)}\n`);
+      } finally {
+        // Local evidence is optional; its failure must not leave the shared reservation active.
+        ledger('finish', [reservation.id, outcome]);
+      }
     } finally {
       if (worktreeAdded) run('git', ['worktree', 'remove', '--force', sourceRoot]);
       if (temporary) rmSync(temporary, { recursive: true, force: true });

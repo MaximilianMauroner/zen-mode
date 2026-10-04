@@ -120,7 +120,16 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     val nowElapsedMs = SystemClock.elapsedRealtime()
     val storedInstagram = homeFeedStatusStore.instagram(nowElapsedMs)
     instagramStorageAvailable = storedInstagram.storageState == HomeFeedStorageState.AVAILABLE
-    if (!instagramStorageAvailable) instagramStateMachine.markStorageUnavailable()
+    instagramStateMachine.restore(
+      HomeFeedRuntimeState(
+        usedMs = storedInstagram.usedMs,
+        blockedUntilElapsedMs = storedInstagram.blockedUntilElapsedMs,
+        usageState = storedInstagram.usageState,
+        lockoutState = storedInstagram.lockoutState,
+        storageState = storedInstagram.storageState,
+        capturedAtElapsedMs = nowElapsedMs,
+      ),
+    )
     val storedX = homeFeedStatusStore.x(nowElapsedMs)
     xStorageAvailable = storedX.storageState == HomeFeedStorageState.AVAILABLE
     xHomeUsageState = if (xStorageAvailable) storedX.usageState else HomeFeedUsageState.UNKNOWN
@@ -827,7 +836,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
         resetInstagramStatsDedupe()
       }
     }
-    if (action is InstagramGuardAction.ShowBlocker) publishInstagramHomeStatus()
+    publishInstagramHomeStatus()
   }
 
   override fun onInterrupt() {
@@ -864,7 +873,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     navigationHandler.removeCallbacksAndMessages(null)
     usageHandler.removeCallbacksAndMessages(null)
     if (::intentOverlay.isInitialized) intentOverlay.hide()
-    clearInstagramEnforcement()
+    clearInstagramEnforcement(preserveHomeSession = hasActiveProtection())
     clearStatsDedupeState()
     if (screenReceiverRegistered) {
       unregisterReceiver(screenStateReceiver)

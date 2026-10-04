@@ -1,4 +1,5 @@
 import type { InstalledApp } from '../../../modules/zen-guard/src/ZenGuardModule';
+import type { AppRule } from './lock-policy';
 
 export type ConfiguredAppAvailability = 'installed' | 'absent' | 'unknown';
 
@@ -27,4 +28,22 @@ export function getConfiguredAppPresentation(
     availability: 'unknown',
     detail: `${storedLabel} is not currently available in the app picker. The saved rule stays here and can apply if the app returns.`,
   };
+}
+
+function describeRule(rule: AppRule): string {
+  switch (rule.mode) {
+    case 'daily':
+      return `a daily limit of ${rule.minutes} minutes`;
+    case 'visit':
+      return `a timed visit of ${rule.sessionMinutes} minutes with a ${rule.cooldownMinutes}-minute cooldown`;
+    case 'rolling':
+      return `a rolling allowance of ${rule.allowanceMinutes} minutes per ${rule.windowMinutes}-minute window`;
+  }
+}
+
+/** The final consent names every parameter and every rule the save replaces. */
+export function getAppRuleChangeAction(label: string, stored: readonly AppRule[], proposed: AppRule): string {
+  const nextRule = describeRule(proposed);
+  if (stored.length === 0) return `set ${label}'s rule to ${nextRule}`;
+  return `replace ${label}'s existing rules (${stored.map(describeRule).join('; ')}) with ${nextRule}`;
 }

@@ -27,7 +27,7 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
-import { getConfiguredAppPresentation } from '@/features/protection/app-rule-presentation';
+import { getAppRuleChangeAction, getConfiguredAppPresentation } from '@/features/protection/app-rule-presentation';
 import { getAppLimitsPlatformState } from '@/features/protection/app-limits-state';
 
 const MINUTE_OPTIONS = [5, 15, 30, 45, 60, 90, 120];
@@ -256,9 +256,7 @@ export default function AppLimitsScreen() {
       // and the lock must judge the change that is actually being made.
       const stored = await readStoredRules(packageName);
       const refusal = appRuleLockRefusal(stored, proposed);
-      const action = mode === 'daily' ? `set ${selected.label}'s daily limit to ${minutes} minutes` :
-        mode === 'visit' ? `change ${selected.label}'s timed visit to ${session} minutes` :
-          `change ${selected.label}'s rolling allowance to ${allowance} minutes`;
+      const action = getAppRuleChangeAction(selected.label, stored, proposed);
       if (!await authorizeWeakening(refusal !== null, action, gate.request)) return;
       if (JSON.stringify(await readStoredRules(packageName)) !== JSON.stringify(stored)) {
         throw new Error('The app rule changed. Review it and try again.');

@@ -466,12 +466,14 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     if (root.packageName?.toString() != YOUTUBE_PACKAGE) return
     val nowMs = System.currentTimeMillis()
     preferences.recordEvent(nowMs)
-    val result = ShortsDetector.detect(snapshot(root))
+    val nodes = snapshot(root)
+    val result = ShortsDetector.detect(nodes)
     if (!result.isShortsViewer) {
+      val surface = YouTubeSurfaceDetector.detect(nodes)
       val homeTab = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/pivot_bar")
         .firstOrNull()?.getChild(0)?.getChild(0)
       val homeSelected = homeTab?.isSelected == true || homeTab?.getChild(0)?.isSelected == true
-      youtubeShortsExitResult.confirmed(homeSelected, SystemClock.elapsedRealtime())?.let { exit ->
+      youtubeShortsExitResult.confirmed(surface, homeSelected, SystemClock.elapsedRealtime())?.let { exit ->
         recordYouTubeShortsStats(exit.pageIndex, EnforcementStatsOutcome.SUCCESS)
         youtubeShortsResultOverlay.show()
       }

@@ -1,6 +1,6 @@
 package com.maxmauroner.zenguard
 
-/** A navigation request is not a result until YouTube reports its Home tab selected. */
+/** A result requires a positive Home surface and its selected tab, not merely absent Shorts IDs. */
 internal class YouTubeShortsExitResult(private val confirmationWindowMs: Long = 3_000L) {
   data class ConfirmedExit(val pageIndex: Int?)
   private var pendingPageIndex: Int? = null
@@ -11,13 +11,13 @@ internal class YouTubeShortsExitResult(private val confirmationWindowMs: Long = 
     requestedAtMs = nowMs
   }
 
-  fun confirmed(homeSelected: Boolean, nowMs: Long): ConfirmedExit? {
+  fun confirmed(surface: YouTubeSurface, homeSelected: Boolean, nowMs: Long): ConfirmedExit? {
     val requestedAt = requestedAtMs ?: return null
     if (nowMs < requestedAt || nowMs - requestedAt > confirmationWindowMs) {
       clear()
       return null
     }
-    if (!homeSelected) return null
+    if (surface != YouTubeSurface.HOME || !homeSelected) return null
     val pageIndex = pendingPageIndex
     clear()
     return ConfirmedExit(pageIndex)

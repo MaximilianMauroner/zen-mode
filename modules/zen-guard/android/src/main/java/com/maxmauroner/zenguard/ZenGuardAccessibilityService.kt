@@ -836,7 +836,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
         resetInstagramStatsDedupe()
       }
     }
-    if (action is InstagramGuardAction.ShowBlocker) publishInstagramHomeStatus()
+    publishInstagramHomeStatus()
   }
 
   override fun onInterrupt() {
@@ -873,7 +873,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     navigationHandler.removeCallbacksAndMessages(null)
     usageHandler.removeCallbacksAndMessages(null)
     if (::intentOverlay.isInitialized) intentOverlay.hide()
-    clearInstagramEnforcement()
+    clearInstagramEnforcement(preserveHomeSession = hasActiveProtection())
     clearStatsDedupeState()
     if (screenReceiverRegistered) {
       unregisterReceiver(screenStateReceiver)

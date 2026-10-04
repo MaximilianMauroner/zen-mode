@@ -14,6 +14,126 @@ class InstagramGuardStateMachineTest {
   )
 
   @Test
+  fun serviceRestartPreservesHomeLockout() {
+    val beforeRestart = InstagramGuardStateMachine()
+    beforeRestart.next(InstagramSurface.HOME_FEED, false, 1_000, settings)
+    beforeRestart.next(InstagramSurface.HOME_FEED, false, 301_000, settings)
+    val persisted = beforeRestart.homeRuntimeState(301_000)
+
+    val afterRestart = InstagramGuardStateMachine()
+    afterRestart.restore(persisted, 301_001)
+    assertEquals(persisted.blockedUntilElapsedMs, afterRestart.homeRuntimeState(301_001).blockedUntilElapsedMs)
+    assertEquals(
+      InstagramGuardAction.ShowBlocker(InstagramBlockReason.HOME_LIMIT, null),
+      afterRestart.next(InstagramSurface.HOME_FEED, false, 301_001, settings),
+    )
+    afterRestart.next(InstagramSurface.DIRECT_MESSAGES, false, 302_000, settings)
+    assertEquals(
+      InstagramGuardAction.ShowBlocker(InstagramBlockReason.HOME_LIMIT, null),
+      afterRestart.next(InstagramSurface.HOME_FEED, false, 3_900_999, settings),
+    )
+    assertEquals(InstagramGuardAction.None, afterRestart.next(InstagramSurface.HOME_FEED, false, 3_901_000, settings))
+    assertEquals(0L, afterRestart.homeRuntimeState(3_901_000).usedMs)
+  }
+
+  @Test
+  fun serviceRestartPreservesPartialUsageWithoutChargingUnobservedGap() {
+    val beforeRestart = InstagramGuardStateMachine()
+    beforeRestart.next(InstagramSurface.HOME_FEED, false, 1_000, settings)
+    val afterRestart = InstagramGuardStateMachine()
+    afterRestart.restore(beforeRestart.homeRuntimeState(121_000), 501_000)
+
+    assertEquals(120_000L, afterRestart.homeRuntimeState(501_000).usedMs)
+    assertEquals(HomeFeedUsageState.UNKNOWN, afterRestart.homeRuntimeState(501_000).usageState)
+    afterRestart.onTransientSurfaceLost(550_000)
+    assertEquals(InstagramGuardAction.None, afterRestart.next(InstagramSurface.HOME_FEED, false, 600_000, settings))
+    assertEquals(120_000L, afterRestart.homeRuntimeState(600_000).usedMs)
+    assertEquals(InstagramGuardAction.None, afterRestart.next(InstagramSurface.HOME_FEED, false, 779_999, settings))
+    assertEquals(
+      InstagramGuardAction.ShowBlocker(InstagramBlockReason.HOME_LIMIT, null),
+      afterRestart.next(InstagramSurface.HOME_FEED, false, 780_000, settings),
+    )
+  }
+
+  @Test
+  fun knownNonHomeSurfaceEndsRestoredPartialVisit() {
+    val afterRestart = InstagramGuardStateMachine()
+    afterRestart.restore(HomeFeedRuntimeState(120_000L, null, HomeFeedUsageState.UNKNOWN), 500_000)
+    afterRestart.next(InstagramSurface.DIRECT_MESSAGES, false, 501_000, settings)
+    assertEquals(0L, afterRestart.homeRuntimeState(501_000).usedMs)
+    assertEquals(InstagramGuardAction.None, afterRestart.next(InstagramSurface.HOME_FEED, false, 600_000, settings))
+    assertEquals(0L, afterRestart.homeRuntimeState(600_000).usedMs)
+  }
+
+  @Test
+  fun expiredRestoredLockoutStartsFreshAllowance() {
+    val afterRestart = InstagramGuardStateMachine()
+    afterRestart.restore(
+      HomeFeedRuntimeState(300_000L, 3_901_000L, capturedAtElapsedMs = 301_000L),
+      3_901_000L,
+    )
+    assertEquals(0L, afterRestart.homeRuntimeState(3_901_000).usedMs)
+    assertEquals(HomeFeedLockoutState.NONE, afterRestart.homeRuntimeState(3_901_000).lockoutState)
+    assertEquals(InstagramGuardAction.None, afterRestart.next(InstagramSurface.HOME_FEED, false, 3_901_001, settings))
+  }
+
+  @Test
+  fun expiredLockoutSnapshotDoesNotRestoreExhaustedUsage() {
+    val beforeRestart = InstagramGuardStateMachine()
+    beforeRestart.next(InstagramSurface.HOME_FEED, false, 1_000, settings)
+    beforeRestart.next(InstagramSurface.HOME_FEED, false, 301_000, settings)
+    val expired = beforeRestart.homeRuntimeState(3_901_000)
+    assertEquals(0L, expired.usedMs)
+    assertEquals(HomeFeedLockoutState.NONE, expired.lockoutState)
+
+    val afterRestart = InstagramGuardStateMachine()
+    afterRestart.restore(expired, 3_901_001)
+    assertEquals(InstagramGuardAction.None, afterRestart.next(InstagramSurface.HOME_FEED, false, 3_901_001, settings))
+  }
+
+  @Test
+  fun unverifiableRebootLockoutWaitsForCompleteMonotonicInterval() {
+    val afterRestart = InstagramGuardStateMachine()
+    afterRestart.restore(
+      HomeFeedRuntimeState(
+        usedMs = 300_000L,
+        blockedUntilElapsedMs = null,
+        usageState = HomeFeedUsageState.UNKNOWN,
+        lockoutState = HomeFeedLockoutState.UNKNOWN,
+      ),
+      60_000L,
+    )
+    assertEquals(HomeFeedLockoutState.UNKNOWN, afterRestart.homeRuntimeState(60_000).lockoutState)
+    assertEquals(
+      InstagramGuardAction.ShowBlocker(InstagramBlockReason.HOME_LIMIT, null),
+      afterRestart.next(InstagramSurface.HOME_FEED, false, 61_000, settings),
+    )
+    assertEquals(
+      InstagramGuardAction.ShowBlocker(InstagramBlockReason.HOME_LIMIT, null),
+      afterRestart.next(InstagramSurface.HOME_FEED, false, 3_659_999, settings),
+    )
+    assertEquals(InstagramGuardAction.None, afterRestart.next(InstagramSurface.HOME_FEED, false, 3_660_000, settings))
+    assertEquals(0L, afterRestart.homeRuntimeState(3_660_000).usedMs)
+    assertEquals(HomeFeedLockoutState.NONE, afterRestart.homeRuntimeState(3_660_000).lockoutState)
+  }
+
+  @Test
+  fun unavailableRestoredStorageDoesNotGrantHomeAllowance() {
+    val afterRestart = InstagramGuardStateMachine()
+    afterRestart.restore(
+      HomeFeedRuntimeState(0L, null, storageState = HomeFeedStorageState.UNAVAILABLE),
+      60_000L,
+    )
+    assertEquals(HomeFeedStorageState.UNAVAILABLE, afterRestart.homeRuntimeState(60_000).storageState)
+    assertEquals(
+      InstagramGuardAction.ShowBlocker(InstagramBlockReason.HOME_LIMIT, null),
+      afterRestart.next(InstagramSurface.HOME_FEED, false, 3_660_000, settings),
+    )
+    afterRestart.recoverStorage(3_660_001)
+    assertEquals(InstagramGuardAction.None, afterRestart.next(InstagramSurface.HOME_FEED, false, 3_660_001, settings))
+  }
+
+  @Test
   fun storageRecoveryRequiresForegroundHomeObservation() {
     assertFalse(shouldRecoverInstagramStorage(false, InstagramSurface.HOME_FEED, false))
     assertFalse(shouldRecoverInstagramStorage(false, InstagramSurface.REELS_VIEWER, true))

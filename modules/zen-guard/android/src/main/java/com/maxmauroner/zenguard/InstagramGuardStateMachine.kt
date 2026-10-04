@@ -67,6 +67,9 @@ internal class InstagramGuardStateMachine(
   private var homeElapsedMs = 0L
   private var homeLastActiveAt: Long? = null
   private var homeBlockedUntil: Long? = null
+  private var homeLockoutState = HomeFeedLockoutState.NONE
+  private var unknownLockoutSinceMs: Long? = null
+  private var homeObservationRequired = false
   private var storageUnavailable = false
 
   private var blocker: InstagramGuardAction.ShowBlocker? = null
@@ -150,10 +153,31 @@ internal class InstagramGuardStateMachine(
 
   fun homeElapsedMs(): Long = homeElapsedMs
 
+  /** Restore durable accounting without charging the unobserved service gap. */
+  fun restore(state: HomeFeedRuntimeState, nowMs: Long = state.capturedAtElapsedMs ?: 0L) {
+    val normalized = state.normalizedAt(nowMs)
+    homeElapsedMs = normalized.usedMs.coerceIn(0L, HOME_FEED_MAX_SAFE_USAGE_MS)
+    homeBlockedUntil = normalized.blockedUntilElapsedMs
+    homeLockoutState = normalized.lockoutState
+    unknownLockoutSinceMs = if (homeLockoutState == HomeFeedLockoutState.UNKNOWN) {
+      nowMs.coerceIn(0L, HOME_FEED_MAX_SAFE_TIMESTAMP_MS)
+    } else {
+      null
+    }
+    storageUnavailable = normalized.storageState == HomeFeedStorageState.UNAVAILABLE
+    homeObservationRequired = normalized.usageState != HomeFeedUsageState.PAUSED
+    homeLastActiveAt = null
+    blocker = null
+    blockedSurface = null
+    resetReelsProvenance()
+  }
+
   fun markStorageUnavailable() {
     storageUnavailable = true
     homeLastActiveAt = null
     homeBlockedUntil = null
+    homeLockoutState = HomeFeedLockoutState.UNKNOWN
+    unknownLockoutSinceMs = null
     // A Home accounting failure must not dismiss an unrelated Reels or Explore intervention.
     if (blocker?.reason == InstagramBlockReason.HOME_LIMIT) {
       blocker = null
@@ -166,14 +190,18 @@ internal class InstagramGuardStateMachine(
     storageUnavailable = false
     homeElapsedMs = 0L
     homeBlockedUntil = null
+    homeLockoutState = HomeFeedLockoutState.NONE
+    unknownLockoutSinceMs = null
+    homeObservationRequired = false
     homeLastActiveAt = nowMs.coerceIn(0L, HOME_FEED_MAX_SAFE_TIMESTAMP_MS)
     blocker = null
     blockedSurface = null
   }
 
-  /** Snapshot for presentation only; enforcement continues to use the private state above. */
+  /** Snapshot for presentation and persistence; expired lockouts also clear exhausted usage. */
   fun homeRuntimeState(nowMs: Long): HomeFeedRuntimeState {
-    val pendingMs = if (homeBlockedUntil == null) {
+    normalizeExpiredHomeLockout(nowMs)
+    val pendingMs = if (homeLockoutState == HomeFeedLockoutState.NONE) {
       homeLastActiveAt?.let { elapsedMsSince(nowMs, it) } ?: 0L
     } else {
       0L
@@ -181,7 +209,12 @@ internal class InstagramGuardStateMachine(
     return HomeFeedRuntimeState(
       usedMs = saturatingUsageAdd(homeElapsedMs, pendingMs),
       blockedUntilElapsedMs = homeBlockedUntil,
-      usageState = if (homeLastActiveAt != null && homeBlockedUntil == null) HomeFeedUsageState.ACTIVE else HomeFeedUsageState.PAUSED,
+      usageState = when {
+        homeLockoutState == HomeFeedLockoutState.UNKNOWN || homeObservationRequired -> HomeFeedUsageState.UNKNOWN
+        homeLastActiveAt != null && homeLockoutState == HomeFeedLockoutState.NONE -> HomeFeedUsageState.ACTIVE
+        else -> HomeFeedUsageState.PAUSED
+      },
+      lockoutState = homeLockoutState,
       storageState = if (storageUnavailable) HomeFeedStorageState.UNAVAILABLE else HomeFeedStorageState.AVAILABLE,
       capturedAtElapsedMs = nowMs,
     ).normalizedAt(nowMs)
@@ -210,10 +243,10 @@ internal class InstagramGuardStateMachine(
    * The active Home allowance is kept so only foreground time is charged on resume.
    */
   fun onAppBackground(nowMs: Long? = null, settings: InstagramGuardSettings? = null) {
-    if (homeBlockedUntil == null && nowMs != null) {
+    if (homeLockoutState == HomeFeedLockoutState.NONE && nowMs != null) {
       homeLastActiveAt?.let { homeElapsedMs = saturatingUsageAdd(homeElapsedMs, elapsedMsSince(nowMs, it)) }
       if (settings != null && homeElapsedMs >= settings.homeAllowanceMs) {
-        homeBlockedUntil = saturatingTimestampAdd(nowMs, settings.homeLockoutMs)
+        beginHomeLockout(nowMs, settings)
       }
     }
     blocker = null
@@ -307,12 +340,21 @@ internal class InstagramGuardStateMachine(
     // existing Home protection semantics fail-closed until a trustworthy state is restored.
     if (storageUnavailable) return block(InstagramBlockReason.HOME_LIMIT, null)
 
-    val blockedUntil = homeBlockedUntil
-    if (blockedUntil != null) {
-      if (input.nowMs < blockedUntil) return block(InstagramBlockReason.HOME_LIMIT, null)
-      homeBlockedUntil = null
+    normalizeExpiredHomeLockout(input.nowMs)
+    if (homeLockoutState == HomeFeedLockoutState.UNKNOWN) {
+      val unknownSince = unknownLockoutSinceMs
+      if (unknownSince == null || elapsedMsSince(input.nowMs, unknownSince) < settings.homeLockoutMs.coerceAtLeast(0L)) {
+        return block(InstagramBlockReason.HOME_LIMIT, null)
+      }
+      // A complete monotonic lockout after reconnect resolves an unverifiable reboot deadline.
+      homeLockoutState = HomeFeedLockoutState.NONE
+      unknownLockoutSinceMs = null
       resetHomeSession()
     }
+    if (homeBlockedUntil?.let { input.nowMs < it } == true) {
+      return block(InstagramBlockReason.HOME_LIMIT, null)
+    }
+    homeObservationRequired = false
 
     val previousActiveAt = homeLastActiveAt
     if (previousActiveAt != null) {
@@ -321,7 +363,7 @@ internal class InstagramGuardStateMachine(
     homeLastActiveAt = input.nowMs
 
     return if (homeElapsedMs >= settings.homeAllowanceMs) {
-      homeBlockedUntil = saturatingTimestampAdd(input.nowMs, settings.homeLockoutMs)
+      beginHomeLockout(input.nowMs, settings)
       block(InstagramBlockReason.HOME_LIMIT, null)
     } else {
       InstagramGuardAction.None
@@ -350,8 +392,29 @@ internal class InstagramGuardStateMachine(
       blocker = null
       blockedSurface = null
     }
-    if (homeLockExpired) {
+    if (homeLockExpired) normalizeExpiredHomeLockout(input.nowMs)
+    // Re-evaluate an unknown reboot lockout so it can finish its fresh monotonic interval.
+    if (active.reason == InstagramBlockReason.HOME_LIMIT && homeLockoutState == HomeFeedLockoutState.UNKNOWN) {
+      blocker = null
+      blockedSurface = null
+    }
+  }
+
+  private fun beginHomeLockout(nowMs: Long, settings: InstagramGuardSettings) {
+    homeBlockedUntil = saturatingTimestampAdd(nowMs, settings.homeLockoutMs)
+    homeLockoutState = HomeFeedLockoutState.ACTIVE
+    unknownLockoutSinceMs = null
+  }
+
+  private fun normalizeExpiredHomeLockout(nowMs: Long) {
+    if (homeLockoutState == HomeFeedLockoutState.ACTIVE && homeBlockedUntil?.let { nowMs >= it } == true) {
       homeBlockedUntil = null
+      homeLockoutState = HomeFeedLockoutState.NONE
+      unknownLockoutSinceMs = null
+      if (blocker?.reason == InstagramBlockReason.HOME_LIMIT) {
+        blocker = null
+        blockedSurface = null
+      }
       resetHomeSession()
     }
   }
@@ -359,6 +422,7 @@ internal class InstagramGuardStateMachine(
   private fun resetHomeSession() {
     homeElapsedMs = 0L
     homeLastActiveAt = null
+    homeObservationRequired = false
   }
 
   private fun resetReelsProvenance() {

@@ -373,6 +373,44 @@ class HomeFeedStatusStoreTest {
     assertEquals(XAction.NONE, restored.next(XSurface.HOME, 3_660_001L, XSettings(homeAllowanceMs = 60_000L)))
   }
 
+  @Test fun `Instagram reconnect publication preserves same boot and reboot lockouts`() {
+    val settings = InstagramGuardSettings(homeAllowanceMs = 60_000L)
+    for (currentBoot in listOf(7L, 8L)) {
+      val persistence = FakePersistence()
+      val beforeRestart = InstagramGuardStateMachine()
+      beforeRestart.next(InstagramSurface.HOME_FEED, false, 1_000L, settings)
+      beforeRestart.next(InstagramSurface.HOME_FEED, false, 61_000L, settings)
+      assertTrue(store(persistence, boot = 7L).recordInstagram(beforeRestart.homeRuntimeState(61_000L)))
+
+      val now = if (currentBoot == 7L) 61_001L else 1_000L
+      val afterRestartStore = store(persistence, boot = currentBoot)
+      val stored = afterRestartStore.instagram(now)
+      val restored = InstagramGuardStateMachine()
+      restored.restore(
+        HomeFeedRuntimeState(
+          usedMs = stored.usedMs,
+          blockedUntilElapsedMs = stored.blockedUntilElapsedMs,
+          usageState = stored.usageState,
+          lockoutState = stored.lockoutState,
+          storageState = stored.storageState,
+          capturedAtElapsedMs = now,
+        ),
+      )
+      assertTrue(afterRestartStore.recordInstagram(restored.homeRuntimeState(now)))
+      val published = store(persistence, boot = currentBoot).instagram(now)
+      assertEquals(
+        if (currentBoot == 7L) HomeFeedLockoutState.ACTIVE else HomeFeedLockoutState.UNKNOWN,
+        published.lockoutState,
+      )
+      assertEquals(stored.blockedUntilElapsedMs, published.blockedUntilElapsedMs)
+      assertEquals(stored.usedMs, published.usedMs)
+      assertEquals(
+        InstagramGuardAction.ShowBlocker(InstagramBlockReason.HOME_LIMIT, null),
+        restored.next(InstagramSurface.HOME_FEED, false, now + 1L, settings),
+      )
+    }
+  }
+
   private fun store(persistence: FakePersistence, boot: Long?, now: Long = 100L) =
     HomeFeedStatusStore(persistence, { boot }, { now })
 

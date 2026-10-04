@@ -52,7 +52,7 @@ internal class YouTubeShortsResultOverlay(private val service: AccessibilityServ
       WindowManager.LayoutParams.MATCH_PARENT,
       WindowManager.LayoutParams.WRAP_CONTENT,
       WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
       PixelFormat.TRANSLUCENT,
     ).apply {
       gravity = Gravity.TOP

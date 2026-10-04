@@ -7,7 +7,8 @@ import { useReducedMotion } from 'react-native-reanimated';
 import { PrimaryButton, SecondaryButton } from '@/components/ui/button';
 import { SectionLabel } from '@/components/ui/card';
 import { ErrorNote } from '@/components/ui/screen';
-import { isChangeBlocked } from '@/features/protection/lock';
+import { authorizeWeakening } from '@/features/protection/authorize-weakening';
+import { useWeakeningGate, WeakeningGateDialog } from './weakening-gate';
 import {
   addBlockedDomain,
   getAdultSiteSettings,
@@ -34,6 +35,7 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
   const [lockBlocked, setLockBlocked] = useState(false);
   const inFlight = useRef(false);
   const reduceMotion = useReducedMotion();
+  const gate = useWeakeningGate();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -59,7 +61,9 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
         await task();
         await Promise.all([load(), refreshStatus()]);
       } catch (cause: unknown) {
-        setError(cause instanceof Error ? cause.message : fallback);
+        const message = cause instanceof Error ? cause.message : fallback;
+        if (message.includes('locked')) setLockBlocked(true);
+        setError(message);
       } finally {
         inFlight.current = false;
         setBusy(false);
@@ -69,10 +73,8 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
 
   const changeEnabled = (enabled: boolean) => run(async () => {
     const fresh = await getAdultSiteSettings();
-    if (fresh.enabled && !enabled && await isChangeBlocked()) {
-      setLockBlocked(true);
-      throw new Error('Settings are locked. Ask to unlock before allowing adult sites.');
-    }
+    if (!await authorizeWeakening(fresh.enabled && !enabled, 'disable adult-site blocking', gate.request)) return;
+    if (fresh.enabled && !enabled && (await getAdultSiteSettings()).enabled !== fresh.enabled) throw new Error('The site rule changed. Review it and try again.');
     await setAdultSiteBlockingEnabled(enabled);
   }, 'The site rule could not be changed.');
 
@@ -89,10 +91,8 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
   };
 
   const remove = (host: string) => run(async () => {
-    if (await isChangeBlocked()) {
-      setLockBlocked(true);
-      throw new Error('Removing a site loosens the guard. Ask to unlock, then wait a day.');
-    }
+    if (!await authorizeWeakening(true, `remove the block for ${host}`, gate.request)) return;
+    if (!(await getAdultSiteSettings()).customHosts.includes(host)) throw new Error('The site rule changed. Review it and try again.');
     await removeBlockedDomain(host);
   }, 'That site could not be removed.');
 
@@ -104,7 +104,7 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
       visible={visible}
       transparent
       animationType={reduceMotion ? 'none' : 'slide'}
-      onRequestClose={close}
+      onRequestClose={() => { if (gate.session) gate.finish(false); else close(); }}
       onShow={() => { setInput(''); setLockBlocked(false); void load(); }}
       statusBarTranslucent>
       <KeyboardAvoidingView className="flex-1 justify-end bg-black/50" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -220,6 +220,7 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
             {!settings && error ? <PrimaryButton title="Try again" disabled={loading || busy} onPress={() => void load()} /> : null}
           </ScrollView>
         </SafeAreaView>
+        <WeakeningGateDialog gate={gate} embedded />
       </KeyboardAvoidingView>
     </Modal>
   );

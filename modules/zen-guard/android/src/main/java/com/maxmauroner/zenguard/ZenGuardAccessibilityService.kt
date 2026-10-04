@@ -223,6 +223,9 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     // content events; treating them as an external app would immediately remove the blocker.
     if (eventPackage == packageName) {
       if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+        if (windows.none { it.root?.packageName?.toString() == YOUTUBE_PACKAGE }) {
+          resetYouTubeEnforcement()
+        }
         if (windows.none { it.root?.packageName?.toString() == X_PACKAGE }) {
           clearXEnforcement(preserveHomeLockout = true)
         }

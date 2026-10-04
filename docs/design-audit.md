@@ -53,13 +53,16 @@ target, not a claim of a reproduced visual defect.
 
 ## Capture and decision boundary
 
-Fourteen **web interface-preview** samples from the SDK 57 static export at
+Fourteen **first-viewport web interface-preview** samples from the SDK 57 static export at
 `33a5e52` are attached under
 [`evidence/design-31-web-preview/`](evidence/design-31-web-preview/).
 The [web route matrix](design-web-route-matrix.md) links Setup, Feeds, App
 limits, Lock, Settings, Stats, and Privacy at 320 × 800 and 1280 × 800. These
 first-viewport samples do not exercise Android protection, below-the-fold
-reachability, or the full state matrix. T3 device access was off, so no native
+reachability, or the full state matrix. Five additional 320 × 800 bottom
+captures are linked in [narrow web scroll evidence](design-web-scroll-evidence.md),
+with measured offsets for those five historical web states. They do not prove
+Android touch, keyboard, or TalkBack reachability. T3 device access was off, so no native
 capture is available. Capture the remaining matrix
 before approving either of two candidate Feeds directions: (A) keep the
 existing compact status header and improve its responsive spacing, or (B) place

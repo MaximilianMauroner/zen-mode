@@ -6,6 +6,8 @@ same UI code (`33a5e52`); `e42390d` changed only an audit note. Chromium used
 800 px high viewports at 320 and 1280 CSS px wide. Each PNG is the **first
 viewport**: the React Native `ScrollView` does not make `--full-page` capture
 its internal scrolled content. These images cannot establish Android behavior.
+Five separate 320 × 800 bottom captures and their measured scroll offsets are
+listed in [narrow web scroll evidence](design-web-scroll-evidence.md).
 
 | Route | 320 px | 1280 px | Captured web state |
 | --- | --- | --- | --- |
@@ -14,11 +16,16 @@ its internal scrolled content. These images cannot establish Android behavior.
 | App limits | [phone](evidence/design-31-web-preview/limits-320.png) | [desktop](evidence/design-31-web-preview/limits-1280.png) | Android required and disabled add action. |
 | Lock | [phone](evidence/design-31-web-preview/lock-320.png) | [desktop](evidence/design-31-web-preview/lock-1280.png) | Lock read unavailable; duration choices and action are disabled. |
 | Settings | [phone](evidence/design-31-web-preview/settings-320.png) | [desktop](evidence/design-31-web-preview/settings-1280.png) | Service unavailable and guard details visible. PR #45 changes the protection action. |
-| Stats | [phone](evidence/design-31-web-preview/stats-320.png) | [desktop](evidence/design-31-web-preview/stats-1280.png) | Web-local zero totals. |
+| Stats | [phone](evidence/design-31-web-preview/stats-320.png) | [desktop](evidence/design-31-web-preview/stats-1280.png) | Native statistics unavailable. The historical web stub displayed synthetic zero totals, not device measurements. |
 | Privacy | [phone](evidence/design-31-web-preview/privacy-320.png) | [desktop](evidence/design-31-web-preview/privacy-1280.png) | Long static copy and policy action; phone capture shows only its first viewport. |
 
 ## Findings from the captured states
 
+- **P2, unavailable statistics:** The historical Stats captures show zero
+  totals synthesized by `ZenGuardModule.web.ts` while native data is unavailable.
+  These values are not recorded intervention metrics. Merged PR #57 corrects
+  the web route to show an Android-only availability message and no total;
+  these older images were not recaptured after that change.
 - **P2, status wording to reconcile:** Settings labels Android access and
   protection `Unavailable`, but the Shorts detection row says `WAITING` and
   `0 detections recorded`, while Instagram checks says `0/2`, in the same web

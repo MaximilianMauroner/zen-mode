@@ -1,19 +1,20 @@
 import { useCallback, useState } from 'react';
-import { RefreshControl, Text, View } from 'react-native';
+import { Platform, RefreshControl, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 
 import { Card, Row, RowGroup } from '@/components/ui/card';
 import { ErrorNote, Screen, ScreenHeader, ScreenTitle } from '@/components/ui/screen';
 import { getEnforcementStats, type EnforcementStats } from '@/features/protection/native';
-import { getStatsScreenModel } from '@/features/protection/stats-screen-model';
+import { getStatsScreenState } from '@/features/protection/stats-screen-model';
 import { colors } from '@/theme/colors';
 
 export default function StatsScreen() {
   const [stats, setStats] = useState<EnforcementStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Platform.OS !== 'web');
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
+    if (Platform.OS === 'web') return;
     setLoading(true);
     setError('');
     try {
@@ -30,10 +31,11 @@ export default function StatsScreen() {
     void load();
   }, [load]));
 
-  const screenModel = stats ? getStatsScreenModel(stats) : null;
+  const screenState = getStatsScreenState(Platform.OS, stats, loading);
+  const screenModel = screenState.model;
 
   return (
-    <Screen refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void load()} tintColor={colors.accent} />}>
+    <Screen refreshControl={screenState.available ? <RefreshControl refreshing={loading} onRefresh={() => void load()} tintColor={colors.accent} /> : undefined}>
       <ScreenHeader label="STATISTICS" onBack={() => router.back()} backDisabled={loading} />
       <ScreenTitle title="Interventions" description="Local totals show when a protection rule actually stopped or covered something. Detector observations are not counted." />
 
@@ -54,7 +56,7 @@ export default function StatsScreen() {
             {screenModel.other ? <Row {...screenModel.other} /> : null}
           </RowGroup>
         ) : (
-          <Card><Text className="text-[14px] text-muted">{loading ? 'Loading statistics…' : 'No statistics available.'}</Text></Card>
+          <Card><Text className="text-[14px] text-muted">{screenState.message}</Text></Card>
         )}
       </View>
 

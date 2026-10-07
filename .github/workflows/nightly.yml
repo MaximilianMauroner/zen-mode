@@ -1,0 +1,238 @@
+name: Android nightly Internal release
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+      timezone: Europe/Vienna
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zen-mode-nightly
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      sha: ${{ steps.checks.outputs.sha }}
+      eas-version: ${{ steps.checks.outputs.eas-version }}
+    steps:
+      - name: Set ephemeral paths
+        run: |
+          echo "RELEASE_ARTIFACTS_DIR=$RUNNER_TEMP/release-artifacts" >> "$GITHUB_ENV"
+          echo "ANDROID_BUNDLETOOL_JAR=$RUNNER_TEMP/bundletool.jar" >> "$GITHUB_ENV"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Prepare tools without release credentials
+        run: bash scripts/prepare-nightly-tools.sh eas
+      - name: Check source without user secrets or write permissions
+        id: checks
+        run: node scripts/nightly-release.mjs checks
+      - name: Retain sanitized checks evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: zen-mode-nightly-${{ github.run_id }}-${{ github.run_attempt }}-checks
+          path: ${{ runner.temp }}/release-artifacts/**/release.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  reserve:
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      CHECKED_SHA: ${{ needs.checks.outputs.sha }}
+      CHECKED_EAS_VERSION: ${{ needs.checks.outputs.eas-version }}
+    outputs:
+      reservation: ${{ steps.reserve.outputs.reservation }}
+      build: ${{ steps.reserve.outputs.build }}
+    steps:
+      - name: Set ephemeral paths
+        run: |
+          echo "RELEASE_ARTIFACTS_DIR=$RUNNER_TEMP/release-artifacts" >> "$GITHUB_ENV"
+          echo "ANDROID_BUNDLETOOL_JAR=$RUNNER_TEMP/bundletool.jar" >> "$GITHUB_ENV"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.checks.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24'
+      - name: Ensure actual runner resources before reservation
+        run: bash scripts/prepare-nightly-space.sh
+      - name: Validate both user secrets without creating a Play key file
+        id: secrets
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: node scripts/nightly-release.mjs validate-secrets
+      - name: Compare fetched main with checked SHA and persist reservation
+        id: reserve
+        env:
+          RELEASE_SECRETS_READY: ${{ steps.secrets.outputs.ready }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/nightly-release.mjs reserve
+      - name: Retain sanitized reserve evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: zen-mode-nightly-${{ github.run_id }}-${{ github.run_attempt }}-reserve
+          path: ${{ runner.temp }}/release-artifacts/**/release.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  build:
+    needs: [checks, reserve]
+    if: needs.reserve.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CHECKED_SHA: ${{ needs.checks.outputs.sha }}
+      RELEASE_RESERVATION: ${{ needs.reserve.outputs.reservation }}
+    outputs:
+      outcome: ${{ steps.build.outputs.outcome }}
+      artifact-id: ${{ steps.artifacts.outputs.artifact-id }}
+    steps:
+      - name: Set ephemeral paths
+        run: |
+          echo "RELEASE_ARTIFACTS_DIR=$RUNNER_TEMP/release-artifacts" >> "$GITHUB_ENV"
+          echo "ANDROID_BUNDLETOOL_JAR=$RUNNER_TEMP/bundletool.jar" >> "$GITHUB_ENV"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.checks.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Prepare tools without release credentials
+        run: bash scripts/prepare-nightly-tools.sh eas
+      - name: Build with Expo only and verify frozen signed identity
+        id: build
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: node scripts/nightly-release.mjs build
+      - name: Retain immutable verified artifacts
+        id: artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: zen-mode-nightly-${{ github.run_id }}-${{ github.run_attempt }}-verified
+          path: ${{ runner.temp }}/release-artifacts/verified/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Retain sanitized build evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: zen-mode-nightly-${{ github.run_id }}-${{ github.run_attempt }}-build
+          path: ${{ runner.temp }}/release-artifacts/**/release.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Remove private EAS logs
+        if: always()
+        run: rm -rf "$HOME/.local/state/lab4code-releases/logs/zen-mode"
+
+  upload:
+    needs: [checks, reserve, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CHECKED_SHA: ${{ needs.checks.outputs.sha }}
+      RELEASE_RESERVATION: ${{ needs.reserve.outputs.reservation }}
+    outputs:
+      outcome: ${{ steps.upload.outputs.outcome || steps.verify.outputs.outcome }}
+    steps:
+      - name: Set ephemeral paths
+        run: |
+          echo "RELEASE_ARTIFACTS_DIR=$RUNNER_TEMP/release-artifacts" >> "$GITHUB_ENV"
+          echo "ANDROID_BUNDLETOOL_JAR=$RUNNER_TEMP/bundletool.jar" >> "$GITHUB_ENV"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.checks.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Prepare tools without release credentials
+        run: bash scripts/prepare-nightly-tools.sh
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: ${{ runner.temp }}/release-artifacts/verified
+          merge-multiple: true
+      - name: Verify downloaded package, identity, and approved signatures without secrets
+        id: verify
+        run: node scripts/nightly-release.mjs verify-upload
+      - name: Upload only Internal with an ephemeral Play key
+        id: upload
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: node scripts/nightly-release.mjs upload
+      - name: Retain sanitized upload evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: zen-mode-nightly-${{ github.run_id }}-${{ github.run_attempt }}-upload
+          path: ${{ runner.temp }}/release-artifacts/**/release.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Remove ephemeral Play key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/play-service-account.json"
+
+  finish:
+    needs: [checks, reserve, build, upload]
+    if: >-
+      ${{ always() && !cancelled() && needs.reserve.result == 'success' &&
+          needs.reserve.outputs.build == 'true' &&
+          ((needs.build.result == 'failure' && needs.build.outputs.outcome == 'failed') ||
+           (needs.upload.result == 'failure' && needs.upload.outputs.outcome == 'failed') ||
+           (needs.upload.result == 'success' && needs.upload.outputs.outcome == 'succeeded')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      CHECKED_SHA: ${{ needs.checks.outputs.sha }}
+      RELEASE_RESERVATION: ${{ needs.reserve.outputs.reservation }}
+      RELEASE_OUTCOME: ${{ needs.upload.outputs.outcome == 'succeeded' && 'succeeded' || 'failed' }}
+    steps:
+      - name: Set ephemeral paths
+        run: |
+          echo "RELEASE_ARTIFACTS_DIR=$RUNNER_TEMP/release-artifacts" >> "$GITHUB_ENV"
+          echo "ANDROID_BUNDLETOOL_JAR=$RUNNER_TEMP/bundletool.jar" >> "$GITHUB_ENV"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.checks.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24'
+      - name: Finish confirmed terminal outcome through durable ledger transition
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/nightly-release.mjs finish-hosted

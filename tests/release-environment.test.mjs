@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { releaseEnvironment, preflightRelease, releaseFailure } from '../scripts/release-environment.mjs';
+import { releaseEnvironment, preflightRelease, releaseFailure, localChildEnvironment, validateEasVersion } from '../scripts/release-environment.mjs';
 
 function fixture(run) {
   const root = mkdtempSync(join(tmpdir(), 'release-environment-'));
@@ -16,7 +16,7 @@ function fixture(run) {
     const key = join(root, 'key.json');
     writeFileSync(jar, 'jar');
     writeFileSync(key, JSON.stringify({ type: 'service_account', client_email: 'test@example.com', private_key: 'test' }));
-    run({ root, env: { PATH: process.env.PATH, ANDROID_HOME: sdk, ANDROID_BUNDLETOOL_JAR: jar, PLAY_SERVICE_ACCOUNT_KEY_PATH: key } });
+    run({ root, env: { EXPO_TOKEN: 'test-token', PATH: process.env.PATH, ANDROID_HOME: sdk, ANDROID_BUNDLETOOL_JAR: jar, PLAY_SERVICE_ACCOUNT_KEY_PATH: key } });
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
@@ -27,13 +27,26 @@ test('SDK aliases normalize and conflicting roots fail', () => fixture(({ env })
   assert.throws(() => releaseEnvironment({ ...env, ANDROID_SDK_ROOT: '/other' }), /must match/);
 }));
 
+test('local child authentication is limited to its phase', () => {
+  const env = { PATH: '/fixture/bin', EXPO_TOKEN: 'expo', GH_TOKEN: 'gh', GITHUB_TOKEN: 'github', PLAY_SERVICE_ACCOUNT_JSON: 'private', PLAY_SERVICE_ACCOUNT_KEY_PATH: '/fixture/key' };
+  assert.deepEqual(localChildEnvironment(env, 'checks'), { PATH: env.PATH });
+  assert.deepEqual(localChildEnvironment(env, 'eas'), { PATH: env.PATH, EXPO_TOKEN: env.EXPO_TOKEN });
+  assert.deepEqual(localChildEnvironment(env, 'ledger'), { PATH: env.PATH, GH_TOKEN: env.GH_TOKEN, GITHUB_TOKEN: env.GITHUB_TOKEN });
+  assert.deepEqual(localChildEnvironment(env, 'upload'), { PATH: env.PATH, PLAY_SERVICE_ACCOUNT_KEY_PATH: env.PLAY_SERVICE_ACCOUNT_KEY_PATH });
+  assert.deepEqual(localChildEnvironment({ PATH: env.PATH }, 'eas'), { PATH: env.PATH });
+});
+
+test('checked stable CLI proof uses the source minimum', () => {
+  assert.equal(validateEasVersion('eas-cli/20.5.1 test', '>= 20.5.1'), '20.5.1');
+  assert.throws(() => validateEasVersion('eas-cli/20.5.1-beta.1', '>= 20.5.1'), /stable/);
+  assert.throws(() => validateEasVersion('eas-cli/20.5.1', '>= 20.5.2'), /does not satisfy/);
+});
+
 test('required environment and unreadable paths fail before build', () => fixture(({ env }) => {
-  for (const name of ['PATH', 'ANDROID_HOME', 'ANDROID_BUNDLETOOL_JAR', 'PLAY_SERVICE_ACCOUNT_KEY_PATH']) {
+  for (const name of ['PATH', 'ANDROID_HOME', 'ANDROID_BUNDLETOOL_JAR']) {
     assert.throws(() => releaseEnvironment({ ...env, [name]: '' }));
   }
   assert.throws(() => releaseEnvironment({ ...env, ANDROID_BUNDLETOOL_JAR: '/missing.jar' }), /missing or unreadable/);
-  writeFileSync(env.PLAY_SERVICE_ACCOUNT_KEY_PATH, '{}');
-  assert.throws(() => releaseEnvironment(env), /service-account/);
 }));
 
 test('preflight rejects missing EAS and SDK verification tools', () => fixture(({ root, env }) => {
@@ -76,11 +89,11 @@ test('nightly preflight failure writes evidence without touching the ledger', as
     mkdirSync(bin);
     writeFileSync(join(bin, 'git'), '#!/bin/sh\nif [ "$1" = rev-parse ]; then echo abcdef1234567890; fi\nif [ "$1" = show ]; then echo \'{"cli":{"version":">= 20.5.1"}}\'; fi\n', { mode: 0o700 });
     const marker = join(root, 'ledger-called');
-    writeFileSync(join(bin, 'ssh'), `#!/bin/sh\ntouch '${marker}'\nexit 1\n`, { mode: 0o700 });
+    writeFileSync(join(bin, 'python3'), `#!/bin/sh\ntouch '${marker}'\nexit 1\n`, { mode: 0o700 });
     const eas = join(bin, 'eas');
     writeFileSync(eas, '#!/bin/sh\necho eas-cli/16.28.0 test\n', { mode: 0o700 });
     for (const overrides of [{ ANDROID_HOME: '' }, { EAS_BIN: eas }]) {
-      const result = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/nightly-release.mjs', import.meta.url)), 'run'], {
+      const result = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/nightly-local-release.mjs', import.meta.url)), 'run'], {
         env: { ...env, PATH: `${bin}:${env.PATH}`, ...overrides, NIGHTLY_HOST_LOCKED: '1', RELEASE_ARTIFACTS_DIR: root }, encoding: 'utf8',
       });
       assert.equal(result.status, 1);
@@ -103,13 +116,13 @@ test('nightly rejects missing fetched CLI minimums without local fallback or led
     mkdirSync(bin);
     const ledgerMarker = join(root, 'ledger-called');
     const javaMarker = join(root, 'java-called');
-    writeFileSync(join(bin, 'ssh'), `#!/bin/sh\ntouch '${ledgerMarker}'\nexit 1\n`, { mode: 0o700 });
+    writeFileSync(join(bin, 'python3'), `#!/bin/sh\ntouch '${ledgerMarker}'\nexit 1\n`, { mode: 0o700 });
     writeFileSync(join(bin, 'java'), `#!/bin/sh\ntouch '${javaMarker}'\nexit 1\n`, { mode: 0o700 });
     const eas = join(bin, 'eas');
     writeFileSync(eas, '#!/bin/sh\necho eas-cli/20.5.1 test\n', { mode: 0o700 });
     for (const config of [{ cli: {} }, { cli: { version: null } }, {}]) {
       writeFileSync(join(bin, 'git'), `#!/bin/sh\nif [ "$1" = rev-parse ]; then echo abcdef1234567890; fi\nif [ "$1" = show ]; then echo '${JSON.stringify(config)}'; fi\n`, { mode: 0o700 });
-      const result = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/nightly-release.mjs', import.meta.url)), 'run'], {
+      const result = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/nightly-local-release.mjs', import.meta.url)), 'run'], {
         env: { ...env, PATH: `${bin}:${env.PATH}`, EAS_BIN: eas, NIGHTLY_HOST_LOCKED: '1', RELEASE_ARTIFACTS_DIR: root }, encoding: 'utf8',
       });
       assert.equal(result.status, 1);
@@ -120,26 +133,5 @@ test('nightly rejects missing fetched CLI minimums without local fallback or led
       assert.equal(record.failure.stage, 'preflight');
       assert.equal(record.versionCode, undefined);
     }
-  });
-});
-
-test('LaunchAgent rejects missing values and writes both SDK aliases', async (t) => {
-  if (process.platform !== 'darwin' || Intl.DateTimeFormat().resolvedOptions().timeZone !== 'Europe/Vienna') return t.skip('Mac Vienna LaunchAgent only');
-  const { spawnSync } = await import('node:child_process');
-  const { fileURLToPath } = await import('node:url');
-  fixture(({ root, env }) => {
-    mkdirSync(join(root, 'scripts'));
-    for (const name of ['write-nightly-launch-agent.mjs', 'release-environment.mjs']) {
-      requireFs.copyFileSync(fileURLToPath(new URL(`../scripts/${name}`, import.meta.url)), join(root, 'scripts', name));
-    }
-    const script = join(root, 'scripts/write-nightly-launch-agent.mjs');
-    const target = join(root, '.agents/artifacts/net.lab4code.nightly.plist');
-    const args = [script, root, root];
-    assert.equal(spawnSync(process.execPath, args, { env: { ...env, ANDROID_BUNDLETOOL_JAR: '' }, stdio: 'ignore' }).status, 1);
-    assert.equal(requireFs.existsSync(target), false);
-    assert.equal(spawnSync(process.execPath, args, { env, stdio: 'ignore' }).status, 0);
-    const plist = requireFs.readFileSync(target, 'utf8');
-    for (const key of ['ANDROID_HOME', 'ANDROID_SDK_ROOT']) assert.ok(plist.includes(`<key>${key}</key><string>${env.ANDROID_HOME}</string>`));
-    assert.equal(spawnSync('plutil', ['-lint', target], { stdio: 'ignore' }).status, 0);
   });
 });

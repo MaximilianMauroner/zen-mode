@@ -80,7 +80,8 @@ async function buildRelease() {
   run('git', ['fetch', 'origin', 'main']);
   const sha = run('git', ['rev-parse', 'origin/main'], root, true);
   try {
-    Object.assign(process.env, preflightRelease(root));
+    const config = JSON.parse(run('git', ['show', `${sha}:eas.json`], root, true));
+    Object.assign(process.env, preflightRelease(root, process.env, config.cli.version));
   } catch (error) {
     const output = resolve(process.env.RELEASE_ARTIFACTS_DIR ?? join(homedir(), 'Downloads/lab4code-releases'), app, `preflight-${sha.slice(0, 12)}`);
     mkdirSync(output, { recursive: true });

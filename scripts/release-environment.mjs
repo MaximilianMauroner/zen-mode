@@ -35,7 +35,7 @@ export function releaseEnvironment(env = process.env) {
     EAS_BIN: env.EAS_BIN || 'eas' };
 }
 
-export function preflightRelease(root, env = process.env) {
+export function preflightRelease(root, env = process.env, cliVersion) {
   const environment = releaseEnvironment(env);
   const versions = readdirSync(join(environment.ANDROID_HOME, 'build-tools'), { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && /^\d/.test(entry.name))
@@ -45,8 +45,23 @@ export function preflightRelease(root, env = process.env) {
     try { accessSync(join(environment.ANDROID_HOME, 'build-tools', versions[0], tool), constants.X_OK); }
     catch { throw new Error(`Android SDK ${tool} is unavailable`); }
   }
+  const eas = spawnSync(environment.EAS_BIN, ['--version'], {
+    cwd: root, env: environment, encoding: 'utf8', timeout: 30000,
+  });
+  if (eas.error || eas.status !== 0) throw new Error('EAS is unavailable');
+  const constraint = cliVersion ?? JSON.parse(readFileSync(join(root, 'eas.json'), 'utf8')).cli.version;
+  // Both release configurations require a minimum stable CLI version.
+  const minimum = /^>=\s*(\d+)\.(\d+)\.(\d+)$/.exec(constraint);
+  if (!minimum) throw new Error('Expected eas.json cli.version to specify >= MAJOR.MINOR.PATCH');
+  const installed = /eas-cli\/(\d+)\.(\d+)\.(\d+)(?=\s|$)/.exec(eas.stdout);
+  if (!installed) throw new Error('Cannot read a stable EAS CLI version');
+  const comparison = installed.slice(1).map(Number)
+    .map((part, index) => part - Number(minimum[index + 1])).find((part) => part !== 0) ?? 0;
+  if (comparison < 0) {
+    throw new Error(`EAS CLI ${installed.slice(1).join('.')} does not satisfy ${constraint}; update EAS_BIN before releasing`);
+  }
   for (const [program, args, name] of [
-    [environment.EAS_BIN, ['--version'], 'EAS'], ['java', ['-version'], 'Java'],
+    ['java', ['-version'], 'Java'],
     ['jarsigner', ['-help'], 'jarsigner'], ['keytool', ['-help'], 'keytool'],
   ]) {
     const result = spawnSync(program, args, { cwd: root, env: environment, stdio: 'ignore', timeout: 30000 });

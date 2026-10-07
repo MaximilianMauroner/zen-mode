@@ -17,7 +17,7 @@ function readablePath(value, name, directory = false) {
 }
 
 export function releaseEnvironment(env = process.env) {
-  if (!env.EXPO_TOKEN?.trim()) throw new Error('EXPO_TOKEN is required');
+  if (env.GITHUB_ACTIONS === 'true' && !env.EXPO_TOKEN?.trim()) throw new Error('EXPO_TOKEN is required');
   if (!env.PATH?.trim()) throw new Error('PATH is required');
   const sdk = readablePath(env.ANDROID_HOME || env.ANDROID_SDK_ROOT, 'Android SDK', true);
   if (env.ANDROID_HOME && env.ANDROID_SDK_ROOT && resolve(env.ANDROID_HOME) !== resolve(env.ANDROID_SDK_ROOT)) {

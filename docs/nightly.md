@@ -86,8 +86,10 @@ npm run release:internal
 
 Local `status` and manual `finish` use `GH_TOKEN`, `GITHUB_TOKEN`, or a captured
 `gh auth token --hostname github.com`. The token is never printed. Local builds
-also require `EXPO_TOKEN`, Android SDK, Java, `ANDROID_BUNDLETOOL_JAR`, and
-`PLAY_SERVICE_ACCOUNT_KEY_PATH`. If both SDK aliases are set they must match.
+use an existing `eas login` session or an optional `EXPO_TOKEN`. GitHub Actions
+requires `EXPO_TOKEN`. Local builds also require Android SDK, Java,
+`ANDROID_BUNDLETOOL_JAR`, and `PLAY_SERVICE_ACCOUNT_KEY_PATH`.
+If both SDK aliases are set they must match.
 The local host lock remains because these commands can still run on one host.
 It is a build lock, not a state store. The obsolete Mac LaunchAgent generator and
 pair scheduler were removed; there is no repository compatibility scheduler.

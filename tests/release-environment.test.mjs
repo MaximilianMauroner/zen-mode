@@ -27,8 +27,18 @@ test('SDK aliases normalize and conflicting roots fail', () => fixture(({ env })
   assert.throws(() => releaseEnvironment({ ...env, ANDROID_SDK_ROOT: '/other' }), /must match/);
 }));
 
+test('Expo token is optional locally and required on GitHub Actions', () => fixture(({ env }) => {
+  const { EXPO_TOKEN, ...local } = env;
+  assert.equal(releaseEnvironment(local).ANDROID_HOME, env.ANDROID_HOME);
+  assert.equal(releaseEnvironment({ ...local, GITHUB_ACTIONS: 'false' }).ANDROID_HOME, env.ANDROID_HOME);
+  assert.equal(releaseEnvironment({ ...env, GITHUB_ACTIONS: 'true' }).EXPO_TOKEN, EXPO_TOKEN);
+  for (const token of [undefined, '', '   ']) {
+    assert.throws(() => releaseEnvironment({ ...local, GITHUB_ACTIONS: 'true', EXPO_TOKEN: token }), /EXPO_TOKEN is required/);
+  }
+}));
+
 test('required environment and unreadable paths fail before build', () => fixture(({ env }) => {
-  for (const name of ['EXPO_TOKEN', 'PATH', 'ANDROID_HOME', 'ANDROID_BUNDLETOOL_JAR', 'PLAY_SERVICE_ACCOUNT_KEY_PATH']) {
+  for (const name of ['PATH', 'ANDROID_HOME', 'ANDROID_BUNDLETOOL_JAR', 'PLAY_SERVICE_ACCOUNT_KEY_PATH']) {
     assert.throws(() => releaseEnvironment({ ...env, [name]: '' }));
   }
   assert.throws(() => releaseEnvironment({ ...env, ANDROID_BUNDLETOOL_JAR: '/missing.jar' }), /missing or unreadable/);

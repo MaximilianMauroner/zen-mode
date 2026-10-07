@@ -89,6 +89,19 @@ Artifacts and job outputs transfer results between these jobs. They do not repla
 or initialize the durable ledger. Job dependencies gate phase entry; hosted phase
 commands reject local execution and cannot bypass failed checks with a skip flag.
 
+After confirmed persistence, reservation writes an allowlisted nonsecret
+`reservation.json` receipt. A separate immutable artifact transfers it to build,
+upload verification, and finish. Its name and receipt are bound to the workflow
+run ID and attempt; each consumer also requires the exact checked SHA and valid
+identity. Reservation JSON never crosses job outputs: multiline Play secrets can
+cause GitHub to mask JSON braces and withhold those outputs. No secret is encoded
+or included in the receipt. The scalar build gate remains.
+
+Receipt initialization failures stop before EAS or Play and retain sanitized
+failure evidence. Finish can close a confirmed failure only after independently
+reading the valid receipt. Missing or corrupt finish receipts, lost artifact
+uploads, cancellation, and uncertain outcomes leave state active for reconciliation.
+
 Node 24, EAS CLI 20.5.1, Java 17, SDK platform/build-tools 36, and checksum-verified
 bundletool 1.18.3 are configured. Action versions are pinned by full commit SHA;
 checkout/setup-node/setup-java v5 and upload-artifact v6 use Node 24. The runner

@@ -53,8 +53,9 @@ function checkedSha() {
 }
 
 function reservation() {
-  const record = JSON.parse(process.env.RELEASE_RESERVATION ?? '{}');
-  if (record.build !== true || record.sha !== checkedSha() || !/^[a-zA-Z0-9-]+$/.test(record.id ?? '')) {
+  const record = JSON.parse(readFileSync(join(process.env.RUNNER_TEMP, 'reservation', 'reservation.json'), 'utf8'));
+  if (record.build !== true || record.sha !== checkedSha() || !/^[a-zA-Z0-9-]+$/.test(record.id ?? '') ||
+      record.runId !== process.env.GITHUB_RUN_ID || record.runAttempt !== process.env.GITHUB_RUN_ATTEMPT) {
     throw new Error('Expected the confirmed reservation for the checked SHA');
   }
   releaseIdentity(record.version, record.versionCode);
@@ -129,7 +130,12 @@ function reserve() {
     const record = ledger('reserve', [sha]);
     if (record.build) {
       evidence('reserve', sha, 'running', record);
-      output('reservation', JSON.stringify(record));
+      const path = join(process.env.RUNNER_TEMP, 'reservation');
+      mkdirSync(path, { recursive: true });
+      // Only confirmed, nonsecret identity fields cross the fresh-runner boundary.
+      writeFileSync(join(path, 'reservation.json'), `${JSON.stringify({ build: true, id: record.id, sha,
+        version: record.version, versionCode: record.versionCode,
+        runId: process.env.GITHUB_RUN_ID, runAttempt: process.env.GITHUB_RUN_ATTEMPT })}\n`);
     }
     output('build', record.build === true ? 'true' : 'false');
   } catch (error) {
@@ -170,10 +176,11 @@ function verify(record, apk, aab) {
 
 async function build() {
   hosted('build');
-  const record = reservation();
+  let record;
   let stage = 'preflight';
   const logs = join(homedir(), '.local/state/lab4code-releases/logs', app);
   try {
+    record = reservation();
     if (!process.env.EXPO_TOKEN?.trim() || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || process.env.PLAY_SERVICE_ACCOUNT_JSON || process.env.PLAY_SERVICE_ACCOUNT_KEY_PATH) {
       throw new Error('Build requires Expo credentials only');
     }
@@ -202,7 +209,7 @@ async function build() {
     evidence(stage, record.sha, 'built', record);
     output('outcome', 'built');
   } catch (error) {
-    evidence(stage, record.sha, cancelled ? 'cancelled' : 'failed', record, true);
+    evidence(stage, process.env.CHECKED_SHA, cancelled ? 'cancelled' : 'failed', record, true);
     if (!cancelled) output('outcome', 'failed');
     throw error;
   } finally {
@@ -212,12 +219,13 @@ async function build() {
 
 function verifyUpload() {
   hosted('upload');
-  const record = reservation();
+  let record;
   try {
+    record = reservation();
     const { apk, aab } = artifacts();
     verify(record, apk, aab);
   } catch (error) {
-    evidence('artifact-verify', record.sha, 'failed', record, true);
+    evidence('artifact-verify', process.env.CHECKED_SHA, 'failed', record, true);
     if (!cancelled) output('outcome', 'failed');
     throw error;
   }

@@ -1,180 +1,143 @@
-# Local nightly releases
+# GitHub-hosted Android nightlies
 
-Both apps build on this Mac at 23:00 Europe/Vienna. Each successful run saves an
-APK and an AAB with the same version and signing identity. It submits the AAB
-to Google Play Internal testing. Production promotion remains manual.
+`.github/workflows/nightly.yml` builds Zen Mode on an `ubuntu-24.04` GitHub-hosted
+runner at midnight Europe/Vienna. The schedule uses GitHub's IANA timezone field,
+so daylight saving time does not change the local start time. Scheduled runs can
+be delayed by GitHub. Manual `workflow_dispatch` uses the same gates. Only `main`
+can run. The workflow has a 90-minute limit and one per-app concurrency group
+with `cancel-in-progress: false`.
 
-## One release entrypoint
+The 90-minute limit is a planning budget, not a measured hosted build time.
+Historical local APK and AAB builds together took about 22–30 minutes for Zen
+Mode. The first hosted build remains unverified.
 
-From either repository on the Mac:
+## Credentials and activation
+
+Configure exactly two user repository secrets:
+
+- `EXPO_TOKEN`: Expo access to the existing project and remote signing credentials.
+- `PLAY_SERVICE_ACCOUNT_JSON`: the full Google Play service-account JSON key,
+  authorized to publish this app to Internal testing.
+
+GitHub's normal `GITHUB_TOKEN` writes state through `contents: write`. No user
+GitHub token secret is needed. The job uses that permission only for persistent
+state. Checkout does not persist its token. No production promotion or new signing
+key is part of this workflow. Existing `credentialsSource: remote`, approved
+certificates, and EAS `--freeze-credentials` remain required.
+
+The Play key is written with mode 0600 to an ephemeral runner file. It is removed
+in an `always()` cleanup step. Runner disposal is the final cleanup on hard
+cancellation. The raw JSON is not passed to the build step. Raw EAS logs stay in
+private files and are never uploaded as artifacts. Do not print tokens, key JSON,
+or EAS logs when diagnosing a run.
+
+Before the first dispatch, the parent/operator must copy the exact current coding
+ledger history to an orphan `release-state` branch in this repository, in
+`ledger.json`. Do not seed from app metadata, create an empty ledger, or reset
+failed attempts. The runtime refuses missing/uninitialized state. The parent owns
+this one-time cutover, live secret verification, removal of the old live Mac
+schedule, and the first hosted dispatch. This code change does not perform them.
+The workflow becomes schedulable on merge. Missing secrets or state stop it before
+reservation. Keep the old live scheduler disabled before activating hosted runs.
+
+## Durable state and source checks
+
+The only state authority is `MaximilianMauroner/zen-mode`, branch `release-state`,
+file `ledger.json`. Both hosted and local commands read the same authority.
+The existing Python transition rules remain unchanged:
+
+- At most one attempt per Vienna calendar day.
+- No second attempt for a source SHA, including after failure.
+- Failed attempts consume their patch version and versionCode.
+- An active reservation blocks another source until explicit reconciliation.
+
+The adapter GETs the file from the fixed `api.github.com` endpoint. It PUTs changed
+state with the previous blob SHA as a compare-and-swap condition. Status, duplicate
+gates, and idempotent completion do not write unchanged state. Conflicts, HTTP
+errors, and uncertain writes are not retried. A reservation result is returned
+only after GitHub confirms persistence. No filesystem, cache, or artifact is an
+authoritative ledger. There is no SSH persistence or legacy fallback.
+
+The runner fetches `origin/main`, reads its EAS minimum, and checks the selected
+stable EAS version before reservation. It installs dependencies and runs app tests,
+release tests, lint, typecheck, and web export in an isolated worktree of that
+fetched SHA. Profile validation and resource preflight also run before reservation.
+It then stamps one reserved identity into app and package metadata and builds
+both APK and AAB with local EAS on the GitHub runner.
+
+Node 24, EAS CLI 20.5.1, Java 17, SDK platform/build-tools 36, and checksum-verified
+bundletool 1.18.3 are configured. Action versions are pinned by full commit SHA;
+checkout/setup-node/setup-java v5 and upload-artifact v6 use Node 24. The runner
+checks actual free disk space and total memory. If needed it removes only unused
+preinstalled .NET/Haskell/CodeQL toolchains before checking the 15 GiB disk and
+8 GiB RAM minimums. Preflight repeats after source checks so dependency install
+and export cannot consume the required build space unnoticed.
+
+## Entry points and recovery
+
+Hosted runs use the workflow. Local manual operations remain available:
 
 ```sh
-node scripts/nightly-release.mjs run
 node scripts/nightly-release.mjs status
-# Equivalent package scripts:
-npm run release:internal
+node scripts/nightly-release.mjs run
 npm run release:status
+npm run release:internal
 ```
 
-On coding, use the same command with `RELEASE_COORDINATOR=local`. The Mac uses
-`RELEASE_COORDINATOR=coding` by default. Both use the same ledger on coding:
-`~/.local/state/lab4code-releases/<app>.json`.
+Local `status` and manual `finish` use `GH_TOKEN`, `GITHUB_TOKEN`, or a captured
+`gh auth token --hostname github.com`. The token is never printed. Local builds
+also require `EXPO_TOKEN`, Android SDK, Java, `ANDROID_BUNDLETOOL_JAR`, and
+`PLAY_SERVICE_ACCOUNT_KEY_PATH`. If both SDK aliases are set they must match.
+The local host lock remains because these commands can still run on one host.
+It is a build lock, not a state store. The obsolete Mac LaunchAgent generator and
+pair scheduler were removed; there is no repository compatibility scheduler.
+Removing their source files does not disable an installed LaunchAgent.
 
-The host preflight runs before the ledger reserves a patch version and Android
-versionCode. It checks readable SDK, bundletool and Play key paths, Android
-verification tools, EAS and Java commands, 15 GiB free disk space and 8 GiB RAM.
-A preflight failure does not consume a release number or mark the SHA attempted.
-Run `node scripts/release-environment.mjs` to check the current environment.
-It allows at most one attempt per app per Vienna calendar day. An attempted Git
-SHA is never retried automatically, even after a failed check, build, or upload.
-A new SHA can run on the next day. Failed attempts consume their reserved numbers.
-For example, a failed `0.1.6` is followed by `0.1.7` for the next source change.
-
-A host lock prevents concurrent local builds from these entrypoints. An active
-central reservation prevents overlapping releases for the same app across hosts.
-The runner builds fetched `origin/main` in an isolated worktree. It preserves
-local changes and does not move the working branch.
-
-Use this entrypoint for every tester release. Direct EAS or Play uploads can
-bypass the ledger. If one is necessary, reconcile the ledger with that release
-before enabling another nightly. Do not edit state to reuse an attempted number.
-
-## Setup
-
-Install the project's Node/Bun versions, Java, Android SDK, and EAS CLI. Keep the
-existing Expo login and approved EAS signing credentials on the build host.
-The release profile uses `--freeze-credentials` to prevent credential changes.
-
-Set these paths in the scheduler's environment:
-
-- `ANDROID_HOME` or `ANDROID_SDK_ROOT`: absolute Android SDK directory. If both
-  are set, they must match. LaunchAgent generation writes both aliases.
-- `ANDROID_BUNDLETOOL_JAR`: the official Google bundletool JAR.
-- `JAVA_HOME`: the installed supported JDK, if the default Java is different.
-- `PLAY_SERVICE_ACCOUNT_KEY_PATH`: an existing Google Play release service-account
-  JSON key. The file stays on the build host. It is never sent to Expo.
-
-`nightly` builds an AAB; `nightly-apk` builds an APK.
-`scripts/upload-play-internal.mjs` sends the AAB directly to Google Play and
-sets one `completed` release on the fixed `internal` track.
-Both must explicitly set `autoIncrement: false`. The runner changes
-`cli.appVersionSource` to `local` only in the isolated worktree. It stamps the
-reserved version into app and package metadata after project checks pass.
-Moodinator's `build`, `build:preview`, and `build:production` commands and Zen
-Mode's `android:bundle:upload` command use this same entrypoint. The obsolete
-remote increment and standalone version-bump paths have been removed.
-
-Before enabling the schedule, verify that an authorized Play API key exists.
-An Expo signing key does not grant Play API upload access. Missing local
-credentials stop the runner before it reserves a version or starts a build.
-A configured key that Google rejects will fail the attempted release and consume
-its number, as other build or upload failures do. Live API publishing remains
-unverified until the authorized credential is available.
-
-After the initial 0.1.5 releases are available to Internal testers, seed each
-ledger once with its actual versionCode and source SHA:
-
-```sh
-node scripts/nightly-release.mjs seed 0.1.5 VERSION_CODE FULL_SOURCE_SHA
-```
-
-Seeding is idempotent for the same release. It refuses to overwrite an existing
-ledger with another identity. The initial release also counts as that day's
-attempt, so a new nightly starts on a later day after a new commit.
-
-## Schedule both apps
-
-Generate one LaunchAgent. It runs both apps in sequence so a failed app does not
-stop the other app. The Mac must use the Europe/Vienna time zone.
-Point each argument at a checkout that contains `scripts/nightly-release.mjs`.
-Use a separate release checkout if a development checkout is behind `origin/main`.
-
-```sh
-node scripts/write-nightly-launch-agent.mjs /absolute/moodinator /absolute/zen-mode
-plutil -lint .agents/artifacts/net.lab4code.nightly.plist
-```
-
-The generator writes the plist only. To enable it after access and initial
-releases are checked:
-
-```sh
-mkdir -p "$HOME/Library/LaunchAgents"
-cp .agents/artifacts/net.lab4code.nightly.plist "$HOME/Library/LaunchAgents/net.lab4code.nightly.plist"
-launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/net.lab4code.nightly.plist"
-```
-
-The Mac must be logged in and available. Launchd runs a missed calendar job after
-wake; it does not queue every missed day. No cloud nightly workflow remains.
-To pause:
-
-```sh
-launchctl bootout "gui/$(id -u)/net.lab4code.nightly"
-```
-
-To run the pair manually, use
-`node scripts/run-nightlies.mjs /absolute/moodinator /absolute/zen-mode`.
-The runner fetches `origin/main` and builds it in an isolated worktree. Local
-changes in either checkout do not block the run. The normal daily and source
-gates still apply to manual runs.
-
-## Artifacts and recovery
-
-Artifacts default to
-`~/Downloads/lab4code-releases/<app>/<version>-<versionCode>-<sha>/`.
-Set `RELEASE_ARTIFACTS_DIR` to change the base directory. Each release includes
-its APK, AAB, and `release.json` with the source SHA and outcome.
-Install updates through the Play Internal testing link on your phone. The raw
-APK uses the upload certificate; Play can use a different app-signing certificate,
-so that APK may not update an app installed through Play.
-Before submission, the runner checks both artifacts' package name, marketing
-version, versionCode, and signature against the existing approved certificate.
-
-EAS logs are private files with mode 0600 under
-`~/.local/state/lab4code-releases/logs/<app>/<reservation-id>/`. They can contain
-credential-bearing job output. Share the APK, AAB, and release record only.
-Scheduler summaries are in `~/Library/Logs/lab4code-nightlies/`.
-
-If the Mac shuts down during a build or loses SSH before completion, the central
-reservation stays active and safely blocks later releases. Inspect `status` and
-Play Internal first. After confirming no build/upload is running, close the
-reservation using the outcome that actually occurred:
+On cancellation, timeout, a lost reserve response, or a lost finish write, inspect
+the GitHub ledger and Play Internal before any new run. The reservation remains
+active when completion is uncertain or cancellation is observed. Confirm that no
+build/upload is still running and determine whether the reserved identity reached
+Internal. Then close it explicitly:
 
 ```sh
 node scripts/nightly-release.mjs finish RESERVATION_ID failed
-# Or succeeded, only after confirming the reserved version reached Internal.
+# Use succeeded only after confirming that identity reached Internal.
 ```
 
-Closing a reservation does not permit another attempt for its source SHA.
-No automatic retry runs for submission failures, including ambiguous outcomes.
+A PUT can succeed even if its response is lost. Read status before issuing another
+command; never assume an HTTP/transport error means no state change occurred.
+Closing an attempt does not reuse its number, retry its SHA, or reset the daily
+gate. API errors report sanitized diagnostics without response bodies or tokens.
+There is no runtime `seed` command. Ledger initialization belongs to the manual
+cutover, with current history preserved.
 
-The release record includes a fixed, sanitized failure stage and message for
-`preflight`, `checks`, `apk-build`, `aab-build`, `artifact-verify`, or `play-upload`.
-Preflight records use `preflight-<SHA>` folders because no identity is reserved.
-Final artifact verification remains a required gate before upload.
+## Output and upload
+
+Both artifacts must match the reserved package, version, versionCode, and existing
+approved upload certificate. Bundle validation and signature checks stay unchanged.
+Only verified APK/AAB copies and sanitized `release.json` records are retained as
+GitHub artifacts for 30 days. Unverified build files and raw EAS logs are excluded.
+Local artifacts default to `~/Downloads/lab4code-releases/zen-mode`; set
+`RELEASE_ARTIFACTS_DIR` to change the output path.
+
+The AAB goes directly to the fixed Google Play `internal` track with one
+`completed` release. Returned versionCode must match before track mutation.
+`changesInReviewBehavior=ERROR_IF_IN_REVIEW` protects an existing review; there is
+no retry, production promotion, or draft fallback. Install updates through Play
+Internal testing. The raw APK uses the upload certificate and may not update an
+app installed through Play with its app-signing certificate.
 
 ## Checks
 
 ```sh
-node --test tests/nightly-version.test.mjs tests/upload-play-internal.test.mjs
-python3 tests/nightly-ledger.test.py
+npm test
+npm run test:nightly
+npx tsc --noEmit
+npm run lint
+npx expo export --platform web
 ```
 
-The tests cover stale artifacts and wrong certificates, invalid versions,
-failed-SHA retry prevention, daily gates, Vienna dates, versionCode exhaustion,
-simultaneous reservations by two processes, uploaded versionCode mismatches,
-Internal-only track changes, signed Google OAuth assertions, and safe API errors.
-
-Local builds use the official [EAS local build command](https://docs.expo.dev/build-reference/local-builds/).
-The uploader signs a short-lived [service-account OAuth assertion](https://developers.google.com/identity/protocols/oauth2/service-account)
-locally. It sends that assertion only to `oauth2.googleapis.com`. It streams the
-verified AAB to Google's [bundle upload API](https://developers.google.com/android-publisher/api-ref/rest/v3/edits.bundles/upload).
-It checks the returned versionCode before changing Internal. It commits with
-`changesInReviewBehavior=ERROR_IF_IN_REVIEW`, which protects an existing review from Google's default cancellation behavior.
-Internal publishes automatically, so `changesNotSentForReview` is omitted.
-Google rejects that parameter for these Internal releases.
-See the [commit API](https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit).
-No request retries run, and an API error does not fall back to a draft release.
-
-The uploader's direct command accepts an already verified, reserved AAB:
-`node scripts/upload-play-internal.mjs AAB_PATH VERSION VERSION_CODE`.
-Use the coordinated release runner for normal nightly and manual releases.
+Pure/mocked tests cover transition rules, competing Contents API writers, missing
+state, unchanged writes, uncertain persistence, cancellation, pre-reservation
+source checks, EAS stable minimums, artifact identity, and Internal-only upload.
+No test initializes a live ledger, dispatches a release, or uses real secrets.

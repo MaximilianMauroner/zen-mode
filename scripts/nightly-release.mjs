@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, closeSync, existsSync, openSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, copyFileSync, existsSync, openSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,10 +11,19 @@ import { preflightRelease, releaseFailure } from './release-environment.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const app = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name;
-const coordinator = process.env.RELEASE_COORDINATOR ?? 'coding';
 const eas = process.env.EAS_BIN ?? 'eas';
 const command = process.argv[2] ?? 'run';
-const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
+let cancelled = false;
+let buildChild;
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    cancelled = true;
+    buildChild?.kill(signal);
+  });
+}
+function assertNotCancelled() {
+  if (cancelled) throw new Error('Release cancelled; reconcile the active reservation before another run');
+}
 
 function run(program, args, cwd = root, capture = false, input) {
   const result = spawnSync(program, args, { cwd, encoding: 'utf8', input,
@@ -28,7 +37,9 @@ async function runEas(args, cwd, logPath) {
   // EAS can include a credential-bearing encoded job in failure output.
   // Keep its complete output in private files, outside terminal and shared artifacts.
   const log = openSync(logPath, 'w', 0o600);
+  assertNotCancelled();
   const child = spawn(eas, args, { cwd, stdio: ['ignore', log, log] });
+  buildChild = child;
   const monitor = setInterval(() => {
     const result = spawnSync(process.platform === 'darwin' ? 'memory_pressure' : 'free',
       process.platform === 'darwin' ? ['-Q'] : ['-m'], { encoding: 'utf8' });
@@ -40,19 +51,15 @@ async function runEas(args, cwd, logPath) {
       child.once('close', (code) => code === 0 ? accept() : reject(new Error(`EAS ${args[0]} failed (${code}); private log: ${logPath}`)));
     });
   } finally {
+    buildChild = undefined;
     clearInterval(monitor);
     closeSync(log);
   }
 }
 
 function ledger(action, args = []) {
-  if (coordinator === 'local' && process.platform === 'darwin') throw new Error('The Mac must use the shared coding release ledger');
-  const source = readFileSync(join(root, 'scripts/nightly-ledger.py'), 'utf8');
-  const parameters = [app, action, ...args].map(quote).join(' ');
-  const response = coordinator === 'local'
-    ? run('python3', ['-', app, action, ...args], root, true, source)
-    : run('ssh', ['-o', 'BatchMode=yes', coordinator, `python3 - ${parameters}`], root, true, source);
-  return JSON.parse(response);
+  assertNotCancelled();
+  return JSON.parse(run('python3', [join(root, 'scripts/nightly-ledger.py'), app, action, ...args], root, true));
 }
 
 function checkResources() {
@@ -92,9 +99,7 @@ async function buildRelease() {
     throw error;
   }
   const credentialPath = process.env.PLAY_SERVICE_ACCOUNT_KEY_PATH;
-  const reservation = ledger('reserve', [sha]);
-  console.log(JSON.stringify({ app, ...reservation }));
-  if (!reservation.build) return;
+  let reservation;
   let temporary;
   let sourceRoot;
   let worktreeAdded = false;
@@ -103,10 +108,6 @@ async function buildRelease() {
   let stage = 'checks';
   let failure;
   try {
-    output = resolve(process.env.RELEASE_ARTIFACTS_DIR ?? join(homedir(), 'Downloads/lab4code-releases'), app,
-      `${reservation.version}-${reservation.versionCode}-${sha.slice(0, 12)}`);
-    mkdirSync(output, { recursive: true });
-    writeFileSync(join(output, 'release.json'), `${JSON.stringify(reservation, null, 2)}\n`);
     temporary = mkdtempSync(join(tmpdir(), `${app}-nightly-`));
     sourceRoot = join(temporary, 'source');
     run('git', ['worktree', 'add', '--detach', sourceRoot, sha]);
@@ -125,13 +126,23 @@ async function buildRelease() {
       run('npm', ['run', 'test:nightly'], sourceRoot);
       run('npm', ['run', 'lint'], sourceRoot);
       run('npx', ['tsc', '--noEmit'], sourceRoot);
+      run('npx', ['expo', 'export', '--platform', 'web', '--max-workers', '2'], sourceRoot);
     }
+    assertProfiles(sourceRoot);
+    preflightRelease(sourceRoot);
+    assertNotCancelled();
+    reservation = ledger('reserve', [sha]);
+    console.log(JSON.stringify({ app, ...reservation }));
+    if (!reservation.build) return;
+    output = resolve(process.env.RELEASE_ARTIFACTS_DIR ?? join(homedir(), 'Downloads/lab4code-releases'), app,
+      `${reservation.version}-${reservation.versionCode}-${sha.slice(0, 12)}`);
+    mkdirSync(output, { recursive: true });
+    writeFileSync(join(output, 'release.json'), `${JSON.stringify(reservation, null, 2)}\n`);
     stampRelease(sourceRoot, reservation.version, reservation.versionCode);
     const easPath = join(sourceRoot, 'eas.json');
     const config = JSON.parse(readFileSync(easPath, 'utf8'));
     config.cli = { ...config.cli, appVersionSource: 'local' };
     writeFileSync(easPath, `${JSON.stringify(config, null, 2)}\n`);
-    assertProfiles(sourceRoot);
     const logs = join(homedir(), '.local/state/lab4code-releases/logs', app, reservation.id);
     mkdirSync(logs, { recursive: true, mode: 0o700 });
     chmodSync(logs, 0o700);
@@ -145,6 +156,10 @@ async function buildRelease() {
     stage = 'artifact-verify';
     const stamped = JSON.parse(readFileSync(join(sourceRoot, 'app.json'), 'utf8')).expo;
     verifyReleaseArtifacts(apk, aab, { package: stamped.android.package, version: reservation.version, versionCode: reservation.versionCode }, app);
+    const verified = join(output, 'verified');
+    mkdirSync(verified);
+    for (const artifact of [apk, aab]) copyFileSync(artifact, join(verified, artifact === apk ? `${app}.apk` : `${app}.aab`));
+    assertNotCancelled();
     stage = 'play-upload';
     await uploadPlayInternal({ app, aabPath: aab, version: reservation.version, versionCode: reservation.versionCode, keyPath: credentialPath });
     outcome = 'succeeded';
@@ -153,14 +168,13 @@ async function buildRelease() {
     failure = releaseFailure(stage);
     throw error;
   } finally {
-    // Record the attempt even when dependency installation, checks, build, or upload fails.
-    // If SSH itself fails here, the active reservation safely blocks another upload.
+    // Cancellation or an uncertain state write leaves the reservation active for reconciliation.
     try {
       try {
-        if (output) writeFileSync(join(output, 'release.json'), `${JSON.stringify({ ...reservation, status: outcome, ...(failure ? { failure } : {}), finishedAt: new Date().toISOString() }, null, 2)}\n`);
+        if (output) writeFileSync(join(output, 'release.json'), `${JSON.stringify({ ...reservation, status: cancelled ? 'cancelled' : outcome, ...(failure ? { failure } : {}), finishedAt: new Date().toISOString() }, null, 2)}\n`);
       } finally {
         // Local evidence is optional; its failure must not leave the shared reservation active.
-        ledger('finish', [reservation.id, outcome]);
+        if (reservation?.build && !cancelled) ledger('finish', [reservation.id, outcome]);
       }
     } finally {
       if (worktreeAdded) run('git', ['worktree', 'remove', '--force', sourceRoot]);
@@ -175,8 +189,8 @@ try {
     if (locked.error) throw locked.error;
     process.exitCode = locked.status ?? 1;
   } else if (command === 'run') await buildRelease();
-  else if (['status', 'seed', 'finish'].includes(command)) console.log(JSON.stringify(ledger(command, process.argv.slice(3)), null, 2));
-  else throw new Error('Usage: node scripts/nightly-release.mjs [run|status|seed VERSION CODE SHA|finish ID failed|succeeded]');
+  else if (['status', 'finish'].includes(command)) console.log(JSON.stringify(ledger(command, process.argv.slice(3)), null, 2));
+  else throw new Error('Usage: node scripts/nightly-release.mjs [run|status|finish ID failed|succeeded]');
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;

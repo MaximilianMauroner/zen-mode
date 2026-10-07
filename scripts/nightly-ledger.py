@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Atomic release reservations shared by the Mac and coding host."""
-import fcntl
+"""Release transitions persisted with GitHub Contents API compare-and-swap."""
+import base64
+import copy
 import json
 import os
-from pathlib import Path
 import re
 import sys
-import tempfile
+import subprocess
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, build_opener, HTTPRedirectHandler
 from datetime import datetime, timezone
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -81,36 +83,74 @@ def validate_sha(sha):
         raise ValueError("Expected a full Git SHA")
 
 
+class NoRedirects(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def github_request(method, url, token, payload=None):
+    body = json.dumps(payload).encode() if payload is not None else None
+    request = Request(url, data=body, method=method, headers={
+        "Authorization": "Bearer " + token, "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json",
+        "User-Agent": "zen-mode-release-ledger",
+    })
+    try:
+        with build_opener(NoRedirects()).open(request, timeout=30) as response:
+            return json.load(response)
+    except HTTPError as error:
+        raise ValueError(f"GitHub ledger {method} failed (HTTP {error.code}); reconcile before retrying") from None
+    except (URLError, OSError, ValueError):
+        raise ValueError(f"GitHub ledger {method} result is uncertain; reconcile before retrying") from None
+
+
+def auth_token():
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        result = subprocess.run(["gh", "auth", "token", "--hostname", "github.com"],
+                                capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            token = result.stdout.strip()
+    if not token:
+        raise ValueError("Set GH_TOKEN or GITHUB_TOKEN, or sign in with gh auth login")
+    return token
+
+
+def transact(app, action, args, token, request=github_request, now=None):
+    if app != "zen-mode":
+        raise ValueError("Expected zen-mode repository")
+    if action not in ("status", "reserve", "finish"):
+        raise ValueError("Expected status, reserve, or finish; ledger cutover is manual")
+    url = "https://api.github.com/repos/MaximilianMauroner/zen-mode/contents/ledger.json"
+    record = request("GET", url + "?ref=release-state", token)
+    try:
+        if record["encoding"] != "base64" or not re.fullmatch(r"[0-9a-f]{40}", record["sha"]):
+            raise ValueError()
+        state = json.loads(base64.b64decode(record["content"]).decode())
+        if not isinstance(state, dict) or not state.get("attempts") or "active" not in state:
+            raise ValueError()
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("GitHub ledger is missing or invalid; manual cutover is required") from None
+    original = copy.deepcopy(state)
+    state, result = transition(state, action, args, now)
+    if state != original:
+        saved = request("PUT", url, token, {
+            "message": f"release: {action} zen-mode", "branch": "release-state", "sha": record["sha"],
+            "content": base64.b64encode((json.dumps(state, indent=2) + "\n").encode()).decode(),
+        })
+        if not isinstance(saved, dict) or not re.fullmatch(r"[0-9a-f]{40}", saved.get("content", {}).get("sha", "")):
+            raise ValueError("GitHub ledger PUT result is uncertain; reconcile before retrying")
+    return result
+
+
 def main():
     app, action, *args = sys.argv[1:]
-    if app not in ("moodinator", "zen-mode"):
-        raise ValueError("Unknown app")
-    directory = Path.home() / ".local/state/lab4code-releases"
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(directory, 0o700)
-    path = directory / (app + ".json")
-    with open(directory / (app + ".lock"), "a") as lock:
-        os.chmod(lock.name, 0o600)
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        state = json.loads(path.read_text()) if path.exists() else None
-        state, result = transition(state, action, args)
-        if action != "status" and state is not None:
-            descriptor, temporary = tempfile.mkstemp(dir=directory)
-            try:
-                with os.fdopen(descriptor, "w") as output:
-                    json.dump(state, output, indent=2)
-                    output.write("\n")
-                    output.flush()
-                    os.fsync(output.fileno())
-                os.replace(temporary, path)
-            finally:
-                if os.path.exists(temporary):
-                    os.unlink(temporary)
-        print(json.dumps(result))
+    print(json.dumps(transact(app, action, args, auth_token())))
 
 
 if __name__ == "__main__":
     try:
         main()
-    except (ValueError, TypeError) as error:
-        sys.exit(str(error))
+    except (ValueError, TypeError, KeyError, OSError) as error:
+        # State and transport errors must never print API bodies or credentials.
+        sys.exit(str(error) if isinstance(error, ValueError) else "Release ledger operation failed")

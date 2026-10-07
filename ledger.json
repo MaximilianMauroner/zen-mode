@@ -1,0 +1,54 @@
+{
+  "lastReserved": {
+    "version": "0.1.9",
+    "versionCode": 12
+  },
+  "latest": {
+    "version": "0.1.8",
+    "versionCode": 11,
+    "sha": "8d0206cbbbe606ad51694bba37966cfdb9081d26"
+  },
+  "lastAttemptDay": "2026-09-23",
+  "attempts": {
+    "8e02305a73dff3d1234311dbd3653c2cf58ca3f3": {
+      "version": "0.1.5",
+      "versionCode": 8,
+      "sha": "8e02305a73dff3d1234311dbd3653c2cf58ca3f3",
+      "day": "2026-09-16",
+      "status": "succeeded"
+    },
+    "d8e2fb47c6a38a7e2527c37b47ff3ad5baf1c2c7": {
+      "version": "0.1.6",
+      "versionCode": 9,
+      "sha": "d8e2fb47c6a38a7e2527c37b47ff3ad5baf1c2c7",
+      "day": "2026-09-17",
+      "status": "failed",
+      "id": "a4b6466d-3e47-4ab7-ab09-f7d216c739c6"
+    },
+    "0e150c09de463fab7cabf2f9b63ec5817a531599": {
+      "version": "0.1.7",
+      "versionCode": 10,
+      "sha": "0e150c09de463fab7cabf2f9b63ec5817a531599",
+      "day": "2026-09-18",
+      "status": "failed",
+      "id": "70893149-4a70-48ba-8f1a-d0898bdfb26a"
+    },
+    "8d0206cbbbe606ad51694bba37966cfdb9081d26": {
+      "version": "0.1.8",
+      "versionCode": 11,
+      "sha": "8d0206cbbbe606ad51694bba37966cfdb9081d26",
+      "day": "2026-09-20",
+      "status": "succeeded",
+      "id": "8a563ec2-461b-4b66-8959-19cfae380e80"
+    },
+    "31298595c3e3edaa81eecd332d25a106288b99b5": {
+      "version": "0.1.9",
+      "versionCode": 12,
+      "sha": "31298595c3e3edaa81eecd332d25a106288b99b5",
+      "day": "2026-09-23",
+      "status": "failed",
+      "id": "226249b9-9ecd-406f-8966-d4be8e27f1a7"
+    }
+  },
+  "active": null
+}

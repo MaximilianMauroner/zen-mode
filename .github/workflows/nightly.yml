@@ -61,7 +61,6 @@ jobs:
       CHECKED_SHA: ${{ needs.checks.outputs.sha }}
       CHECKED_EAS_VERSION: ${{ needs.checks.outputs.eas-version }}
     outputs:
-      reservation: ${{ steps.reserve.outputs.reservation }}
       build: ${{ steps.reserve.outputs.build }}
     steps:
       - name: Set ephemeral paths
@@ -89,6 +88,14 @@ jobs:
           RELEASE_SECRETS_READY: ${{ steps.secrets.outputs.ready }}
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/nightly-release.mjs reserve
+      - name: Transfer confirmed nonsecret reservation
+        if: steps.reserve.outputs.build == 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: zen-mode-nightly-${{ github.run_id }}-${{ github.run_attempt }}-reservation
+          path: ${{ runner.temp }}/reservation/reservation.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Retain sanitized reserve evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -105,7 +112,6 @@ jobs:
     timeout-minutes: 60
     env:
       CHECKED_SHA: ${{ needs.checks.outputs.sha }}
-      RELEASE_RESERVATION: ${{ needs.reserve.outputs.reservation }}
     outputs:
       outcome: ${{ steps.build.outputs.outcome }}
       artifact-id: ${{ steps.artifacts.outputs.artifact-id }}
@@ -127,6 +133,13 @@ jobs:
           java-version: '17'
       - name: Prepare tools without release credentials
         run: bash scripts/prepare-nightly-tools.sh eas
+      - name: Retrieve confirmed nonsecret reservation
+        # Let the guarded phase report a terminal failure before any EAS or Play call.
+        continue-on-error: true
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: zen-mode-nightly-${{ github.run_id }}-${{ github.run_attempt }}-reservation
+          path: ${{ runner.temp }}/reservation
       - name: Build with Expo only and verify frozen signed identity
         id: build
         env:
@@ -158,7 +171,6 @@ jobs:
     timeout-minutes: 20
     env:
       CHECKED_SHA: ${{ needs.checks.outputs.sha }}
-      RELEASE_RESERVATION: ${{ needs.reserve.outputs.reservation }}
     outputs:
       outcome: ${{ steps.upload.outputs.outcome || steps.verify.outputs.outcome }}
     steps:
@@ -184,6 +196,13 @@ jobs:
           artifact-ids: ${{ needs.build.outputs.artifact-id }}
           path: ${{ runner.temp }}/release-artifacts/verified
           merge-multiple: true
+      - name: Retrieve confirmed nonsecret reservation
+        # Let the guarded phase report a terminal failure before any EAS or Play call.
+        continue-on-error: true
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: zen-mode-nightly-${{ github.run_id }}-${{ github.run_attempt }}-reservation
+          path: ${{ runner.temp }}/reservation
       - name: Verify downloaded package, identity, and approved signatures without secrets
         id: verify
         run: node scripts/nightly-release.mjs verify-upload
@@ -218,7 +237,6 @@ jobs:
       contents: write
     env:
       CHECKED_SHA: ${{ needs.checks.outputs.sha }}
-      RELEASE_RESERVATION: ${{ needs.reserve.outputs.reservation }}
       RELEASE_OUTCOME: ${{ needs.upload.outputs.outcome == 'succeeded' && 'succeeded' || 'failed' }}
     steps:
       - name: Set ephemeral paths
@@ -232,6 +250,11 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '24'
+      - name: Retrieve confirmed nonsecret reservation
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: zen-mode-nightly-${{ github.run_id }}-${{ github.run_attempt }}-reservation
+          path: ${{ runner.temp }}/reservation
       - name: Finish confirmed terminal outcome through durable ledger transition
         env:
           GITHUB_TOKEN: ${{ github.token }}

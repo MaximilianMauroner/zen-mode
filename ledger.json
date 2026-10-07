@@ -54,9 +54,9 @@
       "versionCode": 13,
       "sha": "53d4f408df5232f34abdc42c75c7ee6cf5853e82",
       "day": "2026-10-07",
-      "status": "running",
+      "status": "failed",
       "id": "a717834b-097c-422a-9e02-ce31abdca105"
     }
   },
-  "active": "a717834b-097c-422a-9e02-ce31abdca105"
+  "active": null
 }

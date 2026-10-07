@@ -18,7 +18,7 @@ async function runRelease({ failBuild = false, failFinish = false } = {}) {
   const removed = [];
   const errors = [];
   const writes = [];
-  const config = { build: { nightly: { autoIncrement: false }, 'nightly-apk': { autoIncrement: false } } };
+  const config = { cli: { version: '>= 20.5.1' }, build: { nightly: { autoIncrement: false }, 'nightly-apk': { autoIncrement: false } } };
   const reservation = { build: true, id: 'fixture', version: '0.1.6', versionCode: 9 };
   const environment = { NIGHTLY_HOST_LOCKED: '1', PLAY_SERVICE_ACCOUNT_KEY_PATH: '/fixture/key' };
   await runInNewContext(`(async () => { ${source} })()`, {
@@ -33,6 +33,7 @@ async function runRelease({ failBuild = false, failFinish = false } = {}) {
         }
         return { status: 0, stdout: JSON.stringify(reservation) };
       }
+      if (program === 'git' && args[0] === 'show') return { status: 0, stdout: JSON.stringify(config) };
       if (program === 'git' && args[0] === 'rev-parse') return { status: 0, stdout: 'a'.repeat(40) };
       return { status: 0, stdout: '' };
     },

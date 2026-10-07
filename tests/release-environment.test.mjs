@@ -95,6 +95,34 @@ test('nightly preflight failure writes evidence without touching the ledger', as
   });
 });
 
+test('nightly rejects missing fetched CLI minimums without local fallback or ledger access', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  fixture(({ root, env }) => {
+    const bin = join(root, 'bin');
+    mkdirSync(bin);
+    const ledgerMarker = join(root, 'ledger-called');
+    const javaMarker = join(root, 'java-called');
+    writeFileSync(join(bin, 'ssh'), `#!/bin/sh\ntouch '${ledgerMarker}'\nexit 1\n`, { mode: 0o700 });
+    writeFileSync(join(bin, 'java'), `#!/bin/sh\ntouch '${javaMarker}'\nexit 1\n`, { mode: 0o700 });
+    const eas = join(bin, 'eas');
+    writeFileSync(eas, '#!/bin/sh\necho eas-cli/20.5.1 test\n', { mode: 0o700 });
+    for (const config of [{ cli: {} }, { cli: { version: null } }, {}]) {
+      writeFileSync(join(bin, 'git'), `#!/bin/sh\nif [ "$1" = rev-parse ]; then echo abcdef1234567890; fi\nif [ "$1" = show ]; then echo '${JSON.stringify(config)}'; fi\n`, { mode: 0o700 });
+      const result = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/nightly-release.mjs', import.meta.url)), 'run'], {
+        env: { ...env, PATH: `${bin}:${env.PATH}`, EAS_BIN: eas, NIGHTLY_HOST_LOCKED: '1', RELEASE_ARTIFACTS_DIR: root }, encoding: 'utf8',
+      });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /Expected fetched eas.json cli.version to specify a minimum/);
+      assert.equal(requireFs.existsSync(ledgerMarker), false);
+      assert.equal(requireFs.existsSync(javaMarker), false);
+      const record = JSON.parse(requireFs.readFileSync(join(root, 'zen-mode', 'preflight-abcdef123456', 'release.json'), 'utf8'));
+      assert.equal(record.failure.stage, 'preflight');
+      assert.equal(record.versionCode, undefined);
+    }
+  });
+});
+
 test('LaunchAgent rejects missing values and writes both SDK aliases', async (t) => {
   if (process.platform !== 'darwin' || Intl.DateTimeFormat().resolvedOptions().timeZone !== 'Europe/Vienna') return t.skip('Mac Vienna LaunchAgent only');
   const { spawnSync } = await import('node:child_process');

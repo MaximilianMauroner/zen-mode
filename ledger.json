@@ -1,14 +1,14 @@
 {
   "lastReserved": {
-    "version": "0.1.9",
-    "versionCode": 12
+    "version": "0.1.10",
+    "versionCode": 13
   },
   "latest": {
     "version": "0.1.8",
     "versionCode": 11,
     "sha": "8d0206cbbbe606ad51694bba37966cfdb9081d26"
   },
-  "lastAttemptDay": "2026-09-23",
+  "lastAttemptDay": "2026-10-07",
   "attempts": {
     "8e02305a73dff3d1234311dbd3653c2cf58ca3f3": {
       "version": "0.1.5",
@@ -48,7 +48,15 @@
       "day": "2026-09-23",
       "status": "failed",
       "id": "226249b9-9ecd-406f-8966-d4be8e27f1a7"
+    },
+    "53d4f408df5232f34abdc42c75c7ee6cf5853e82": {
+      "version": "0.1.10",
+      "versionCode": 13,
+      "sha": "53d4f408df5232f34abdc42c75c7ee6cf5853e82",
+      "day": "2026-10-07",
+      "status": "running",
+      "id": "a717834b-097c-422a-9e02-ce31abdca105"
     }
   },
-  "active": null
+  "active": "a717834b-097c-422a-9e02-ce31abdca105"
 }

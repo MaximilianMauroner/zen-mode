@@ -166,12 +166,16 @@ async function buildRelease() {
     console.log(`Internal release ready: ${output}`);
   } catch (error) {
     failure = releaseFailure(stage);
+    if (!output) {
+      output = resolve(process.env.RELEASE_ARTIFACTS_DIR ?? join(homedir(), 'Downloads/lab4code-releases'), app, `checks-${sha.slice(0, 12)}`);
+      mkdirSync(output, { recursive: true });
+    }
     throw error;
   } finally {
     // Cancellation or an uncertain state write leaves the reservation active for reconciliation.
     try {
       try {
-        if (output) writeFileSync(join(output, 'release.json'), `${JSON.stringify({ ...reservation, status: cancelled ? 'cancelled' : outcome, ...(failure ? { failure } : {}), finishedAt: new Date().toISOString() }, null, 2)}\n`);
+        if (output) writeFileSync(join(output, 'release.json'), `${JSON.stringify({ app, sha, ...(reservation?.build ? reservation : {}), status: cancelled ? 'cancelled' : outcome, ...(failure ? { failure } : {}), finishedAt: new Date().toISOString() }, null, 2)}\n`);
       } finally {
         // Local evidence is optional; its failure must not leave the shared reservation active.
         if (reservation?.build && !cancelled) ledger('finish', [reservation.id, outcome]);

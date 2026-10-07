@@ -121,6 +121,9 @@ Only verified APK/AAB copies and sanitized `release.json` records are retained a
 GitHub artifacts for 30 days. Unverified build files and raw EAS logs are excluded.
 Local artifacts default to `~/Downloads/lab4code-releases/zen-mode`; set
 `RELEASE_ARTIFACTS_DIR` to change the output path.
+Source-check failures before reservation retain sanitized evidence in `checks-SHA/release.json`.
+The record includes the app, source SHA, status, failure stage, and finish time.
+It has no reserved identity. A duplicate-source skip does not create a failed record.
 
 The AAB goes directly to the fixed Google Play `internal` track with one
 `completed` release. Returned versionCode must match before track mutation.

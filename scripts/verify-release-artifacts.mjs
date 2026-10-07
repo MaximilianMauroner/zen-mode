@@ -7,8 +7,8 @@ const approvedCertificates = {
   'zen-mode': '46ab4a5bdb4b5e57ccf0c35570076eb58c3adf02db04aa04bbbcfd1eda082d59',
 };
 
-function output(program, args) {
-  const result = spawnSync(program, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
+function output(program, args, env) {
+  const result = spawnSync(program, args, { env, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`${program} artifact verification failed: ${result.stderr}`);
   return result.stdout.trim();
@@ -21,9 +21,10 @@ export function assertArtifactIdentity(actual, expected, app) {
   if (actual.certificate !== approvedCertificates[app]) throw new Error('Artifact does not use the approved upload certificate');
 }
 
-export function verifyReleaseArtifacts(apk, aab, expected, app) {
-  const sdk = process.env.ANDROID_HOME ?? process.env.ANDROID_SDK_ROOT;
-  const bundletool = process.env.ANDROID_BUNDLETOOL_JAR;
+export function verifyReleaseArtifacts(apk, aab, expected, app, env = process.env) {
+  const read = (program, args) => output(program, args, env);
+  const sdk = env.ANDROID_HOME ?? env.ANDROID_SDK_ROOT;
+  const bundletool = env.ANDROID_BUNDLETOOL_JAR;
   if (!sdk || !bundletool || !existsSync(bundletool)) {
     throw new Error('Set ANDROID_HOME and ANDROID_BUNDLETOOL_JAR for artifact verification');
   }
@@ -32,18 +33,18 @@ export function verifyReleaseArtifacts(apk, aab, expected, app) {
     .map((entry) => entry.name).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
   if (!versions.length) throw new Error('Android SDK build-tools are missing');
   const tools = join(sdk, 'build-tools', versions[0]);
-  const badging = output(join(tools, 'aapt'), ['dump', 'badging', apk]);
+  const badging = read(join(tools, 'aapt'), ['dump', 'badging', apk]);
   const match = badging.match(/package: name='([^']+)' versionCode='(\d+)' versionName='([^']*)'/);
   if (!match) throw new Error('Could not read APK identity');
-  const apkSigner = output(join(tools, 'apksigner'), ['verify', '--print-certs', apk]);
+  const apkSigner = read(join(tools, 'apksigner'), ['verify', '--print-certs', apk]);
   const apkCertificate = apkSigner.match(/certificate SHA-256 digest:\s*([a-f0-9]+)/i)?.[1]?.toLowerCase();
   assertArtifactIdentity({ package: match[1], versionCode: Number(match[2]), version: match[3], certificate: apkCertificate }, expected, app);
   const java = ['-Xmx512m', '-jar', bundletool];
-  output('java', [...java, 'validate', `--bundle=${aab}`]);
-  const value = (attribute) => output('java', [...java, 'dump', 'manifest', `--bundle=${aab}`, `--xpath=/manifest/@${attribute}`]);
-  const signature = output('jarsigner', ['-J-Duser.language=en', '-J-Duser.country=US', '-verify', aab]);
+  read('java', [...java, 'validate', `--bundle=${aab}`]);
+  const value = (attribute) => read('java', [...java, 'dump', 'manifest', `--bundle=${aab}`, `--xpath=/manifest/@${attribute}`]);
+  const signature = read('jarsigner', ['-J-Duser.language=en', '-J-Duser.country=US', '-verify', aab]);
   if (!signature.includes('jar verified.')) throw new Error('AAB signature verification failed');
-  const aabSigner = output('keytool', ['-J-Duser.language=en', '-J-Duser.country=US', '-printcert', '-jarfile', aab]);
+  const aabSigner = read('keytool', ['-J-Duser.language=en', '-J-Duser.country=US', '-printcert', '-jarfile', aab]);
   const aabCertificate = aabSigner.match(/SHA256:\s*([a-f0-9:]+)/i)?.[1]?.replaceAll(':', '').toLowerCase();
   assertArtifactIdentity({ package: value('package'), version: value('android:versionName'),
     versionCode: Number(value('android:versionCode')), certificate: aabCertificate }, expected, app);

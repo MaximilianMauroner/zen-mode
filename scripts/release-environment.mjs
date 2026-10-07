@@ -16,23 +16,28 @@ function readablePath(value, name, directory = false) {
   return resolve(value);
 }
 
+// Local callers use trusted source and host. Filtering is not same-user process isolation.
+export function localChildEnvironment(env, phase) {
+  const environment = { ...env };
+  for (const name of ['EXPO_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN', 'PLAY_SERVICE_ACCOUNT_JSON', 'PLAY_SERVICE_ACCOUNT_KEY_PATH']) delete environment[name];
+  if (phase === 'eas' && env.EXPO_TOKEN) environment.EXPO_TOKEN = env.EXPO_TOKEN;
+  if (phase === 'ledger') {
+    if (env.GH_TOKEN) environment.GH_TOKEN = env.GH_TOKEN;
+    if (env.GITHUB_TOKEN) environment.GITHUB_TOKEN = env.GITHUB_TOKEN;
+  }
+  if (phase === 'upload') environment.PLAY_SERVICE_ACCOUNT_KEY_PATH = env.PLAY_SERVICE_ACCOUNT_KEY_PATH;
+  return environment;
+}
+
 export function releaseEnvironment(env = process.env) {
-  if (env.GITHUB_ACTIONS === 'true' && !env.EXPO_TOKEN?.trim()) throw new Error('EXPO_TOKEN is required');
   if (!env.PATH?.trim()) throw new Error('PATH is required');
   const sdk = readablePath(env.ANDROID_HOME || env.ANDROID_SDK_ROOT, 'Android SDK', true);
   if (env.ANDROID_HOME && env.ANDROID_SDK_ROOT && resolve(env.ANDROID_HOME) !== resolve(env.ANDROID_SDK_ROOT)) {
     throw new Error('ANDROID_HOME and ANDROID_SDK_ROOT must match');
   }
   const bundletool = readablePath(env.ANDROID_BUNDLETOOL_JAR, 'ANDROID_BUNDLETOOL_JAR');
-  const keyPath = readablePath(env.PLAY_SERVICE_ACCOUNT_KEY_PATH, 'PLAY_SERVICE_ACCOUNT_KEY_PATH');
-  try {
-    const key = JSON.parse(readFileSync(keyPath, 'utf8'));
-    if (key.type !== 'service_account' || !key.client_email || !key.private_key) throw new Error();
-  } catch {
-    throw new Error('Expected a Play service-account JSON key');
-  }
   return { ...env, ANDROID_HOME: sdk, ANDROID_SDK_ROOT: sdk,
-    ANDROID_BUNDLETOOL_JAR: bundletool, PLAY_SERVICE_ACCOUNT_KEY_PATH: keyPath,
+    ANDROID_BUNDLETOOL_JAR: bundletool,
     EAS_BIN: env.EAS_BIN || 'eas' };
 }
 
@@ -51,16 +56,7 @@ export function preflightRelease(root, env = process.env, cliVersion) {
   });
   if (eas.error || eas.status !== 0) throw new Error('EAS is unavailable');
   const constraint = cliVersion ?? JSON.parse(readFileSync(join(root, 'eas.json'), 'utf8')).cli.version;
-  // Both release configurations require a minimum stable CLI version.
-  const minimum = /^>=\s*(\d+)\.(\d+)\.(\d+)$/.exec(constraint);
-  if (!minimum) throw new Error('Expected eas.json cli.version to specify >= MAJOR.MINOR.PATCH');
-  const installed = /eas-cli\/(\d+)\.(\d+)\.(\d+)(?=\s|$)/.exec(eas.stdout);
-  if (!installed) throw new Error('Cannot read a stable EAS CLI version');
-  const comparison = installed.slice(1).map(Number)
-    .map((part, index) => part - Number(minimum[index + 1])).find((part) => part !== 0) ?? 0;
-  if (comparison < 0) {
-    throw new Error(`EAS CLI ${installed.slice(1).join('.')} does not satisfy ${constraint}; update EAS_BIN before releasing`);
-  }
+  validateEasVersion(eas.stdout, constraint);
   for (const [program, args, name] of [
     ['java', ['-version'], 'Java'],
     ['jarsigner', ['-help'], 'jarsigner'], ['keytool', ['-help'], 'keytool'],
@@ -68,10 +64,28 @@ export function preflightRelease(root, env = process.env, cliVersion) {
     const result = spawnSync(program, args, { cwd: root, env: environment, stdio: 'ignore', timeout: 30000 });
     if (result.error || result.status !== 0) throw new Error(`${name} is unavailable`);
   }
+  checkReleaseResources(root);
+  return environment;
+}
+
+export function validateEasVersion(versionOutput, constraint) {
+  // Both release configurations require a minimum stable CLI version.
+  const minimum = /^>=\s*(\d+)\.(\d+)\.(\d+)$/.exec(constraint);
+  if (!minimum) throw new Error('Expected eas.json cli.version to specify >= MAJOR.MINOR.PATCH');
+  const installed = /eas-cli\/(\d+)\.(\d+)\.(\d+)(?=\s|$)/.exec(versionOutput);
+  if (!installed) throw new Error('Cannot read a stable EAS CLI version');
+  const comparison = installed.slice(1).map(Number)
+    .map((part, index) => part - Number(minimum[index + 1])).find((part) => part !== 0) ?? 0;
+  if (comparison < 0) {
+    throw new Error(`EAS CLI ${installed.slice(1).join('.')} does not satisfy ${constraint}; update EAS_BIN before releasing`);
+  }
+  return installed.slice(1).join('.');
+}
+
+export function checkReleaseResources(root) {
   const disk = statfsSync(root);
   if (disk.bavail * disk.bsize < 15 * 1024 ** 3) throw new Error('Local builds require at least 15 GiB free disk space');
   if (totalmem() < 8 * 1024 ** 3) throw new Error('Local builds require at least 8 GiB RAM');
-  return environment;
 }
 
 export function releaseFailure(stage) {

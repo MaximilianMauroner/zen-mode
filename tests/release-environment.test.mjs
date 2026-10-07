@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { releaseEnvironment, preflightRelease, releaseFailure } from '../scripts/release-environment.mjs';
+import { releaseEnvironment, preflightRelease, releaseFailure, localChildEnvironment, validateEasVersion } from '../scripts/release-environment.mjs';
 
 function fixture(run) {
   const root = mkdtempSync(join(tmpdir(), 'release-environment-'));
@@ -27,23 +27,26 @@ test('SDK aliases normalize and conflicting roots fail', () => fixture(({ env })
   assert.throws(() => releaseEnvironment({ ...env, ANDROID_SDK_ROOT: '/other' }), /must match/);
 }));
 
-test('Expo token is optional locally and required on GitHub Actions', () => fixture(({ env }) => {
-  const { EXPO_TOKEN, ...local } = env;
-  assert.equal(releaseEnvironment(local).ANDROID_HOME, env.ANDROID_HOME);
-  assert.equal(releaseEnvironment({ ...local, GITHUB_ACTIONS: 'false' }).ANDROID_HOME, env.ANDROID_HOME);
-  assert.equal(releaseEnvironment({ ...env, GITHUB_ACTIONS: 'true' }).EXPO_TOKEN, EXPO_TOKEN);
-  for (const token of [undefined, '', '   ']) {
-    assert.throws(() => releaseEnvironment({ ...local, GITHUB_ACTIONS: 'true', EXPO_TOKEN: token }), /EXPO_TOKEN is required/);
-  }
-}));
+test('local child authentication is limited to its phase', () => {
+  const env = { PATH: '/fixture/bin', EXPO_TOKEN: 'expo', GH_TOKEN: 'gh', GITHUB_TOKEN: 'github', PLAY_SERVICE_ACCOUNT_JSON: 'private', PLAY_SERVICE_ACCOUNT_KEY_PATH: '/fixture/key' };
+  assert.deepEqual(localChildEnvironment(env, 'checks'), { PATH: env.PATH });
+  assert.deepEqual(localChildEnvironment(env, 'eas'), { PATH: env.PATH, EXPO_TOKEN: env.EXPO_TOKEN });
+  assert.deepEqual(localChildEnvironment(env, 'ledger'), { PATH: env.PATH, GH_TOKEN: env.GH_TOKEN, GITHUB_TOKEN: env.GITHUB_TOKEN });
+  assert.deepEqual(localChildEnvironment(env, 'upload'), { PATH: env.PATH, PLAY_SERVICE_ACCOUNT_KEY_PATH: env.PLAY_SERVICE_ACCOUNT_KEY_PATH });
+  assert.deepEqual(localChildEnvironment({ PATH: env.PATH }, 'eas'), { PATH: env.PATH });
+});
+
+test('checked stable CLI proof uses the source minimum', () => {
+  assert.equal(validateEasVersion('eas-cli/20.5.1 test', '>= 20.5.1'), '20.5.1');
+  assert.throws(() => validateEasVersion('eas-cli/20.5.1-beta.1', '>= 20.5.1'), /stable/);
+  assert.throws(() => validateEasVersion('eas-cli/20.5.1', '>= 20.5.2'), /does not satisfy/);
+});
 
 test('required environment and unreadable paths fail before build', () => fixture(({ env }) => {
-  for (const name of ['PATH', 'ANDROID_HOME', 'ANDROID_BUNDLETOOL_JAR', 'PLAY_SERVICE_ACCOUNT_KEY_PATH']) {
+  for (const name of ['PATH', 'ANDROID_HOME', 'ANDROID_BUNDLETOOL_JAR']) {
     assert.throws(() => releaseEnvironment({ ...env, [name]: '' }));
   }
   assert.throws(() => releaseEnvironment({ ...env, ANDROID_BUNDLETOOL_JAR: '/missing.jar' }), /missing or unreadable/);
-  writeFileSync(env.PLAY_SERVICE_ACCOUNT_KEY_PATH, '{}');
-  assert.throws(() => releaseEnvironment(env), /service-account/);
 }));
 
 test('preflight rejects missing EAS and SDK verification tools', () => fixture(({ root, env }) => {
@@ -90,7 +93,7 @@ test('nightly preflight failure writes evidence without touching the ledger', as
     const eas = join(bin, 'eas');
     writeFileSync(eas, '#!/bin/sh\necho eas-cli/16.28.0 test\n', { mode: 0o700 });
     for (const overrides of [{ ANDROID_HOME: '' }, { EAS_BIN: eas }]) {
-      const result = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/nightly-release.mjs', import.meta.url)), 'run'], {
+      const result = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/nightly-local-release.mjs', import.meta.url)), 'run'], {
         env: { ...env, PATH: `${bin}:${env.PATH}`, ...overrides, NIGHTLY_HOST_LOCKED: '1', RELEASE_ARTIFACTS_DIR: root }, encoding: 'utf8',
       });
       assert.equal(result.status, 1);
@@ -119,7 +122,7 @@ test('nightly rejects missing fetched CLI minimums without local fallback or led
     writeFileSync(eas, '#!/bin/sh\necho eas-cli/20.5.1 test\n', { mode: 0o700 });
     for (const config of [{ cli: {} }, { cli: { version: null } }, {}]) {
       writeFileSync(join(bin, 'git'), `#!/bin/sh\nif [ "$1" = rev-parse ]; then echo abcdef1234567890; fi\nif [ "$1" = show ]; then echo '${JSON.stringify(config)}'; fi\n`, { mode: 0o700 });
-      const result = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/nightly-release.mjs', import.meta.url)), 'run'], {
+      const result = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/nightly-local-release.mjs', import.meta.url)), 'run'], {
         env: { ...env, PATH: `${bin}:${env.PATH}`, EAS_BIN: eas, NIGHTLY_HOST_LOCKED: '1', RELEASE_ARTIFACTS_DIR: root }, encoding: 'utf8',
       });
       assert.equal(result.status, 1);

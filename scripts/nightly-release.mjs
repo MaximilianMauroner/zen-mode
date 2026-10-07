@@ -1,54 +1,156 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, closeSync, copyFileSync, existsSync, openSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { appendFileSync, chmodSync, closeSync, copyFileSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { stampRelease } from './stamp-nightly-version.mjs';
+import { stampRelease, releaseIdentity } from './stamp-nightly-version.mjs';
 import { verifyReleaseArtifacts } from './verify-release-artifacts.mjs';
 import { uploadPlayInternal } from './upload-play-internal.mjs';
-import { preflightRelease, releaseFailure } from './release-environment.mjs';
+import { preflightRelease, releaseFailure, validateEasVersion, checkReleaseResources, localChildEnvironment } from './release-environment.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const app = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name;
-const eas = process.env.EAS_BIN ?? 'eas';
+const app = 'zen-mode';
 const command = process.argv[2] ?? 'run';
 let cancelled = false;
 let buildChild;
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => {
-    cancelled = true;
-    buildChild?.kill(signal);
-  });
-}
-function assertNotCancelled() {
-  if (cancelled) throw new Error('Release cancelled; reconcile the active reservation before another run');
-}
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
+  cancelled = true;
+  buildChild?.kill(signal);
+});
 
-function run(program, args, cwd = root, capture = false, input) {
-  const result = spawnSync(program, args, { cwd, encoding: 'utf8', input,
-    stdio: capture ? ['pipe', 'pipe', 'pipe'] : 'inherit', maxBuffer: 16 * 1024 * 1024 });
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`${program} failed (${result.status}): ${capture ? result.stderr : 'see log'}`);
+function run(program, args, capture = false) {
+  const result = spawnSync(program, args, { cwd: root, encoding: 'utf8',
+    stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit', maxBuffer: 16 * 1024 * 1024 });
+  if (result.error || result.status !== 0) throw new Error(`${program} failed; inspect private runner logs`);
   return result.stdout?.trim();
 }
 
-async function runEas(args, cwd, logPath) {
-  // EAS can include a credential-bearing encoded job in failure output.
-  // Keep its complete output in private files, outside terminal and shared artifacts.
+function ledger(action, args = []) {
+  if (cancelled) throw new Error('Release cancelled; reconcile the ledger');
+  return JSON.parse(run('python3', [join(root, 'scripts/nightly-ledger.py'), app, action, ...args], true));
+}
+
+function hosted(job) {
+  if (process.env.GITHUB_ACTIONS !== 'true' || process.env.GITHUB_JOB !== job ||
+      process.env.GITHUB_WORKFLOW !== 'Android nightly Internal release' ||
+      process.env.GITHUB_REPOSITORY !== 'MaximilianMauroner/zen-mode' || process.env.GITHUB_REF !== 'refs/heads/main') {
+    throw new Error('Release phases require their isolated hosted nightly job');
+  }
+}
+
+function output(name, value) {
+  if (!process.env.GITHUB_OUTPUT) throw new Error('GITHUB_OUTPUT is required');
+  appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
+}
+
+function checkedSha() {
+  const sha = process.env.CHECKED_SHA;
+  if (!/^[a-f0-9]{40}$/.test(sha ?? '') || run('git', ['rev-parse', 'HEAD'], true) !== sha) {
+    throw new Error('Expected checkout of the exact checked SHA');
+  }
+  return sha;
+}
+
+function reservation() {
+  const record = JSON.parse(process.env.RELEASE_RESERVATION ?? '{}');
+  if (record.build !== true || record.sha !== checkedSha() || !/^[a-zA-Z0-9-]+$/.test(record.id ?? '')) {
+    throw new Error('Expected the confirmed reservation for the checked SHA');
+  }
+  releaseIdentity(record.version, record.versionCode);
+  return record;
+}
+
+function evidence(stage, sha, status, record, failure) {
+  const path = resolve(process.env.RELEASE_ARTIFACTS_DIR, `${stage}-${sha.slice(0, 12)}`);
+  mkdirSync(path, { recursive: true });
+  writeFileSync(join(path, 'release.json'), `${JSON.stringify({ app, sha, ...record, status,
+    ...(failure ? { failure: releaseFailure(stage) } : {}), finishedAt: new Date().toISOString() }, null, 2)}\n`);
+}
+
+function profiles() {
+  const config = JSON.parse(readFileSync(join(root, 'eas.json'), 'utf8'));
+  if (typeof config.cli?.version !== 'string') throw new Error('Expected fetched eas.json cli.version to specify a minimum');
+  for (const name of ['nightly', 'nightly-apk']) {
+    if (config.build?.[name]?.autoIncrement !== false) throw new Error(`${name} must explicitly disable autoIncrement`);
+  }
+  return config;
+}
+
+async function checks() {
+  hosted('checks');
+  if (process.env.EXPO_TOKEN || process.env.PLAY_SERVICE_ACCOUNT_JSON || process.env.PLAY_SERVICE_ACCOUNT_KEY_PATH || process.env.GH_TOKEN || process.env.GITHUB_TOKEN) {
+    throw new Error('Source checks must not receive release credentials');
+  }
+  const sha = run('git', ['rev-parse', 'HEAD'], true);
+  try {
+    profiles();
+    Object.assign(process.env, preflightRelease(root));
+    run('npm', ['ci']);
+    run('npm', ['test']);
+    run('npm', ['run', 'test:nightly']);
+    run('npm', ['run', 'lint']);
+    run('npx', ['tsc', '--noEmit']);
+    run('npx', ['expo', 'export', '--platform', 'web', '--max-workers', '2']);
+    preflightRelease(root);
+    if (cancelled) throw new Error('Checks cancelled');
+    evidence('checks', sha, 'succeeded');
+    output('eas-version', validateEasVersion(run(process.env.EAS_BIN ?? 'eas', ['--version'], true), profiles().cli.version));
+    output('sha', sha);
+  } catch (error) {
+    evidence('checks', sha, cancelled ? 'cancelled' : 'failed', undefined, true);
+    throw error;
+  }
+}
+
+function validateSecrets() {
+  hosted('reserve');
+  try {
+    const key = JSON.parse(process.env.PLAY_SERVICE_ACCOUNT_JSON ?? '');
+    if (!process.env.EXPO_TOKEN?.trim() || key?.type !== 'service_account' ||
+        typeof key.client_email !== 'string' || !key.client_email || typeof key.private_key !== 'string' || !key.private_key) throw new Error();
+  } catch {
+    if (/^[a-f0-9]{40}$/.test(process.env.CHECKED_SHA ?? '')) evidence('preflight', process.env.CHECKED_SHA, 'failed', undefined, true);
+    throw new Error('EXPO_TOKEN and a full PLAY_SERVICE_ACCOUNT_JSON are required');
+  }
+  // Only readiness crosses steps. The key never becomes a file on this runner.
+  output('ready', 'true');
+}
+
+function reserve() {
+  hosted('reserve');
+  const sha = checkedSha();
+  try {
+    if (process.env.RELEASE_SECRETS_READY !== 'true') throw new Error('Release secrets must be validated before reservation');
+    validateEasVersion(`eas-cli/${process.env.CHECKED_EAS_VERSION}`, profiles().cli.version);
+    checkReleaseResources(root);
+    run('git', ['fetch', 'origin', 'main']);
+    if (run('git', ['rev-parse', 'origin/main'], true) !== sha) throw new Error('Main moved after checks; no identity reserved');
+    const record = ledger('reserve', [sha]);
+    if (record.build) {
+      evidence('reserve', sha, 'running', record);
+      output('reservation', JSON.stringify(record));
+    }
+    output('build', record.build === true ? 'true' : 'false');
+  } catch (error) {
+    evidence('preflight', sha, 'failed', undefined, true);
+    throw error;
+  }
+}
+
+async function runEas(args, logPath) {
   const log = openSync(logPath, 'w', 0o600);
-  assertNotCancelled();
-  const child = spawn(eas, args, { cwd, stdio: ['ignore', log, log] });
-  buildChild = child;
   const monitor = setInterval(() => {
-    const result = spawnSync(process.platform === 'darwin' ? 'memory_pressure' : 'free',
-      process.platform === 'darwin' ? ['-Q'] : ['-m'], { encoding: 'utf8' });
-    if (result.status === 0) console.log(result.stdout.trim());
+    const memory = spawnSync('free', ['-m'], { encoding: 'utf8', env: localChildEnvironment(process.env, 'checks') });
+    if (memory.status === 0) console.log(memory.stdout.trim());
   }, 60000);
   try {
+    if (cancelled) throw new Error('Build cancelled');
+    const child = spawn(process.env.EAS_BIN ?? 'eas', args, { cwd: root, stdio: ['ignore', log, log] });
+    buildChild = child;
     await new Promise((accept, reject) => {
       child.once('error', reject);
-      child.once('close', (code) => code === 0 ? accept() : reject(new Error(`EAS ${args[0]} failed (${code}); private log: ${logPath}`)));
+      child.once('close', (code) => code === 0 ? accept() : reject(new Error('EAS build failed; inspect private runner logs')));
     });
   } finally {
     buildChild = undefined;
@@ -57,144 +159,111 @@ async function runEas(args, cwd, logPath) {
   }
 }
 
-function ledger(action, args = []) {
-  assertNotCancelled();
-  return JSON.parse(run('python3', [join(root, 'scripts/nightly-ledger.py'), app, action, ...args], root, true));
+function artifacts() {
+  const path = resolve(process.env.RELEASE_ARTIFACTS_DIR, 'verified');
+  return { path, apk: join(path, `${app}.apk`), aab: join(path, `${app}.aab`) };
 }
 
-function checkResources() {
-  run('df', ['-h', root]);
-  if (process.platform === 'darwin') {
-    run('vm_stat', []);
-    const total = Number(run('sysctl', ['-n', 'hw.memsize'], root, true));
-    if (total < 8 * 1024 ** 3) throw new Error('Local builds require at least 8 GiB RAM');
-  } else {
-    run('free', ['-h']);
-  }
+function verify(record, apk, aab) {
+  verifyReleaseArtifacts(apk, aab, { package: 'com.lab4code.zenmode', version: record.version, versionCode: record.versionCode }, app);
 }
 
-function assertProfiles(sourceRoot) {
-  const config = JSON.parse(readFileSync(join(sourceRoot, 'eas.json'), 'utf8'));
-  for (const name of ['nightly', 'nightly-apk']) {
-    if (!config.build?.[name] || config.build[name].autoIncrement !== false) {
-      throw new Error(`${name} must explicitly disable autoIncrement`);
-    }
-  }
-
-}
-
-async function buildRelease() {
-  run('git', ['fetch', 'origin', 'main']);
-  const sha = run('git', ['rev-parse', 'origin/main'], root, true);
+async function build() {
+  hosted('build');
+  const record = reservation();
+  let stage = 'preflight';
+  const logs = join(homedir(), '.local/state/lab4code-releases/logs', app);
   try {
-    const config = JSON.parse(run('git', ['show', `${sha}:eas.json`], root, true));
-    if (typeof config.cli?.version !== 'string') {
-      throw new Error('Expected fetched eas.json cli.version to specify a minimum');
+    if (!process.env.EXPO_TOKEN?.trim() || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || process.env.PLAY_SERVICE_ACCOUNT_JSON || process.env.PLAY_SERVICE_ACCOUNT_KEY_PATH) {
+      throw new Error('Build requires Expo credentials only');
     }
-    Object.assign(process.env, preflightRelease(root, process.env, config.cli.version));
-  } catch (error) {
-    const output = resolve(process.env.RELEASE_ARTIFACTS_DIR ?? join(homedir(), 'Downloads/lab4code-releases'), app, `preflight-${sha.slice(0, 12)}`);
-    mkdirSync(output, { recursive: true });
-    writeFileSync(join(output, 'release.json'), `${JSON.stringify({ app, sha, status: 'failed', failure: releaseFailure('preflight'), finishedAt: new Date().toISOString() }, null, 2)}\n`);
-    throw error;
-  }
-  const credentialPath = process.env.PLAY_SERVICE_ACCOUNT_KEY_PATH;
-  let reservation;
-  let temporary;
-  let sourceRoot;
-  let worktreeAdded = false;
-  let output;
-  let outcome = 'failed';
-  let stage = 'checks';
-  let failure;
-  try {
-    temporary = mkdtempSync(join(tmpdir(), `${app}-nightly-`));
-    sourceRoot = join(temporary, 'source');
-    run('git', ['worktree', 'add', '--detach', sourceRoot, sha]);
-    worktreeAdded = true;
-    checkResources();
-    if (existsSync(join(sourceRoot, 'bun.lock'))) {
-      run('bun', ['install', '--frozen-lockfile'], sourceRoot);
-      run('bun', ['run', 'test:run'], sourceRoot);
-      run('bun', ['run', 'test:nightly'], sourceRoot);
-      run('bun', ['run', 'lint'], sourceRoot);
-      run('bun', ['run', 'typecheck'], sourceRoot);
-      run('bun', ['run', 'verify:android-release-config'], sourceRoot);
-    } else {
-      run('npm', ['ci'], sourceRoot);
-      run('npm', ['test'], sourceRoot);
-      run('npm', ['run', 'test:nightly'], sourceRoot);
-      run('npm', ['run', 'lint'], sourceRoot);
-      run('npx', ['tsc', '--noEmit'], sourceRoot);
-      run('npx', ['expo', 'export', '--platform', 'web', '--max-workers', '2'], sourceRoot);
-    }
-    assertProfiles(sourceRoot);
-    preflightRelease(sourceRoot);
-    assertNotCancelled();
-    reservation = ledger('reserve', [sha]);
-    console.log(JSON.stringify({ app, ...reservation }));
-    if (!reservation.build) return;
-    output = resolve(process.env.RELEASE_ARTIFACTS_DIR ?? join(homedir(), 'Downloads/lab4code-releases'), app,
-      `${reservation.version}-${reservation.versionCode}-${sha.slice(0, 12)}`);
-    mkdirSync(output, { recursive: true });
-    writeFileSync(join(output, 'release.json'), `${JSON.stringify(reservation, null, 2)}\n`);
-    stampRelease(sourceRoot, reservation.version, reservation.versionCode);
-    const easPath = join(sourceRoot, 'eas.json');
-    const config = JSON.parse(readFileSync(easPath, 'utf8'));
+    const config = profiles();
+    Object.assign(process.env, preflightRelease(root));
+    stampRelease(root, record.version, record.versionCode);
     config.cli = { ...config.cli, appVersionSource: 'local' };
-    writeFileSync(easPath, `${JSON.stringify(config, null, 2)}\n`);
-    const logs = join(homedir(), '.local/state/lab4code-releases/logs', app, reservation.id);
+    writeFileSync(join(root, 'eas.json'), `${JSON.stringify(config, null, 2)}\n`);
     mkdirSync(logs, { recursive: true, mode: 0o700 });
     chmodSync(logs, 0o700);
-    const apk = join(output, `${app}-${reservation.version}.apk`);
-    const aab = join(output, `${app}-${reservation.version}.aab`);
-    stage = 'apk-build';
-    await runEas(['build', '--platform', 'android', '--profile', 'nightly-apk', '--local', '--non-interactive', '--freeze-credentials', '--output', apk], sourceRoot, join(logs, 'apk-build.log'));
-    stage = 'aab-build';
-    checkResources();
-    await runEas(['build', '--platform', 'android', '--profile', 'nightly', '--local', '--non-interactive', '--freeze-credentials', '--output', aab], sourceRoot, join(logs, 'aab-build.log'));
-    stage = 'artifact-verify';
-    const stamped = JSON.parse(readFileSync(join(sourceRoot, 'app.json'), 'utf8')).expo;
-    verifyReleaseArtifacts(apk, aab, { package: stamped.android.package, version: reservation.version, versionCode: reservation.versionCode }, app);
-    const verified = join(output, 'verified');
-    mkdirSync(verified);
-    for (const artifact of [apk, aab]) copyFileSync(artifact, join(verified, artifact === apk ? `${app}.apk` : `${app}.aab`));
-    assertNotCancelled();
-    stage = 'play-upload';
-    await uploadPlayInternal({ app, aabPath: aab, version: reservation.version, versionCode: reservation.versionCode, keyPath: credentialPath });
-    outcome = 'succeeded';
-    console.log(`Internal release ready: ${output}`);
-  } catch (error) {
-    failure = releaseFailure(stage);
-    if (!output) {
-      output = resolve(process.env.RELEASE_ARTIFACTS_DIR ?? join(homedir(), 'Downloads/lab4code-releases'), app, `checks-${sha.slice(0, 12)}`);
-      mkdirSync(output, { recursive: true });
+    mkdirSync(process.env.RELEASE_ARTIFACTS_DIR, { recursive: true });
+    const apk = join(process.env.RELEASE_ARTIFACTS_DIR, `${app}.apk`);
+    const aab = join(process.env.RELEASE_ARTIFACTS_DIR, `${app}.aab`);
+    for (const [profile, target] of [['nightly-apk', apk], ['nightly', aab]]) {
+      stage = profile === 'nightly-apk' ? 'apk-build' : 'aab-build';
+      preflightRelease(root);
+      await runEas(['build', '--platform', 'android', '--profile', profile, '--local', '--non-interactive', '--freeze-credentials', '--output', target], join(logs, `${stage}.log`));
     }
+    stage = 'artifact-verify';
+    verify(record, apk, aab);
+    const targets = artifacts();
+    mkdirSync(targets.path, { recursive: true });
+    copyFileSync(apk, targets.apk);
+    copyFileSync(aab, targets.aab);
+    if (cancelled) throw new Error('Build cancelled');
+    evidence(stage, record.sha, 'built', record);
+    output('outcome', 'built');
+  } catch (error) {
+    evidence(stage, record.sha, cancelled ? 'cancelled' : 'failed', record, true);
+    if (!cancelled) output('outcome', 'failed');
     throw error;
   } finally {
-    // Cancellation or an uncertain state write leaves the reservation active for reconciliation.
-    try {
-      try {
-        if (output) writeFileSync(join(output, 'release.json'), `${JSON.stringify({ app, sha, ...(reservation?.build ? reservation : {}), status: cancelled ? 'cancelled' : outcome, ...(failure ? { failure } : {}), finishedAt: new Date().toISOString() }, null, 2)}\n`);
-      } finally {
-        // Local evidence is optional; its failure must not leave the shared reservation active.
-        if (reservation?.build && !cancelled) ledger('finish', [reservation.id, outcome]);
-      }
-    } finally {
-      if (worktreeAdded) run('git', ['worktree', 'remove', '--force', sourceRoot]);
-      if (temporary) rmSync(temporary, { recursive: true, force: true });
-    }
+    rmSync(logs, { recursive: true, force: true });
   }
+}
+
+function verifyUpload() {
+  hosted('upload');
+  const record = reservation();
+  try {
+    const { apk, aab } = artifacts();
+    verify(record, apk, aab);
+  } catch (error) {
+    evidence('artifact-verify', record.sha, 'failed', record, true);
+    if (!cancelled) output('outcome', 'failed');
+    throw error;
+  }
+}
+
+async function upload() {
+  hosted('upload');
+  const record = reservation();
+  const keyPath = join(process.env.RUNNER_TEMP, 'play-service-account.json');
+  try {
+    if (process.env.EXPO_TOKEN || process.env.GITHUB_TOKEN || process.env.GH_TOKEN) throw new Error('Upload requires Play credentials only');
+    const key = JSON.parse(process.env.PLAY_SERVICE_ACCOUNT_JSON ?? '');
+    writeFileSync(keyPath, JSON.stringify(key), { mode: 0o600, flag: 'wx' });
+    if (cancelled) throw new Error('Upload cancelled');
+    await uploadPlayInternal({ app, aabPath: artifacts().aab, version: record.version, versionCode: record.versionCode, keyPath });
+    if (cancelled) throw new Error('Upload cancelled');
+    evidence('play-upload', record.sha, 'succeeded', record);
+    output('outcome', 'succeeded');
+  } catch (error) {
+    // A transport error can occur after Play committed. Never finalize uncertain uploads.
+    evidence('play-upload', record.sha, cancelled ? 'cancelled' : 'uncertain', record, true);
+    throw new Error(releaseFailure('play-upload').message);
+  } finally {
+    rmSync(keyPath, { force: true });
+  }
+}
+
+function finishHosted() {
+  hosted('finish');
+  const record = reservation();
+  const status = process.env.RELEASE_OUTCOME;
+  if (!['failed', 'succeeded'].includes(status) || cancelled) throw new Error('Outcome is uncertain; reconcile the active reservation');
+  ledger('finish', [record.id, status]);
 }
 
 try {
-  if (command === 'run' && process.env.NIGHTLY_HOST_LOCKED !== '1') {
-    const locked = spawnSync('python3', [join(root, 'scripts/nightly-host-lock.py'), process.execPath, fileURLToPath(import.meta.url), 'run'], { stdio: 'inherit' });
-    if (locked.error) throw locked.error;
-    process.exitCode = locked.status ?? 1;
-  } else if (command === 'run') await buildRelease();
+  if (command === 'run') run('python3', [join(root, 'scripts/nightly-host-lock.py'), process.execPath, join(root, 'scripts/nightly-local-release.mjs'), 'run']);
+  else if (command === 'checks') await checks();
+  else if (command === 'validate-secrets') validateSecrets();
+  else if (command === 'reserve') reserve();
+  else if (command === 'build') await build();
+  else if (command === 'verify-upload') verifyUpload();
+  else if (command === 'upload') await upload();
+  else if (command === 'finish-hosted') finishHosted();
   else if (['status', 'finish'].includes(command)) console.log(JSON.stringify(ledger(command, process.argv.slice(3)), null, 2));
-  else throw new Error('Usage: node scripts/nightly-release.mjs [run|status|finish ID failed|succeeded]');
+  else throw new Error('Expected run, status, finish, or a hosted release phase');
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;

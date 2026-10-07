@@ -4,10 +4,10 @@
 runner at midnight Europe/Vienna. The schedule uses GitHub's IANA timezone field,
 so daylight saving time does not change the local start time. Scheduled runs can
 be delayed by GitHub. Manual `workflow_dispatch` uses the same gates. Only `main`
-can run. The workflow has a 90-minute limit and one per-app concurrency group
+can run. Each phase has a bounded timeout and one workflow concurrency group
 with `cancel-in-progress: false`.
 
-The 90-minute limit is a planning budget, not a measured hosted build time.
+The phase timeouts are planning budgets, not measured hosted build times.
 Historical local APK and AAB builds together took about 22–30 minutes for Zen
 Mode. The first hosted build remains unverified.
 
@@ -58,24 +58,49 @@ errors, and uncertain writes are not retried. A reservation result is returned
 only after GitHub confirms persistence. No filesystem, cache, or artifact is an
 authoritative ledger. There is no SSH persistence or legacy fallback.
 
-The runner fetches `origin/main`, reads its EAS minimum, and checks the selected
-stable EAS version before reservation. It installs dependencies and runs app tests,
-release tests, lint, typecheck, and web export in an isolated worktree of that
-fetched SHA. Profile validation and resource preflight also run before reservation.
-It then stamps one reserved identity into app and package metadata and builds
-both APK and AAB with local EAS on the GitHub runner.
+Hosted releases use five fresh GitHub-hosted runners:
+
+- `checks` has read-only repository access, no user secrets, and no Play key file.
+  It installs dependencies and runs app tests, release tests, lint, typecheck, and
+  web export at the exact source SHA. It verifies the selected stable EAS version
+  against that source's minimum and checks actual resources before and after checks.
+- `reserve` has write access only for the ledger. A short trusted step validates
+  both required user secrets without writing a Play key file. It runs no app
+  dependency installs or tests. It checks the verified CLI version against the
+  checked source configuration, checks actual resources, fetches `origin/main`,
+  and refuses reservation if main differs from the checked SHA. It returns an
+  identity only after the ledger confirms persistence.
+- `build` checks out that same SHA on a fresh read-only runner. Tool setup has no
+  user secrets. The EAS build step receives only Expo access, stamps the confirmed
+  identity, and builds with frozen remote signing. It runs no separate app checks
+  or `npm ci`. EAS itself installs build dependencies and runs build hooks with
+  Expo access. No Play key or GitHub write token is present on this runner.
+- `upload` starts on a fresh read-only runner. It downloads the immutable artifact
+  ID from the build job and verifies both packages, reserved identities, and
+  approved signatures without secrets. Only the following upload step receives
+  Play access. It creates the key with mode 0600, uploads only Internal, and removes
+  the key. This runner receives no Expo credentials or GitHub write token and
+  never installs app dependencies or executes app code.
+- `finish` has ledger write access but no user secrets. It closes only a confirmed
+  terminal result. Cancellation, timeout, lost reservation responses, incomplete
+  artifacts, uncertain upload results, and lost finish writes require reconciliation.
+
+Artifacts and job outputs transfer results between these jobs. They do not replace
+or initialize the durable ledger. Job dependencies gate phase entry; hosted phase
+commands reject local execution and cannot bypass failed checks with a skip flag.
 
 Node 24, EAS CLI 20.5.1, Java 17, SDK platform/build-tools 36, and checksum-verified
 bundletool 1.18.3 are configured. Action versions are pinned by full commit SHA;
 checkout/setup-node/setup-java v5 and upload-artifact v6 use Node 24. The runner
 checks actual free disk space and total memory. If needed it removes only unused
 preinstalled .NET/Haskell/CodeQL toolchains before checking the 15 GiB disk and
-8 GiB RAM minimums. Preflight repeats after source checks so dependency install
-and export cannot consume the required build space unnoticed.
+8 GiB RAM minimums. Resource preflight repeats after source checks and before each EAS build so
+dependency install and export cannot consume the required build space unnoticed.
 
 ## Entry points and recovery
 
-Hosted runs use the workflow. Local manual operations remain available:
+Hosted runs use the workflow. Existing local manual builds, status, and finish
+commands remain available:
 
 ```sh
 node scripts/nightly-release.mjs status
@@ -86,14 +111,27 @@ npm run release:internal
 
 Local `status` and manual `finish` use `GH_TOKEN`, `GITHUB_TOKEN`, or a captured
 `gh auth token --hostname github.com`. The token is never printed. Local builds
-use an existing `eas login` session or an optional `EXPO_TOKEN`. GitHub Actions
-requires `EXPO_TOKEN`. Local builds also require Android SDK, Java,
+use an existing `eas login` session or an optional `EXPO_TOKEN`. Hosted EAS builds
+require `EXPO_TOKEN`. Local builds also require Android SDK, Java,
 `ANDROID_BUNDLETOOL_JAR`, and `PLAY_SERVICE_ACCOUNT_KEY_PATH`.
 If both SDK aliases are set they must match.
 The local host lock remains because these commands can still run on one host.
 It is a build lock, not a state store. The obsolete Mac LaunchAgent generator and
 pair scheduler were removed; there is no repository compatibility scheduler.
 Removing their source files does not disable an installed LaunchAgent.
+
+Local manual builds use `nightly-local-release.mjs` behind the existing host lock.
+This path remains because local builds are supported. It checks a readable full
+Play key before reserving. Check children receive no Expo, GitHub, or Play variables;
+EAS children receive only optional Expo access; ledger children receive GitHub
+access; the separate uploader receives only the Play key path. Local verification
+children also receive no release credentials.
+
+Environment filtering does not isolate hostile code running as the same user.
+Existing login files, key files, and another process's environment can remain
+accessible. Local builds require a trusted host and trusted source. Only the fresh
+hosted runner boundaries isolate dependency checks and build hooks from Play and
+ledger write credentials.
 
 On cancellation, timeout, a lost reserve response, or a lost finish write, inspect
 the GitHub ledger and Play Internal before any new run. The reservation remains
@@ -122,8 +160,11 @@ GitHub artifacts for 30 days. Unverified build files and raw EAS logs are exclud
 Local artifacts default to `~/Downloads/lab4code-releases/zen-mode`; set
 `RELEASE_ARTIFACTS_DIR` to change the output path.
 Source-check failures before reservation retain sanitized evidence in `checks-SHA/release.json`.
+Hosted phases retain separate sanitized records for checks, preflight, build, and
+upload. Artifact names include the workflow run ID, run attempt, and phase.
 The record includes the app, source SHA, status, failure stage, and finish time.
-It has no reserved identity. A duplicate-source skip does not create a failed record.
+Pre-reservation records have no reserved identity. A duplicate-source skip does
+not create a failed record.
 
 The AAB goes directly to the fixed Google Play `internal` track with one
 `completed` release. Returned versionCode must match before track mutation.

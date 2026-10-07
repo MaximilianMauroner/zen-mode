@@ -17,7 +17,7 @@ async function phase(command, options = {}) {
   const job = { 'validate-secrets': 'reserve', 'verify-upload': 'upload', 'finish-hosted': 'finish' }[command] ?? command;
   const env = { GITHUB_ACTIONS: 'true', GITHUB_JOB: job, GITHUB_WORKFLOW: 'Android nightly Internal release',
     GITHUB_REPOSITORY: 'MaximilianMauroner/zen-mode', GITHUB_REF: 'refs/heads/main', CHECKED_SHA: sha,
-    CHECKED_EAS_VERSION: '20.5.1', RELEASE_SECRETS_READY: 'true', RELEASE_RESERVATION: JSON.stringify(record),
+    CHECKED_EAS_VERSION: '20.5.1', RELEASE_SECRETS_READY: 'true', GITHUB_RUN_ID: '1234', GITHUB_RUN_ATTEMPT: '1',
     RELEASE_ARTIFACTS_DIR: '/fixture/evidence', RUNNER_TEMP: '/fixture', GITHUB_OUTPUT: '/fixture/outputs', ...options.env };
   if (command === 'build' && !Object.hasOwn(options.env ?? {}, 'EXPO_TOKEN')) env.EXPO_TOKEN = 'fixture-expo';
   const filename = options.local ? 'nightly-local-release.mjs' : 'nightly-release.mjs';
@@ -50,6 +50,12 @@ async function phase(command, options = {}) {
       return child;
     },
     readFileSync(path) {
+      if (path.endsWith('/reservation.json')) {
+        if (options.missingReservation) throw new Error('ENOENT');
+        if (options.invalidReservation) return '';
+        if (options.reservationData) return options.reservationData;
+        return JSON.stringify({ ...record, runId: '1234', runAttempt: options.wrongAttempt ? '2' : '1' });
+      }
       if (path.endsWith('/key')) return JSON.stringify({ type: 'service_account', client_email: 'fixture', private_key: 'fixture' });
       if (path.endsWith('eas.json')) return JSON.stringify(config);
       if (path.endsWith('package.json')) return JSON.stringify({ name: 'zen-mode' });
@@ -57,6 +63,7 @@ async function phase(command, options = {}) {
       return '';
     },
     writeFileSync(path, data, opts) {
+      if (path.endsWith('reservation.json')) writes.push({ path, record: JSON.parse(data) });
       if (path.endsWith('release.json')) {
         writes.push({ path, record: JSON.parse(data) });
         if (options.failEvidence && JSON.parse(data).finishedAt) throw new Error('ENOSPC');
@@ -123,11 +130,13 @@ test('secret readiness validates both secrets without files or children', async 
 
 test('reserve persists before exposing identity; lost reserve response exposes none', async () => {
   const passed = await phase('reserve', { env: { GITHUB_TOKEN: 'fixture' } });
-  assert.equal(JSON.parse(passed.outputs.reservation).id, record.id);
+  assert.equal(passed.outputs.reservation, undefined);
+  const transferred = passed.writes.find(({ path }) => path.endsWith('reservation.json')).record;
+  assert.deepEqual(transferred, { ...record, runId: '1234', runAttempt: '1' });
   assert.equal(ledgerCommands(passed)[0].args[2], 'reserve');
   assert.ok(passed.commands.every(({ program }) => !['npm', 'npx', 'eas'].includes(program)));
   const lost = await phase('reserve', { failReserve: true });
-  assert.equal(lost.outputs.reservation, undefined);
+  assert.equal(lost.writes.some(({ path }) => path.endsWith('reservation.json')), false);
   assert.equal(lost.outputs.build, undefined);
   assert.equal(lost.writes.at(-1).record.id, undefined);
   assert.equal(ledgerCommands(lost).length, 1);
@@ -150,6 +159,39 @@ test('build only invokes EAS with Expo, never checks, ledger or Play', async () 
   }
   assert.ok(result.commands.every(({ program }) => !['npm', 'npx', 'python3'].includes(program)));
   assert.equal(result.uploads, 0);
+});
+
+test('multiline Play masking suppresses JSON outputs but confirmed artifact handoff still builds', async () => {
+  // Worker.InitializeSecretMasker registers the whole secret and each trimmed line.
+  // JobExtension drops any output changed by the masker. A formatted key masks braces.
+  const key = JSON.stringify({ type: 'service_account', client_email: 'fixture@example.com', private_key: 'fixture-key' }, null, 2);
+  const masks = [key, ...key.split(/[\r\n]+/).map((line) => line.trim()).filter(Boolean)];
+  const publish = (value) => masks.some((mask) => value.includes(mask)) ? undefined : value;
+  assert.equal(publish(JSON.stringify(record)), undefined);
+  const reserved = await phase('reserve');
+  assert.equal(publish(reserved.outputs.build), 'true');
+  assert.equal(reserved.outputs.reservation, undefined);
+  const transferred = reserved.writes.find(({ path }) => path.endsWith('reservation.json'));
+  assert.deepEqual(Object.keys(transferred.record).sort(), ['build', 'id', 'runAttempt', 'runId', 'sha', 'version', 'versionCode']);
+  // Artifact bytes are transferred as a file, never evaluated as a job output.
+  const built = await phase('build', { reservationData: JSON.stringify(transferred.record), env: { RELEASE_RESERVATION: '' } });
+  assert.equal(built.outputs.outcome, 'built');
+});
+
+test('missing, corrupt, or wrong-attempt handoff fails before EAS/Play and permits independent finish', async () => {
+  for (const options of [{ missingReservation: true }, { invalidReservation: true }, { wrongAttempt: true }]) {
+    for (const command of ['build', 'verify-upload']) {
+      const result = await phase(command, options);
+      assert.equal(result.outputs.outcome, 'failed');
+      assert.equal(result.commands.some(({ program }) => program === 'eas'), false);
+      assert.equal(result.uploads, 0);
+      assert.equal(result.writes.at(-1).record.id, undefined);
+    }
+  }
+  const finish = await phase('finish-hosted', { env: { RELEASE_OUTCOME: 'failed', GITHUB_TOKEN: 'fixture' } });
+  assert.deepEqual(ledgerCommands(finish)[0].args.slice(2), ['finish', record.id, 'failed']);
+  const uncertain = await phase('finish-hosted', { missingReservation: true, env: { RELEASE_OUTCOME: 'failed' } });
+  assert.equal(ledgerCommands(uncertain).length, 0);
 });
 
 test('cancellation or lost build evidence exposes no terminal output and never finishes', async () => {

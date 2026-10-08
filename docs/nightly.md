@@ -72,9 +72,12 @@ Hosted releases use five fresh GitHub-hosted runners:
   identity only after the ledger confirms persistence.
 - `build` checks out that same SHA on a fresh read-only runner. Tool setup has no
   user secrets. The EAS build step receives only Expo access, stamps the confirmed
-  identity, and builds with frozen remote signing. It runs no separate app checks
-  or `npm ci`. EAS itself installs build dependencies and runs build hooks with
-  Expo access. No Play key or GitHub write token is present on this runner.
+  identity, and builds with frozen remote signing. A separate step first runs
+  `npm ci` without release credentials so EAS can resolve app config plugins
+  before its local builder starts. An install failure reaches the guarded build
+  phase, which records a confirmed failure without starting EAS. EAS also installs
+  dependencies inside its build workspace and runs build hooks with Expo access.
+  No Play key or GitHub write token is present on this runner.
 - `upload` starts on a fresh read-only runner. It downloads the immutable artifact
   ID from the build job and verifies both packages, reserved identities, and
   approved signatures without secrets. Only the following upload step receives

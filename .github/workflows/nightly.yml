@@ -133,6 +133,11 @@ jobs:
           java-version: '17'
       - name: Prepare tools without release credentials
         run: bash scripts/prepare-nightly-tools.sh eas
+      - name: Install app dependencies without release credentials
+        id: dependencies
+        # Let the guarded build phase record an install failure for finalization.
+        continue-on-error: true
+        run: npm ci
       - name: Retrieve confirmed nonsecret reservation
         # Let the guarded phase report a terminal failure before any EAS or Play call.
         continue-on-error: true
@@ -143,6 +148,7 @@ jobs:
       - name: Build with Expo only and verify frozen signed identity
         id: build
         env:
+          BUILD_DEPENDENCIES_READY: ${{ steps.dependencies.outcome }}
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: node scripts/nightly-release.mjs build
       - name: Retain immutable verified artifacts

@@ -181,6 +181,10 @@ async function build() {
   const logs = join(homedir(), '.local/state/lab4code-releases/logs', app);
   try {
     record = reservation();
+    if (process.env.BUILD_DEPENDENCIES_READY !== 'success') {
+      stage = 'dependency-install';
+      throw new Error('Build dependency installation failed; EAS was not started');
+    }
     if (!process.env.EXPO_TOKEN?.trim() || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || process.env.PLAY_SERVICE_ACCOUNT_JSON || process.env.PLAY_SERVICE_ACCOUNT_KEY_PATH) {
       throw new Error('Build requires Expo credentials only');
     }

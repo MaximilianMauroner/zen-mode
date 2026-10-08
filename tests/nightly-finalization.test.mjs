@@ -18,6 +18,7 @@ async function phase(command, options = {}) {
   const env = { GITHUB_ACTIONS: 'true', GITHUB_JOB: job, GITHUB_WORKFLOW: 'Android nightly Internal release',
     GITHUB_REPOSITORY: 'MaximilianMauroner/zen-mode', GITHUB_REF: 'refs/heads/main', CHECKED_SHA: sha,
     CHECKED_EAS_VERSION: '20.5.1', RELEASE_SECRETS_READY: 'true', GITHUB_RUN_ID: '1234', GITHUB_RUN_ATTEMPT: '1',
+    BUILD_DEPENDENCIES_READY: 'success',
     RELEASE_ARTIFACTS_DIR: '/fixture/evidence', RUNNER_TEMP: '/fixture', GITHUB_OUTPUT: '/fixture/outputs', ...options.env };
   if (command === 'build' && !Object.hasOwn(options.env ?? {}, 'EXPO_TOKEN')) env.EXPO_TOKEN = 'fixture-expo';
   const filename = options.local ? 'nightly-local-release.mjs' : 'nightly-release.mjs';
@@ -159,6 +160,20 @@ test('build only invokes EAS with Expo, never checks, ledger or Play', async () 
   }
   assert.ok(result.commands.every(({ program }) => !['npm', 'npx', 'python3'].includes(program)));
   assert.equal(result.uploads, 0);
+});
+
+test('failed or missing build dependency setup stops EAS and records a terminal failure', async () => {
+  for (const readiness of ['failure', '']) {
+    const result = await phase('build', { env: { BUILD_DEPENDENCIES_READY: readiness } });
+    assert.equal(result.outputs.outcome, 'failed');
+    assert.equal(result.commands.some(({ program }) => program === 'eas'), false);
+    assert.equal(result.uploads, 0);
+    assert.equal(ledgerCommands(result).length, 0);
+    assert.equal(result.writes.at(-1).record.id, record.id);
+    assert.equal(result.writes.at(-1).record.failure.stage, 'dependency-install');
+    const finish = await phase('finish-hosted', { env: { RELEASE_OUTCOME: result.outputs.outcome, GITHUB_TOKEN: 'fixture' } });
+    assert.deepEqual(ledgerCommands(finish)[0].args.slice(2), ['finish', record.id, 'failed']);
+  }
 });
 
 test('multiline Play masking suppresses JSON outputs but confirmed artifact handoff still builds', async () => {

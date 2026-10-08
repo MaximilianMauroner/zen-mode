@@ -188,4 +188,52 @@ class InstagramDetectorTest {
       ).surface,
     )
   }
+
+  @Test
+  fun sharedMediaAvatarWithoutAHostSurfaceFailsOpen() {
+    // IDs already covered by the embedded DM tests. Removing the host does not prove Stories.
+    val detection = InstagramDetector.detect(
+      listOf(
+        NodeSignal(viewId = "com.instagram.android:id/reel_viewer_front_avatar"),
+        NodeSignal(viewId = "com.instagram.android:id/clips_media_component"),
+      ),
+    )
+    assertEquals(InstagramSurface.UNKNOWN, detection.surface)
+    assertEquals("unknown", detection.reason)
+  }
+
+  @Test
+  fun storyLabelsAndSharedAvatarDoNotOverrideKnownSurfaces() {
+    val hosts = listOf(
+      "feed_recycler_view" to InstagramSurface.HOME_FEED,
+      "clips_viewer_view_pager" to InstagramSurface.REELS_VIEWER,
+      "explore_grid" to InstagramSurface.EXPLORE,
+    )
+    for ((hostId, surface) in hosts) {
+      assertEquals(
+        surface,
+        InstagramDetector.detect(
+          listOf(
+            NodeSignal(viewId = "com.instagram.android:id/$hostId"),
+            NodeSignal(viewId = "com.instagram.android:id/reel_viewer_front_avatar"),
+            NodeSignal(text = "Story", description = "Stories", selected = true),
+          ),
+        ).surface,
+      )
+    }
+  }
+
+  @Test
+  fun sharedAvatarDoesNotResolveAConflictingTree() {
+    assertEquals(
+      InstagramSurface.UNKNOWN,
+      InstagramDetector.detect(
+        listOf(
+          NodeSignal(viewId = "com.instagram.android:id/direct_thread"),
+          NodeSignal(viewId = "com.instagram.android:id/clips_viewer_view_pager"),
+          NodeSignal(viewId = "com.instagram.android:id/reel_viewer_front_avatar"),
+        ),
+      ).surface,
+    )
+  }
 }

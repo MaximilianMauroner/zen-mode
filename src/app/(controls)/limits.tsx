@@ -257,6 +257,7 @@ export default function AppLimitsScreen() {
   const saveRule = () => {
     if (!selected || controlsDisabled) return;
     if (mode === 'rolling' && allowance > window) {
+      clearFeedback();
       setError('The allowance must fit inside its window.');
       return;
     }

@@ -26,7 +26,7 @@ import {
 } from '@/features/protection/native';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, Text, View } from 'react-native';
+import { AppState, Platform, Pressable, Text, View } from 'react-native';
 import { getAppRuleChangeAction, getConfiguredAppPresentation } from '@/features/protection/app-rule-presentation';
 import { getAppLimitsPlatformState } from '@/features/protection/app-limits-state';
 
@@ -108,7 +108,6 @@ export default function AppLimitsScreen() {
     if (refreshInFlightRef.current) return;
     refreshInFlightRef.current = true;
     setReadState('loading');
-    setError('');
     try {
       if (Platform.OS !== 'android') {
         setLimits([]);
@@ -144,7 +143,6 @@ export default function AppLimitsScreen() {
       setRolling(null);
       setInstalledApps(null);
       setReadState('error');
-      setError('The app rules could not be loaded.');
     } finally {
       refreshInFlightRef.current = false;
     }
@@ -156,9 +154,15 @@ export default function AppLimitsScreen() {
     return () => cancelAnimationFrame(frame);
   }, [refresh]);
 
+  // Returning from a limited app does not refocus this tab, so usage is read
+  // again whenever Android brings Zen Mode back while the tab is selected.
   useFocusEffect(
     useCallback(() => {
       void refresh();
+      const listener = AppState.addEventListener('change', (state) => {
+        if (state === 'active') void refresh();
+      });
+      return () => listener.remove();
     }, [refresh]),
   );
 
@@ -210,6 +214,18 @@ export default function AppLimitsScreen() {
   );
   const guarded = [...guardedByPackage.values()].sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()));
 
+  // An error or lock refusal belongs to one edit. It must not follow the user
+  // into the list or into the next app's editor.
+  const clearFeedback = () => {
+    setError('');
+    setLockBlocked(false);
+  };
+
+  const closeEditor = () => {
+    clearFeedback();
+    setSelected(null);
+  };
+
   // Opening an app pre-fills its current rule, or plain defaults for a new one.
   const selectApp = (app: InstalledApp) => {
     if (controlsDisabled) return;
@@ -233,6 +249,7 @@ export default function AppLimitsScreen() {
       setAllowance(5);
       setWindow(60);
     }
+    clearFeedback();
     setSelected(app);
   };
 
@@ -240,6 +257,7 @@ export default function AppLimitsScreen() {
   const saveRule = () => {
     if (!selected || controlsDisabled) return;
     if (mode === 'rolling' && allowance > window) {
+      clearFeedback();
       setError('The allowance must fit inside its window.');
       return;
     }
@@ -301,7 +319,7 @@ export default function AppLimitsScreen() {
     <Screen edges={[]}>
       <WeakeningGateDialog gate={gate} />
       <TopTabs.Screen options={{ swipeEnabled: !busy }} />
-      {selected ? <ScreenHeader label={selected.label} onBack={() => setSelected(null)} backDisabled={busy} /> : null}
+      {selected ? <ScreenHeader label={selected.label} onBack={closeEditor} backDisabled={busy} /> : null}
 
       {selected ? (
         <>
@@ -372,7 +390,7 @@ export default function AppLimitsScreen() {
           {guardedByPackage.has(selected.packageName) ? (
             <DangerButton title={busy ? 'Working…' : 'Remove rules'} disabled={controlsDisabled} onPress={() => dropRules(selected.packageName)} />
           ) : null}
-          <SecondaryButton title="Cancel" disabled={busy} onPress={() => setSelected(null)} />
+          <SecondaryButton title="Cancel" disabled={busy} onPress={closeEditor} />
         </>
       ) : (
         <>
@@ -406,7 +424,7 @@ export default function AppLimitsScreen() {
       )}
 
       <AppPicker visible={pickerOpen} configuredPackages={new Set(guardedByPackage.keys())} onClose={() => setPickerOpen(false)} onSelect={(app) => { setPickerOpen(false); selectApp(app); }} />
-      <ErrorNote message={error} />
+      <ErrorNote message={error || (readState === 'error' ? 'The app rules could not be loaded.' : '')} />
       {lockBlocked ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
     </Screen>
   );

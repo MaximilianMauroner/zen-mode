@@ -27,7 +27,8 @@ internal class InstagramDebugTrace {
   private var sequence = 0L
 
   fun record(
-    event: AccessibilityEvent,
+    /** Null when the Reels deadline check runs without a new event. */
+    event: AccessibilityEvent?,
     nodes: List<NodeSignal>,
     detection: InstagramDetection,
     observationMode: Boolean,
@@ -37,7 +38,7 @@ internal class InstagramDebugTrace {
   ): InstagramDebugTraceMetadata {
     val currentSequence = ++sequence
     val nowMs = SystemClock.elapsedRealtime()
-    val eventTimeMs = event.eventTime.takeIf { it > 0L && it <= nowMs && nowMs - it <= MAX_EVENT_AGE_MS }
+    val eventTimeMs = event?.eventTime?.takeIf { it > 0L && it <= nowMs && nowMs - it <= MAX_EVENT_AGE_MS }
     val eventAgeMs = eventTimeMs?.let { (nowMs - it).coerceAtLeast(0L) }
     val eventDeltaMs = eventTimeMs?.let { current ->
       lastEventTimeMs?.let { previous -> (current - previous).coerceAtLeast(0L) }
@@ -50,8 +51,8 @@ internal class InstagramDebugTrace {
     val actionChanged = actionName != lastAction
     val modeChanged = mode != lastMode
     val explorePolicyChanged = lastExploreBlocked == null || exploreBlocked != lastExploreBlocked
-    val policyEvent = event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
-      event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED
+    val policyEvent = event?.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
+      event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED
     val treeChanged = resourceFingerprint != lastResourceFingerprint
     treeChangePending = treeChangePending || treeChanged
     val stateChanged = surfaceChanged || reasonChanged || actionChanged || modeChanged || explorePolicyChanged
@@ -81,8 +82,8 @@ internal class InstagramDebugTrace {
     if (stateChanged || policyLogDue) {
       Log.i(TAG, buildString {
         appendTiming(currentSequence, eventAgeMs, eventDeltaMs)
-        append(" event=").append(AccessibilityEvent.eventTypeToString(event.eventType))
-        append(" source=").append(shortResourceId(event.source?.viewIdResourceName.orEmpty()).ifBlank { "none" })
+        append(" event=").append(event?.let { AccessibilityEvent.eventTypeToString(it.eventType) } ?: "deadline")
+        append(" source=").append(shortResourceId(event?.source?.viewIdResourceName.orEmpty()).ifBlank { "none" })
         append(" nodes=").append(nodes.size)
         append(" surface=").append(detection.surface)
         append(" reason=").append(detection.reason)

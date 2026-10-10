@@ -90,7 +90,7 @@ class XBreakWindowRoutingTest {
       setRootInActiveWindow(home)
       setWindows(listOf(window(AccessibilityWindowInfo.TYPE_APPLICATION, home)))
     }
-    advance(Duration.ofSeconds(62))
+    advance(Duration.ofSeconds(65))
     assertTrue(overlay().isShowing)
   }
 

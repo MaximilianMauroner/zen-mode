@@ -13,6 +13,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.Toast
 import java.util.ArrayDeque
 
@@ -561,13 +562,14 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       publishXHomeStatus()
       return
     }
-    val root = rootInActiveWindow ?: run {
+    val activeRoot = rootInActiveWindow ?: run {
       xStateMachine.markUnverifiableGap(nowMs, settings)
       xHomeUsageState = HomeFeedUsageState.UNKNOWN
       publishXHomeStatus()
       return
     }
-    if (root.packageName?.toString() != X_PACKAGE) {
+    val root = if (activeRoot.packageName?.toString() == X_PACKAGE) activeRoot else xRootUnderBreak(activeRoot)
+    if (root == null) {
       if (xOverlay.isShowing && windows.any { it.root?.packageName?.toString() == X_PACKAGE }) return
       xStateMachine.pause(nowMs, settings)
       xHomeUsageState = if (xStateMachine.requiresFreshHomeObservation()) {
@@ -647,6 +649,17 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       }
     }
     publishXHomeStatus(showUnavailableOnFailure = surface == XSurface.HOME && settings.homeEnabled)
+  }
+
+  /**
+   * The Home break is this service's own overlay, so it is the active window while it shows.
+   * Read the X window under it only when X is the top app window, so a confirmed route change
+   * such as a Search deep link can close the break. Keyboards and system windows are skipped.
+   */
+  private fun xRootUnderBreak(activeRoot: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+    if (!xOverlay.isShowing || activeRoot.packageName?.toString() != packageName) return null
+    val topApp = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION } ?: return null
+    return topApp.root?.takeIf { it.packageName?.toString() == X_PACKAGE }
   }
 
   /** X's observed pager is the full-screen scroll node two levels under VideoTab. */

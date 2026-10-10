@@ -1147,7 +1147,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     return true
   }
 
-  /** Reads text only from exact address-bar nodes; arbitrary browser page text is never copied. */
+  /** Reads text and descriptions only from exact address-bar nodes; page text is never copied. */
   private fun handleBrowserEvent(browserPackage: String) {
     if (!::adultSiteStore.isInitialized || !::adultSiteOverlay.isInitialized) return
     if (!canRunEnforcementAction()) return
@@ -1193,7 +1193,9 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       if (!node.isVisibleToUser) continue
       val viewId = node.viewIdResourceName.orEmpty()
       if (BrowserUrlDetector.isAddressBar(browserPackage, viewId)) {
-        result.add(BrowserNodeSignal(viewId, node.text?.toString().orEmpty(), true))
+        result.add(
+          BrowserNodeSignal(viewId, node.text?.toString().orEmpty(), true, node.contentDescription?.toString().orEmpty()),
+        )
       }
       if (depth >= MAX_BROWSER_DEPTH) continue
       for (index in 0 until node.childCount) node.getChild(index)?.let { pending.add(Pending(it, depth + 1)) }

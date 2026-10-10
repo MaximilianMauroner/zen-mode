@@ -825,8 +825,10 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
           } else {
             null
           },
+          onAttached = {
+            recordInstagramBlockStats(action.reason, wasShowing, instagramOverlay.isShowing, EnforcementStatsOutcome.SUCCESS)
+          },
         )
-        recordInstagramBlockStats(action.reason, wasShowing, instagramOverlay.isShowing, EnforcementStatsOutcome.SUCCESS)
       }
       InstagramGuardAction.None -> {
         if (instagramBlockReason != null) {
@@ -1121,12 +1123,14 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
         browserPackage = browserPackage,
         onBack = { leaveBlockedSiteBack() },
         onHome = { leaveBlockedSiteHome() },
-      )
-      recordBlockedSiteStats(
-        browserPackage = browserPackage,
-        previousPackage = previousPackage,
-        overlayAttached = adultSiteOverlay.shownPackage() == browserPackage,
-        outcome = EnforcementStatsOutcome.SUCCESS,
+        onAttached = {
+          recordBlockedSiteStats(
+            browserPackage = browserPackage,
+            previousPackage = previousPackage,
+            overlayAttached = adultSiteOverlay.shownPackage() == browserPackage,
+            outcome = EnforcementStatsOutcome.SUCCESS,
+          )
+        },
       )
     } else if (adultSiteOverlay.shownPackage() == browserPackage) {
       adultSiteOverlay.hide()

@@ -1,7 +1,9 @@
 package com.maxmauroner.zenguard
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BrowserUrlDetectorTest {
@@ -34,5 +36,44 @@ class BrowserUrlDetectorTest {
     ))
     assertEquals("example.com", result?.host)
     assertEquals(2, result?.browserMask)
+  }
+
+  @Test fun `Firefox 157 url box resolves the address from its description`() {
+    val detected = BrowserUrlDetector.detect(
+      "org.mozilla.firefox",
+      listOf(BrowserNodeSignal("ADDRESSBAR_URL_BOX", "", true, FIREFOX_157_DESCRIPTION)),
+    )
+    assertEquals("example.com", detected?.host)
+    assertEquals(8, detected?.browserMask)
+    assertTrue(BrowserUrlDetector.isAddressBar("org.mozilla.firefox", "ADDRESSBAR_URL_BOX"))
+  }
+
+  @Test fun `Firefox 157 placeholder malformed hidden wrong and conflicting signals fail open`() {
+    fun firefox(vararg nodes: BrowserNodeSignal) = BrowserUrlDetector.detect("org.mozilla.firefox", nodes.toList())
+    assertNull(firefox(BrowserNodeSignal("ADDRESSBAR_URL_BOX", "", true, "Search or enter address")))
+    assertNull(firefox(BrowserNodeSignal("ADDRESSBAR_URL_BOX", "", true, "not a host. Search or enter address")))
+    assertNull(firefox(BrowserNodeSignal("ADDRESSBAR_URL_BOX", "", false, FIREFOX_157_DESCRIPTION)))
+    assertNull(firefox(BrowserNodeSignal("page:link", "", true, FIREFOX_157_DESCRIPTION)))
+    assertNull(firefox(
+      BrowserNodeSignal("ADDRESSBAR_URL_BOX", "", true, FIREFOX_157_DESCRIPTION),
+      BrowserNodeSignal("org.mozilla.firefox:id/mozac_browser_toolbar_url_view", "other.example", true),
+    ))
+    assertNull(BrowserUrlDetector.detect(
+      "com.android.chrome",
+      listOf(BrowserNodeSignal("ADDRESSBAR_URL_BOX", "", true, FIREFOX_157_DESCRIPTION)),
+    ))
+    assertFalse(BrowserUrlDetector.isAddressBar("com.android.chrome", "ADDRESSBAR_URL_BOX"))
+  }
+
+  @Test fun `earlier Firefox toolbar ids still use their text`() {
+    val detected = BrowserUrlDetector.detect(
+      "org.mozilla.firefox",
+      listOf(BrowserNodeSignal("org.mozilla.firefox:id/mozac_browser_toolbar_url_view", "example.com", true, "Address")),
+    )
+    assertEquals("example.com", detected?.host)
+  }
+
+  private companion object {
+    const val FIREFOX_157_DESCRIPTION = " example.com. Search or enter address"
   }
 }

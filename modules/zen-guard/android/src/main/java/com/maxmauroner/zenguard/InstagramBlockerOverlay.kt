@@ -206,6 +206,7 @@ internal class InstagramBlockerOverlay(
     reelsMinutes: Int,
     stats: InstagramBlockerStats,
     debugInfo: InstagramBlockerDebugInfo?,
+    onAttached: () -> Unit,
   ) {
     root?.let {
       if (it.isAttachedToWindow) return
@@ -458,6 +459,7 @@ internal class InstagramBlockerOverlay(
       PixelFormat.TRANSLUCENT,
     )
     root = container
+    container.doOnFirstAttach { if (root === container) onAttached() }
     try {
       windowManager.addView(container, params)
     } catch (_: RuntimeException) {

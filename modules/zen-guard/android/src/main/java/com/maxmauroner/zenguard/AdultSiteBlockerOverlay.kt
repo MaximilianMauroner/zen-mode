@@ -23,7 +23,8 @@ internal class AdultSiteBlockerOverlay(private val service: AccessibilityService
   val isShowing: Boolean get() = root?.isAttachedToWindow == true
   fun shownPackage(): String? = packageName.takeIf { isShowing }
 
-  fun show(browserPackage: String, onBack: () -> Unit, onHome: () -> Unit) {
+  /** [onAttached] runs once, after Android attaches this boundary. A failed or hidden boundary never reports. */
+  fun show(browserPackage: String, onBack: () -> Unit, onHome: () -> Unit, onAttached: () -> Unit) {
     if (isShowing && packageName == browserPackage) return
     hide()
     packageName = browserPackage
@@ -107,6 +108,7 @@ internal class AdultSiteBlockerOverlay(private val service: AccessibilityService
     container.addView(actions, matchWrap())
 
     root = container
+    container.doOnFirstAttach { if (root === container) onAttached() }
     try {
       windowManager.addView(container, WindowManager.LayoutParams(
         -1, -1, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,

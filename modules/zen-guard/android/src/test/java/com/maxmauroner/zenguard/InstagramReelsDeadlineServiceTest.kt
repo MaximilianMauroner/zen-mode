@@ -1,6 +1,7 @@
 package com.maxmauroner.zenguard
 
 import android.content.Context
+import android.content.Intent
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
@@ -69,6 +70,28 @@ class InstagramReelsDeadlineServiceTest {
   @Test fun `deadline check does not block when Instagram is no longer in front`() {
     val policy = grantOneMinuteWindow()
     showRoot("com.whatsapp", "com.whatsapp:id/conversations_row")
+
+    advance(Duration.ofSeconds(61))
+    assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+  }
+
+  @Test fun `deadline check stays silent after the screen turned off before it`() {
+    val policy = grantOneMinuteWindow()
+    advance(Duration.ofSeconds(20))
+    val power = shadowOf(context.getSystemService(PowerManager::class.java))
+    power.setIsInteractive(false)
+    context.sendBroadcast(Intent(Intent.ACTION_SCREEN_OFF))
+    shadowOf(Looper.getMainLooper()).idle()
+    assertNull(policy.debugState(SystemClock.elapsedRealtime()).reelsWindowRemainingMs)
+    power.setIsInteractive(true)
+
+    advance(Duration.ofSeconds(45))
+    assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+  }
+
+  @Test fun `deadline check stays silent once observation mode is on`() {
+    val policy = grantOneMinuteWindow()
+    ZenGuardPreferences(context).instagramObservationMode = true
 
     advance(Duration.ofSeconds(61))
     assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)

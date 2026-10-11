@@ -197,6 +197,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
           val continued = instagramStateMachine.continueReels(SystemClock.elapsedRealtime(), preferences.instagramSettings())
           if (continued) {
             resetInstagramStatsDedupe(instagramBlockReason)
+            instagramBlockReason = null
             dailyTally.recordContinue(System.currentTimeMillis())
           }
           continued

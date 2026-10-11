@@ -83,6 +83,32 @@ class XBreakWindowRoutingTest {
     assertTrue(overlay().isShowing)
   }
 
+  @Test fun `Search below a keyboard and a system window still closes the break`() {
+    startHomeBreak()
+
+    showUnderBreak(
+      window(AccessibilityWindowInfo.TYPE_INPUT_METHOD, node("com.google.android.inputmethod.latin", "")),
+      window(AccessibilityWindowInfo.TYPE_SYSTEM, node("com.android.systemui", "")),
+      appWindow(X_PACKAGE, "Search"),
+    )
+    advance(Duration.ofSeconds(1))
+
+    assertFalse(overlay().isShowing)
+    val rest = xPolicy().homeRuntimeState(SystemClock.elapsedRealtime()).blockedUntilElapsedMs
+    assertNotNull(rest)
+  }
+
+  @Test fun `unknown X tree under the break keeps it and the rest`() {
+    startHomeBreak()
+
+    showUnderBreak(appWindow(X_PACKAGE, "com.twitter.android:id/progress"))
+    advance(Duration.ofSeconds(1))
+
+    assertTrue(overlay().isShowing)
+    val rest = xPolicy().homeRuntimeState(SystemClock.elapsedRealtime()).blockedUntilElapsedMs
+    assertNotNull(rest)
+  }
+
   /** Lets the one-second ticker count a still Home feed until the 1m allowance ends. */
   private fun startHomeBreak() {
     val home = node(X_PACKAGE, "scaffold_home_tabbed")
@@ -94,12 +120,12 @@ class XBreakWindowRoutingTest {
     assertTrue(overlay().isShowing)
   }
 
-  /** Makes the break the active window, with [appWindows] below it in z-order. */
-  private fun showUnderBreak(vararg appWindows: AccessibilityWindowInfo) {
+  /** Makes the break the active window, with [windowsBelow] under it in z-order. */
+  private fun showUnderBreak(vararg windowsBelow: AccessibilityWindowInfo) {
     val breakRoot = node(context.packageName, "")
     shadowOf(controller.get()).apply {
       setRootInActiveWindow(breakRoot)
-      setWindows(listOf(window(AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY, breakRoot)) + appWindows)
+      setWindows(listOf(window(AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY, breakRoot)) + windowsBelow)
     }
   }
 

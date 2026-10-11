@@ -159,8 +159,8 @@ the APK on the device matches the build.
 
 | Target | Package | Official source | Authentic when | Sign-in |
 | --- | --- | --- | --- | --- |
-| Chrome | `com.android.chrome` | Google Play emulator image | System app signed by Google certificate `3257d599…` | No |
-| YouTube | `com.google.android.youtube` | Google Play emulator image | System app signed by Google certificate `3257d599…` | No |
+| Chrome | `com.android.chrome` | Google Play emulator image | System app signed by Google certificate `f0fd6c5b…` | No |
+| YouTube | `com.google.android.youtube` | Google Play emulator image | System app signed by Google certificate `3d7a1223…` | No |
 | Firefox | `org.mozilla.firefox` | Mozilla release archive | Signed by Mozilla certificate `a78b62a5…` | No |
 | Instagram | `com.instagram.android` | Google Play | Installed and started by the system Google Play | Test account |
 | X | `com.twitter.android` | Google Play | Installed and started by the system Google Play | Test account |
@@ -168,6 +168,13 @@ the APK on the device matches the build.
 A valid signature alone does not make an app authentic: anyone can sign an APK
 with the same package name. `model.mjs` pins the full certificates. A target
 that fails its rule is never `READY`, and `observe` does not open it.
+
+The tool reads only the `Signer #N` certificates that
+`apksigner verify --print-certs` prints. Google Play adds a
+`Source Stamp Signer` certificate, `3257d599…` on Chrome and YouTube. The stamp
+records the distribution channel and does not sign the app, so it never
+counts. An APK that `apksigner` reports only with v3.1 rotation signers,
+`Signer (minSdkVersion=…)`, has no recorded signer and stays `BLOCKED`.
 
 Instagram and X do not publish a signing certificate, so the tool does not pin
 one. It accepts them only from the install record in `dumpsys package`:
@@ -280,7 +287,8 @@ Before it captures anything, `observe` checks these points:
 With `--open-url` and `--app`, it opens the URL in that app with `am start -W`.
 It samples each `--interval` second (default 1) for `--seconds` (default 10).
 The first sample comes after `am start -W` returns, or at once without
-`--open-url`. The last sample comes at the end. Times in the timeline count
+`--open-url`. The last sample starts at or after the end: if a slow sample
+runs past the end, one more sample follows. Times in the timeline count
 from the first sample, so a slow launch does not shorten the observation or
 add to its times. Only `--expect cleared` also samples before the launch; see
 below. Each sample records:

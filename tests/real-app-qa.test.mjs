@@ -8,7 +8,10 @@ import {
 } from '../scripts/real-app-qa/model.mjs';
 
 const firefoxSigner = 'a78b62a5165b4494b2fead9e76a280d22d937fee6251aece599446b2ea319b04';
-const googleSystemSigner = '3257d599a49d2c961a471ca9843f59d341a405884583fc087df4237b733bbd6d';
+const chromeSigner = 'f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83';
+const youtubeSigner = '3d7a1223019aa39d9ea0e3436ab7c0896bfb4fb679f4de5fe7c23f326c8f994a';
+// Google's source stamp on Chrome and YouTube from Google Play. It is not an app signer.
+const playStamp = '3257d599a49d2c961a471ca9843f59d341a405884583fc087df4237b733bbd6d';
 const qa77 = qaIdentity('77');
 
 test('QA identities never use the Play package and keep separate service names', () => {
@@ -48,6 +51,41 @@ test('aapt and apksigner output give package, split and signer identity', () => 
   assert.throws(() => parseSignerDigests('DOES NOT VERIFY'), /no SHA-256 signer/);
 });
 
+// The lines that `apksigner verify --print-certs` prints, as recorded from Chrome 133 and
+// YouTube 19.17.42 in the API 36 Google Play emulator image, and from the AOSP image YouTube.
+const certificate = (name, sha256) => [
+  `${name} certificate DN: CN=Android, OU=Android, O=Google Inc., L=Mountain View, ST=California, C=US`,
+  `${name} certificate SHA-256 digest: ${sha256}`,
+  `${name} certificate SHA-1 digest: b1af3a0bf998aeede1a8716a539e5a59da1d86d6`,
+  `${name} certificate MD5 digest: 577b8a9fbc7e308321aec6411169d2fb`,
+];
+const printCerts = (signers, stamp) => [
+  ...signers.flatMap((sha256, index) => certificate(`Signer #${index + 1}`, sha256)),
+  ...stamp ? certificate('Source Stamp Signer', stamp) : ['WARNING: No SourceStamp signature'],
+].join('\n');
+
+test('only actual app signers count, never the Play source stamp', () => {
+  const system = (output) => ({ installed: true, system: true, installer: null, signers: parseSignerDigests(output) });
+  const chrome = printCerts([chromeSigner], playStamp);
+  assert.deepEqual(parseSignerDigests(chrome), [chromeSigner]);
+  assert.equal(targetProblem('chrome', system(chrome)), null);
+  assert.equal(targetProblem('youtube', system(printCerts([youtubeSigner], playStamp))), null);
+
+  // The Google stamp, or another Google app's signer, does not make an app authentic.
+  assert.equal(targetProblem('chrome', system(printCerts([QA_SIGNER_SHA256], playStamp))), 'not signed by the official signer');
+  assert.equal(targetProblem('youtube', system(chrome)), 'not signed by the official signer');
+  const aospYoutube = printCerts(['7fd2cea30c3a6022eb29419ce8f6f92ce8a4bd35b0cc879ed3cca6cbf5e9992d']);
+  assert.deepEqual(parseSignerDigests(aospYoutube), ['7fd2cea30c3a6022eb29419ce8f6f92ce8a4bd35b0cc879ed3cca6cbf5e9992d']);
+  assert.equal(targetProblem('youtube', system(aospYoutube)), 'not signed by the official signer');
+
+  assert.deepEqual(parseSignerDigests(printCerts([QA_SIGNER_SHA256, chromeSigner, QA_SIGNER_SHA256], playStamp)),
+    [chromeSigner, QA_SIGNER_SHA256], 'every app signer once, without the stamp');
+  // A stamp alone is no signer. Nor is v3.1 rotation output, so such an APK stays blocked.
+  for (const name of ['Source Stamp Signer', 'Signer (minSdkVersion=33, maxSdkVersion=2147483647)']) {
+    assert.throws(() => parseSignerDigests(certificate(name, chromeSigner).join('\n')), /no SHA-256 signer/, name);
+  }
+});
+
 test('target APK sets must be one app and one signer set, signed by the pinned official signer', () => {
   const file = (name, overrides = {}) => ({ file: name, package: 'org.mozilla.firefox', versionCode: 5,
     versionName: '157.0', split: null, signers: [firefoxSigner], ...overrides });
@@ -63,20 +101,17 @@ test('target APK sets must be one app and one signer set, signed by the pinned o
   assert.throws(() => checkTargetApks([file('fenix.apk', { signers: [QA_SIGNER_SHA256] })]), /not the official firefox signer/);
   // Play and system-image targets are never sideloaded, even with a plausible signer.
   assert.throws(() => checkTargetApks([file('ig.apk', { package: 'com.instagram.android' })]), /only the official APK of firefox/);
-  assert.throws(() => checkTargetApks([file('chrome.apk', { package: 'com.android.chrome', signers: [googleSystemSigner] })]),
+  assert.throws(() => checkTargetApks([file('chrome.apk', { package: 'com.android.chrome', signers: [chromeSigner] })]),
     /only the official APK/);
 });
 
 test('targets are authentic only through their official origin', () => {
   const app = (overrides) => ({ installed: true, installer: null, system: false, ...overrides });
-  // Signers as recorded for Chrome on the API 36 Google Play emulator.
-  const chrome = app({ system: true, signers: [googleSystemSigner, 'f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83'] });
-  assert.equal(targetProblem('chrome', chrome), null);
-  assert.equal(targetProblem('youtube', chrome), null);
+  assert.equal(targetProblem('chrome', app({ system: true, signers: [chromeSigner] })), null);
   assert.equal(targetProblem('firefox', app({ signers: [firefoxSigner] })), null);
 
   assert.equal(targetProblem('firefox', app({ signers: [QA_SIGNER_SHA256] })), 'not signed by the official signer');
-  assert.equal(targetProblem('chrome', app({ signers: [googleSystemSigner] })), 'not in the system image');
+  assert.equal(targetProblem('chrome', app({ signers: [chromeSigner] })), 'not in the system image');
   assert.equal(targetProblem('chrome', app({ system: true, signers: [QA_SIGNER_SHA256] })), 'not signed by the official signer');
   assert.equal(targetProblem('x', app({ signers: ['b'.repeat(64)] })), 'not installed by Google Play', 'sideloaded');
   assert.equal(targetProblem('x', app({ installer: 'com.android.vending', signatureError: 'DOES NOT VERIFY' })), 'signer not recorded');
@@ -324,6 +359,37 @@ test('a slow launch neither shortens the observation nor shifts its times', asyn
   assert.deepEqual(await observe('cleared'), { taken: [0, ...afterLaunch], at: [0, ...afterLaunch], result: 'FAIL' });
 });
 
+test('a sample that runs past the end is followed by one that starts at or after the end', async () => {
+  const firefox = 'org.mozilla.firefox';
+  // Each sample reads the device when it starts, then its dumpsys work takes 600 ms.
+  const observe = async ({ expect, seconds = 2, overlay }) => {
+    let clock = 0;
+    let opened = false;
+    const sleeps = [];
+    const samples = await takeSamples({
+      seconds, interval: 1, expect, foreground: firefox, now: () => clock,
+      open: async () => { opened = true; },
+      sleep: async (ms) => { sleeps.push(ms); clock += ms; },
+      sample: (ms) => {
+        const state = { ms, bound: true, foreground: firefox, overlay: overlay(clock, opened) };
+        clock += 600;
+        return state;
+      },
+    });
+    return { sleeps, at: samples.map((sample) => sample.ms),
+      result: observationResult(samples, { expect, foreground: firefox, crashed: false }) };
+  };
+  // With `--seconds 2`, the sample at 1600 ms ends at 2200 ms. The overlay shows from 2000 ms.
+  const fromEnd = (clock) => clock >= 2000;
+  assert.deepEqual(await observe({ expect: 'overlay', overlay: fromEnd }), { sleeps: [1000], at: [0, 1600, 2200], result: 'PASS' });
+  assert.deepEqual(await observe({ expect: 'no-overlay', overlay: fromEnd }), { sleeps: [1000], at: [0, 1600, 2200], result: 'FAIL' });
+  assert.deepEqual(await observe({ expect: 'overlay', seconds: 0, overlay: fromEnd }), { sleeps: [], at: [0], result: 'FAIL' },
+    '--seconds 0 still takes one sample');
+  // `cleared` ends 2000 ms after the launch, at 2600 ms. An overlay back by then is not cleared.
+  assert.deepEqual(await observe({ expect: 'cleared', overlay: (clock, opened) => !opened || clock >= 2600 }),
+    { sleeps: [1000], at: [0, 600, 2200, 2800], result: 'FAIL' });
+});
+
 test('an absent overlay counts only after the same build blocked the same app version on this device', () => {
   const device = { serial: 'emulator-5554', model: 'sdk_gphone64_arm64', sdk: 36, emulator: true, avd: 'zen-qa-api36',
     fingerprint: 'google/sdk_gphone64_arm64/emu64a:16/BE2A.250530.026.D1/13818094:user/release-keys' };
@@ -350,12 +416,12 @@ test('an absent overlay counts only after the same build blocked the same app ve
 
 test('journeys stay blocked until every target is authentic and sign-in is confirmed', () => {
   const qa = { installed: true, matchesBuild: true, access: { enabled: true, bound: true } };
-  const system = { installed: true, system: true, installer: null, signers: [googleSystemSigner] };
+  const system = (signer) => ({ installed: true, system: true, installer: null, signers: [signer] });
   const firefox = { installed: true, system: false, installer: null, signers: [firefoxSigner] };
   const play = { installed: true, system: false, installer: 'com.android.vending', initiator: 'com.android.vending',
     initiatorSystem: true, signers: ['b'.repeat(64)] };
   const journey = (id) => JOURNEYS.find((entry) => entry.id === id);
-  const browsersOnly = { chrome: system, firefox, youtube: system, instagram: { installed: false } };
+  const browsersOnly = { chrome: system(chromeSigner), firefox, youtube: system(youtubeSigner), instagram: { installed: false } };
 
   assert.equal(journeyReadiness(journey('pr77-firefox-address-bar'), { qa, targets: browsersOnly, signedIn: [] }).status, 'READY');
   assert.deepEqual(journeyReadiness(journey('pr77-firefox-address-bar'), {

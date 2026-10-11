@@ -11,9 +11,10 @@ const MAIN_ACTIVITY = 'com.lab4code.zenmode.MainActivity';
 export const QA_SIGNER_SHA256 = 'fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c';
 
 const GOOGLE_PLAY = 'com.android.vending';
-// Recorded from the authentic apps. Chrome and YouTube in the Google Play emulator
-// image list this Google certificate among their signers.
-const GOOGLE_SYSTEM_SIGNER = '3257d599a49d2c961a471ca9843f59d341a405884583fc087df4237b733bbd6d';
+// App signers recorded with apksigner from Chrome 133 and YouTube 19.17.42 in the
+// API 36 Google Play emulator image. Their shared Play source stamp is not a signer.
+const CHROME_SIGNER = 'f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83';
+const YOUTUBE_SIGNER = '3d7a1223019aa39d9ea0e3436ab7c0896bfb4fb679f4de5fe7c23f326c8f994a';
 // Mozilla publishes it in https://accounts.firefox.com/.well-known/assetlinks.json.
 const MOZILLA_FIREFOX_SIGNER = 'a78b62a5165b4494b2fead9e76a280d22d937fee6251aece599446b2ea319b04';
 
@@ -21,10 +22,10 @@ const MOZILLA_FIREFOX_SIGNER = 'a78b62a5165b4494b2fead9e76a280d22d937fee6251aece
 // Google Play, see targetProblem), `system` (in the system image, with `signer`) or
 // `apk` (an official APK with `signer`).
 export const TARGETS = {
-  youtube: { package: 'com.google.android.youtube', signIn: false, origin: 'system', signer: GOOGLE_SYSTEM_SIGNER },
+  youtube: { package: 'com.google.android.youtube', signIn: false, origin: 'system', signer: YOUTUBE_SIGNER },
   instagram: { package: 'com.instagram.android', signIn: true, origin: 'play' },
   x: { package: 'com.twitter.android', signIn: true, origin: 'play' },
-  chrome: { package: 'com.android.chrome', signIn: false, origin: 'system', signer: GOOGLE_SYSTEM_SIGNER },
+  chrome: { package: 'com.android.chrome', signIn: false, origin: 'system', signer: CHROME_SIGNER },
   firefox: { package: 'org.mozilla.firefox', signIn: false, origin: 'apk', signer: MOZILLA_FIREFOX_SIGNER },
 };
 
@@ -80,8 +81,12 @@ export function parseBadging(text) {
   };
 }
 
+/**
+ * App signers from `apksigner verify --print-certs`. Only `Signer #N` lines count: the
+ * `Source Stamp Signer` certificate records the distribution channel and does not sign the app.
+ */
 export function parseSignerDigests(apksignerOutput) {
-  const digests = [...apksignerOutput.matchAll(/certificate SHA-256 digest:\s*([0-9a-f]{64})/gi)]
+  const digests = [...apksignerOutput.matchAll(/^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]{64})$/gm)]
     .map((match) => match[1].toLowerCase());
   if (!digests.length) throw new Error('apksigner reported no SHA-256 signer certificate');
   return [...new Set(digests)].sort();
@@ -221,7 +226,8 @@ export function observeTiming({ seconds = '10', interval = '1', settle = '3' }) 
  * `open()` and `sleep(ms)` do the device work. Times count from the first sample.
  *
  * The observation lasts `seconds` from when `open()` returns, so a slow launch does
- * not shorten it. Sleeps stop at that end, and the last sample is taken there.
+ * not shorten it. Sleeps stop at that end. The last sample starts at or after the end,
+ * also when the sample before it started earlier and finished after the end.
  *
  * For `cleared`, the first sample comes before the target opens, because a correct
  * dismissal can finish before `am start -W` returns. Without the bound QA overlay
@@ -244,10 +250,11 @@ export async function takeSamples({ seconds, interval, expect, foreground, sampl
   if (!samples.length) started = now();
   const end = elapsed() + seconds * 1000;
   for (;;) {
-    samples.push(await sample(elapsed()));
+    const at = elapsed();
+    samples.push(await sample(at));
+    if (at >= end) return samples;
     const remaining = end - elapsed();
-    if (remaining <= 0) return samples;
-    await sleep(Math.min(interval * 1000, remaining));
+    if (remaining > 0) await sleep(Math.min(interval * 1000, remaining));
   }
 }
 

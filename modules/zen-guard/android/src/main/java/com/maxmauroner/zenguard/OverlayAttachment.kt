@@ -5,7 +5,8 @@ import android.view.View
 /**
  * Runs [action] once, when Android first attaches this view to a window.
  * WindowManager.addView attaches on a later layout pass, so isAttachedToWindow is still false
- * right after addView returns. A view removed before that pass never reports.
+ * right after addView returns. A view removed before that pass can still attach once, so the
+ * caller must check that the view is still its current overlay.
  */
 internal fun View.doOnFirstAttach(action: () -> Unit) {
   addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {

@@ -49,12 +49,17 @@ Use each layer for what it can prove:
 Synthetic apps, fixtures and signed-out pages cannot establish Instagram or X
 feed acceptance.
 
-Make a reusable baseline once. Then load it for every run:
+Make a reusable baseline once. Then load it for every run.
+
+On the API 36 image, the emulator's default Vulkan graphics prevent
+snapshots: `snapshot save` prints `KO` with `UNSUPPORTED_VK_APP`. Start the
+emulator with `-feature -Vulkan` for the first boot and for every run. Make
+the first boot a cold boot:
 
 ```bash
 sdkmanager "system-images;android-36;google_apis_playstore;arm64-v8a"
 avdmanager create avd -n zen-qa-api36 -k "system-images;android-36;google_apis_playstore;arm64-v8a"
-emulator -avd zen-qa-api36            # first boot
+emulator -avd zen-qa-api36 -no-snapshot-load -feature -Vulkan   # first boot, cold
 ```
 
 On the first boot, do these steps once:
@@ -64,16 +69,24 @@ On the first boot, do these steps once:
 2. Install Firefox with `install-target`.
 3. Complete the first-run screens of each browser.
 4. Do not install a QA build.
-5. Save the snapshot:
-   `adb -s emulator-5554 emu avd snapshot save zen-baseline`.
-
-For each run, start from the baseline and do not save over it:
+5. Save the snapshot and read it back:
 
 ```bash
-emulator -avd zen-qa-api36 -snapshot zen-baseline -no-snapshot-save
+adb -s emulator-5554 emu avd snapshot save zen-baseline   # must print OK
+adb -s emulator-5554 emu avd snapshot list                # must list zen-baseline
 ```
 
-Then install the QA build, grant access and record `inventory`. Check the
+`adb` exits with 0 also when the save fails, so read the output. The baseline
+is saved only when the save prints `OK` and the list shows `zen-baseline`.
+
+For each run, start from the baseline with the same graphics setting and do
+not save over it:
+
+```bash
+emulator -avd zen-qa-api36 -snapshot zen-baseline -no-snapshot-save -feature -Vulkan
+```
+
+Then install the QA build, grant access and record a new `inventory`. Check the
 device time with `adb shell date` before timed journeys. The snapshot holds
 signed-in sessions. Keep it on the owner's machine and never upload it.
 Refresh the baseline when target apps need updates, and record the new
@@ -265,11 +278,12 @@ Before it captures anything, `observe` checks these points:
 - the service is bound again, then waits `--settle` seconds (default 3).
 
 With `--open-url` and `--app`, it opens the URL in that app with `am start -W`.
-It samples each `--interval` second (default 1) for `--seconds` (default 10)
-after `am start -W` returns, or after the first sample without `--open-url`.
-It takes the last sample at that end, so a slow launch does not shorten the
-observation. Times in the timeline count from the first sample. Each sample
-records:
+It samples each `--interval` second (default 1) for `--seconds` (default 10).
+The first sample comes after `am start -W` returns, or at once without
+`--open-url`. The last sample comes at the end. Times in the timeline count
+from the first sample, so a slow launch does not shorten the observation or
+add to its times. Only `--expect cleared` also samples before the launch; see
+below. Each sample records:
 
 - whether a QA-owned accessibility overlay is on screen;
 - the foreground app;
@@ -295,7 +309,9 @@ the end. It also saves a logcat slice and the crash buffer.
   URL, and is gone at the end. A correct dismissal can finish before
   `am start -W` returns, so the first sample comes before the URL opens. If
   that sample does not show the bound overlay with the target in front,
-  `observe` stops with `BLOCKED` and does not open the URL.
+  `observe` stops with `BLOCKED` and does not open the URL. Times count from
+  this sample, so the later times include the launch. The observation still
+  lasts `--seconds` after `am start -W` returns.
 
 The result is `INVALID` in these cases:
 

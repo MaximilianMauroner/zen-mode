@@ -218,16 +218,18 @@ export function observeTiming({ seconds = '10', interval = '1', settle = '3' }) 
 
 /**
  * Takes the samples of one observation in time order, on one clock. `sample(ms)`,
- * `open()` and `sleep(ms)` do the device work.
+ * `open()` and `sleep(ms)` do the device work. Times count from the first sample.
+ *
+ * The observation lasts `seconds` from when `open()` returns, so a slow launch does
+ * not shorten it. Sleeps stop at that end, and the last sample is taken there.
  *
  * For `cleared`, the first sample comes before the target opens, because a correct
  * dismissal can finish before `am start -W` returns. Without the bound QA overlay
- * over the target at that moment, the target does not open: BLOCKED. The observation
- * lasts `seconds` from when `open()` returns, so a slow launch does not shorten it.
- * Sleeps stop at that end, and the last sample is taken there.
+ * over the target at that moment, the target does not open: BLOCKED. The later
+ * times of `cleared` include the launch.
  */
 export async function takeSamples({ seconds, interval, expect, foreground, sample, open, sleep, now = Date.now }) {
-  const started = now();
+  let started = now();
   const elapsed = () => now() - started;
   const samples = [];
   if (expect === 'cleared') {
@@ -238,6 +240,8 @@ export async function takeSamples({ seconds, interval, expect, foreground, sampl
     samples.push(initial);
   }
   await open?.();
+  // Without a sample before the launch, the first sample is the next one.
+  if (!samples.length) started = now();
   const end = elapsed() + seconds * 1000;
   for (;;) {
     samples.push(await sample(elapsed()));

@@ -296,26 +296,32 @@ test('observation timing is finite and bounded, and the last sample is at the en
   assert.deepEqual([capture.sleeps, capture.at], [[], [0]]);
 });
 
-test('a slow launch does not shorten the observation after the target opens', async () => {
+test('a slow launch neither shortens the observation nor shifts its times', async () => {
   const firefox = 'org.mozilla.firefox';
-  // `am start -W` returns after 20 s. The overlay is up before the launch, gone when it
-  // returns, and back 5 s later, inside `--seconds 15`.
+  // `am start -W` returns after 20 s. On the device clock, the overlay is up before the
+  // launch, gone when it returns, and back 5 s later, inside `--seconds 15`.
   const observe = async (expect) => {
     let clock = 0;
     let opened = false;
+    const taken = [];
     const samples = await takeSamples({
       seconds: 15, interval: 5, expect, foreground: firefox, now: () => clock,
       open: async () => { clock += 20_000; opened = true; },
       sleep: async (ms) => { clock += ms; },
-      sample: (ms) => ({ ms, bound: true, foreground: firefox, overlay: !opened || ms >= 25_000 }),
+      sample: (ms) => {
+        taken.push(clock);
+        return { ms, bound: true, foreground: firefox, overlay: !opened || clock >= 25_000 };
+      },
     });
-    return { at: samples.map((sample) => sample.ms),
+    return { taken, at: samples.map((sample) => sample.ms),
       result: observationResult(samples, { expect, foreground: firefox, crashed: false }) };
   };
-  const after = [20_000, 25_000, 30_000, 35_000];
-  assert.deepEqual(await observe('overlay'), { at: after, result: 'PASS' });
-  assert.deepEqual(await observe('no-overlay'), { at: after, result: 'FAIL' });
-  assert.deepEqual(await observe('cleared'), { at: [0, ...after], result: 'FAIL' }, 'the pre-open sample stays first');
+  // Sampling runs the full 15 s after the launch returns, and its times start at the first of those samples.
+  const afterLaunch = [20_000, 25_000, 30_000, 35_000];
+  assert.deepEqual(await observe('overlay'), { taken: afterLaunch, at: [0, 5_000, 10_000, 15_000], result: 'PASS' });
+  assert.deepEqual(await observe('no-overlay'), { taken: afterLaunch, at: [0, 5_000, 10_000, 15_000], result: 'FAIL' });
+  // `cleared` keeps its sample before the launch first, and later times count from it.
+  assert.deepEqual(await observe('cleared'), { taken: [0, ...afterLaunch], at: [0, ...afterLaunch], result: 'FAIL' });
 });
 
 test('an absent overlay counts only after the same build blocked the same app version on this device', () => {

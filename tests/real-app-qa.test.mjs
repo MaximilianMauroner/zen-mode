@@ -2,9 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PLAY_PACKAGE, QA_SIGNER_SHA256, JOURNEYS, checkTargetApks, deviceState, editServiceList, foregroundPackage,
-  hasPositiveControl, journeyReadiness, mediaStates, observationResult, observeTiming, overlayShown, parseBadging,
-  parsePackageDump, parseSignerDigests, parseWindowRecords, qaIdentity, serviceBound, serviceEnabled, takeSamples,
-  targetProblem,
+  journeyReadiness, mediaStates, observationResult, observeTiming, overlayShown, parseBadging, parsePackageDump,
+  parseSignerDigests, parseWindowRecords, qaIdentity, serviceBound, serviceEnabled, takeSamples, targetProblem,
 } from '../scripts/real-app-qa/model.mjs';
 
 const firefoxSigner = 'a78b62a5165b4494b2fead9e76a280d22d937fee6251aece599446b2ea319b04';
@@ -250,7 +249,7 @@ test('observations pass only with the bound service and the opened target in fro
   const judge = (list, expect) => observationResult(list, { expect, foreground: firefox, crashed: false });
   assert.equal(judge(samples(false, true, true), 'overlay'), 'PASS');
   assert.equal(judge(samples(true, false), 'overlay'), 'FAIL');
-  assert.equal(judge(samples(false, false), 'no-overlay'), 'PASS');
+  assert.equal(judge(samples(false, false), 'no-overlay'), 'OBSERVED', 'the tool cannot tell an allow from a missing rule');
   assert.equal(judge(samples(false, true, false), 'no-overlay'), 'FAIL');
   const beforeOpen = (list) => list.map((sample, index) => index ? sample : { ...sample, beforeOpen: true });
   assert.equal(judge(beforeOpen(samples(true, true, false)), 'cleared'), 'PASS');
@@ -388,30 +387,6 @@ test('a sample that runs past the end is followed by one that starts at or after
   // `cleared` ends 2000 ms after the launch, at 2600 ms. An overlay back by then is not cleared.
   assert.deepEqual(await observe({ expect: 'cleared', overlay: (clock, opened) => !opened || clock >= 2600 }),
     { sleeps: [1000], at: [0, 600, 2200, 2800], result: 'FAIL' });
-});
-
-test('an absent overlay counts only after the same build blocked the same app version on this device', () => {
-  const device = { serial: 'emulator-5554', model: 'sdk_gphone64_arm64', sdk: 36, emulator: true, avd: 'zen-qa-api36',
-    fingerprint: 'google/sdk_gphone64_arm64/emu64a:16/BE2A.250530.026.D1/13818094:user/release-keys' };
-  const build = { id: 'pr77a', package: qa77.package, source: '1'.repeat(40), versionName: '0.1.5-qa.1111111',
-    apkSha256: 'a'.repeat(64) };
-  const target = { package: 'org.mozilla.firefox', versionCode: 2016186458, baseSha256: 'f'.repeat(64) };
-  const current = { app: 'firefox', device, build, target };
-  const observe = (overrides) => ({ command: 'observe', app: 'firefox', openUrl: 'https://example.com',
-    expect: 'overlay', result: 'PASS', device, build, target, ...overrides });
-  assert.equal(hasPositiveControl([observe()], current), true);
-  assert.equal(hasPositiveControl([observe()], { ...current, app: 'chrome' }), false);
-  for (const overrides of [
-    { result: 'FAIL' }, { result: 'INVALID' }, { expect: 'no-overlay' }, { openUrl: null, app: null },
-    { device: { ...device, avd: 'other-avd' } },
-    { device: { ...device, fingerprint: 'google/sdk_gphone64_arm64/emu64a:15/AP3A/1:user/release-keys' } },
-    { build: { ...build, apkSha256: 'b'.repeat(64) } },
-    { target: { ...target, baseSha256: 'e'.repeat(64) } },
-    { device: undefined, build: undefined, target: undefined },
-  ]) {
-    assert.equal(hasPositiveControl([observe(overrides)], current), false, JSON.stringify(overrides));
-  }
-  assert.equal(hasPositiveControl([{ command: 'install-target', app: 'firefox', result: 'PASS', device, build }], current), false);
 });
 
 test('journeys stay blocked until every target is authentic and sign-in is confirmed', () => {

@@ -4,7 +4,7 @@
 // Usage and journeys: docs/real-app-testing.md.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   appendFileSync, copyFileSync, createWriteStream, existsSync, mkdirSync, mkdtempSync,
   readFileSync, readdirSync, rmSync, writeFileSync,
@@ -246,10 +246,6 @@ function evidenceLog(build, device) {
   };
   return {
     dir,
-    subject,
-    records: () => existsSync(file)
-      ? readFileSync(file, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line))
-      : [],
     write(command, details) {
       appendFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), command, ...subject, ...details })}\n`);
     },
@@ -441,23 +437,21 @@ async function observe(options) {
     target = targetStatus(device, options.app);
     const problem = model.targetProblem(options.app, target);
     if (problem) throw new Error(`BLOCKED: ${options.app} ${problem}`);
-    if (options.expect === 'no-overlay' &&
-      !model.hasPositiveControl(log.records(), { app: options.app, target, ...log.subject })) {
-      throw new Error(`BLOCKED: first record a PASS with --expect overlay in ${options.app} ` +
-        'for this build, device and app version');
-    }
   }
 
   // Let the service rebind and settle after any earlier hierarchy dump or agent snapshot.
   await waitForBinding(device, identity, true);
   await sleep(settle * 1000);
 
+  // The random part keeps names apart within one second. Files are only created,
+  // never replaced, so a name that exists stops the observation before its record.
   const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
-  const name = `${stamp}-${label}`;
+  const name = `${stamp}-${label}-${randomUUID().slice(0, 8)}`;
+  const save = (file, data) => writeFileSync(join(log.dir, file), data, { flag: 'wx' });
   const screenshots = [];
   const screenshot = (phase) => {
     const file = `${name}-${screenshots.length.toString().padStart(2, '0')}-${phase}.png`;
-    writeFileSync(join(log.dir, file), device.raw(['exec-out', 'screencap', '-p'], { encoding: 'buffer' }).stdout);
+    save(file, device.raw(['exec-out', 'screencap', '-p'], { encoding: 'buffer' }).stdout);
     screenshots.push(file);
   };
   let previous = null;
@@ -490,8 +484,8 @@ async function observe(options) {
   const logcat = device.adb('logcat', '-d', '-v', 'threadtime', '-T', logStart,
     'ZenGuardTrace:V', 'ReactNativeJS:V', 'AndroidRuntime:E', 'libc:F', 'DEBUG:F', '*:S');
   const crash = device.adb('logcat', '-b', 'crash', '-d', '-v', 'threadtime', '-T', logStart);
-  writeFileSync(join(log.dir, `${name}.logcat.txt`), `${logcat}\n--- crash buffer ---\n${crash}`);
-  writeFileSync(join(log.dir, `${name}.timeline.json`), `${JSON.stringify(samples, null, 2)}\n`);
+  save(`${name}.logcat.txt`, `${logcat}\n--- crash buffer ---\n${crash}`);
+  save(`${name}.timeline.json`, `${JSON.stringify(samples, null, 2)}\n`);
   const crashed = crash.includes(identity.package);
   const bound = samples.every((sample) => sample.bound);
   const targetInFront = !app || samples.every((sample) => sample.foreground === app.package);
@@ -504,18 +498,22 @@ async function observe(options) {
   });
   const overlayChanges = samples.filter((sample, index) => index === 0 || sample.overlay !== samples[index - 1].overlay)
     .map((sample) => `${sample.ms}ms ${sample.overlay ? 'overlay' : 'no overlay'} (${sample.foreground})`);
-  const problems = [
+  const notes = [
     !bound && 'service was not bound for every sample',
     !targetInFront && `${options.app} was not in front for every sample`,
     crashed && 'QA app crashed',
+    result === 'OBSERVED' && options.expect === 'no-overlay' &&
+      'the tool cannot read the active rules, so accept or reject the absent overlay by hand',
   ].filter(Boolean);
-  console.log(`${result} ${label}: ${overlayChanges.join(' -> ')}${problems.map((problem) => `; ${problem}`).join('')}\n${log.dir}`);
+  console.log(`${result} ${label}: ${overlayChanges.join(' -> ')}${notes.map((note) => `; ${note}`).join('')}\n${log.dir}`);
   if (['FAIL', 'INVALID'].includes(result)) process.exitCode = 1;
 }
 
 // --- entry -----------------------------------------------------------------
 
 const usage = 'Usage: node scripts/real-app-qa/cli.mjs <build|install|install-target|inventory|access|observe> [options]\n' +
+  'observe --expect no-overlay never passes: an overlay is FAIL, and no overlay is OBSERVED for the operator,\n' +
+  'because the tool cannot read which rules are active.\n' +
   'See docs/real-app-testing.md.';
 let parsed;
 try {

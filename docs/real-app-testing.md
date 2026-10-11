@@ -14,6 +14,10 @@ It does not tap through journeys. An operator, human or agent, drives the
 apps. The tool judges only observations in which it opened the target app
 itself. All other observations are `OBSERVED` for the operator to judge.
 
+The tool cannot read which Zen Mode rules are active on the device. It can
+prove that an overlay showed, but not that an absent overlay is correct, so an
+absent overlay is never a `PASS`. See `--expect no-overlay` in section 6.
+
 Use a disposable emulator or an owned test device. Do not use a personal
 phone. Commands that change device state refuse a physical device unless you
 pass `--allow-physical`.
@@ -307,12 +311,14 @@ the end. It also saves a logcat slice and the crash buffer.
 `--expect` needs `--open-url`:
 
 - `overlay`: the overlay shows at the end;
-- `no-overlay`: the overlay never shows. This is allowed only after an
-  `overlay` PASS in the same app on the same device (every recorded device
-  field, such as serial, AVD and build fingerprint), with the same QA build
-  and the same target APK. A service that
-  never reads the app would otherwise pass. Other AVDs can reuse a serial such
-  as `emulator-5554`;
+- `no-overlay`: an overlay in any sample is `FAIL`. When the overlay never
+  shows, the result is `OBSERVED`, never `PASS`, and the output tells the
+  operator to judge it. The tool cannot read the active rules, so an absent
+  overlay can also mean that the rule was cleared with `pm clear`, turned off,
+  or never reached the detector. An earlier `overlay` PASS does not change
+  this: it can be from before a reset or from another rule, such as a timed
+  visit. The operator accepts the absence only with evidence of the current
+  rule, as the journey in section 7 shows;
 - `cleared`: the QA overlay shows over the target before the tool opens the
   URL, and is gone at the end. A correct dismissal can finish before
   `am start -W` returns, so the first sample comes before the URL opens. If
@@ -339,7 +345,7 @@ the disposable QA storage. Run the lock journey last.
 
 | Journey | Steps | Expected |
 | --- | --- | --- |
-| `pr77-firefox-address-bar` (#67) | Sites on, add `example.com`. Run `observe --open-url https://example.com --app firefox --expect overlay`, then `--open-url https://example.org --expect no-overlay`. Open Sites and capture Firefox readiness with `observe --seconds 0`. | PASS, PASS, and Firefox `READY` in the capture. |
+| `pr77-firefox-address-bar` (#67) | Sites on, add `example.com`. Run `observe --open-url https://example.com --app firefox --expect overlay`, then `--open-url https://example.org --expect no-overlay`. Open Sites and capture Firefox readiness with `observe --seconds 0`. | PASS, then `OBSERVED` with no overlay, then Firefox `READY` and `example.com` in the capture. The operator accepts the `OBSERVED` result by hand only when the PASS screenshot just before it shows the site block, the capture just after it lists `example.com`, and nothing reset the QA app between them. An overlay on `example.org` is `FAIL`. |
 | `pr78-site-stats` (#72) | Capture Statistics. Make one Firefox and one Chrome boundary with `observe --expect overlay`. Leave each with its Go home button. Refresh Statistics and capture. | Site count rises by one for each boundary. |
 | `pr78-domain-error` (#68) | Sites: submit `localhost` as a custom domain and capture. Then submit `127.0.0.1` and capture. | `localhost`: "Enter a complete domain like example.com." The dot check runs before the local address check. `127.0.0.1`: "Local and IP addresses are not supported." No `java.lang` or `ZenGuard.addBlockedDomain` text in either. |
 | `pr76-usage-on-resume` (#69) | Add a 5m daily Clock rule, the shortest daily option, and keep App limits selected. Start Clock with `am start -n com.google.android.deskclock/com.android.deskclock.DeskClock`, then `observe --seconds 320`. When Home shows, bring the QA app to the front and capture. | Clock is sent Home after about 300 s, before the observation ends. The list shows "5 of 5 minutes today" and SPENT with no tab switch. |
@@ -357,16 +363,25 @@ This directory is not in Git.
 - `evidence.jsonl`: one record per command, each with device identity, QA
   commit, version and APK hash. An `observe` record with `--app` also has the
   target APK that it verified;
-- `<time>-<label>-NN-<phase>.png`: screenshots;
-- `<time>-<label>.timeline.json`: samples;
-- `<time>-<label>.logcat.txt`: Zen Mode trace, React Native and crash logs.
+- `<time>-<label>-<random>-NN-<phase>.png`: screenshots;
+- `<time>-<label>-<random>.timeline.json`: samples;
+- `<time>-<label>-<random>.logcat.txt`: Zen Mode trace, React Native and crash
+  logs.
+
+`<time>` has one-second resolution. `<random>` is the start of a random UUID,
+so two observations with the same label in the same second get different
+names. The tool never replaces an evidence file. If a file name exists,
+`observe` stops with an error and writes no record.
 
 A report gives these items for each journey:
 
 - QA ID, commit and APK hash;
 - device fingerprint;
 - target app version and signer;
-- `PASS`, `FAIL`, `BLOCKED` or not run, with the evidence files.
+- `PASS`, `FAIL`, `BLOCKED` or not run, with the evidence files. For an
+  `OBSERVED` result that the operator accepts, such as an absent overlay, the
+  report says that it is a manual acceptance and names the evidence for the
+  current rule.
 
 A `BLOCKED` journey is not a pass. Screenshots must not show private messages
 or account details.

@@ -920,6 +920,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
    */
   private fun checkInstagramReelsDeadline() {
     val remainingMs = instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) ?: return
+    // Handler delays use uptime and the policy uses elapsed time; separate rounding can run this 1 ms early.
     if (remainingMs > 0L) {
       instagramDeadlineHandler.postDelayed(instagramReelsDeadlineCheck, remainingMs)
       return

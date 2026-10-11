@@ -19,7 +19,6 @@ import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.view.Gravity
-import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -500,14 +499,17 @@ internal class InstagramBlockerOverlay(
   }
 
   /**
-   * Freezes the reel behind the blocker. Transient audio focus makes
-   * ExoPlayer-based players (like Instagram's) pause, and the media-key event
-   * covers players keyed to a media session instead. Scoped to reel blocks
-   * only, so a Home or Explore block never pauses the user's own music.
+   * Freezes the reel behind the blocker. Audio focus makes ExoPlayer-based
+   * players (like Instagram's) pause. The request is permanent on purpose:
+   * when a transient request is abandoned, Android tells the earlier focus
+   * holder to resume, so closing the blocker started the user's last media
+   * (#74). No media keys either: Android sends them to the last app with a
+   * media session, which is often not Instagram. Scoped to reel blocks only,
+   * so a Home or Explore block never pauses the user's own music.
    */
   private fun pauseBackgroundPlayback() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+      val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
         .setAudioAttributes(
           AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -523,19 +525,12 @@ internal class InstagramBlockerOverlay(
       audioManager.requestAudioFocus(
         focusListener,
         AudioManager.STREAM_MUSIC,
-        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT,
+        AudioManager.AUDIOFOCUS_GAIN,
       )
     }
-    val now = SystemClock.uptimeMillis()
-    audioManager.dispatchMediaKeyEvent(
-      KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE, 0),
-    )
-    audioManager.dispatchMediaKeyEvent(
-      KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE, 0),
-    )
   }
 
-  private fun resumeBackgroundPlayback() {
+  private fun releaseAudioFocus() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
       audioFocusRequest = null
@@ -546,7 +541,7 @@ internal class InstagramBlockerOverlay(
   }
 
   fun hide() {
-    resumeBackgroundPlayback()
+    releaseAudioFocus()
     val existingRoot = root
     root = null
     continueButton = null

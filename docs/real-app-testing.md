@@ -104,6 +104,10 @@ in another checkout, so you can test a PR head that does not contain the tool.
 Builds and evidence stay in `.agents/artifacts/real-app-qa/` of the checkout
 under test.
 
+The commit of the checkout under test does not identify the tool. Each command
+records the SHA-256 hashes of the tool files that it runs. See "Tool
+provenance" in section 8.
+
 ## 1. Build a QA APK
 
 ```bash
@@ -144,8 +148,8 @@ runs.
 After the build, the tool checks the package, label, version suffix, debuggable
 flag and signer with `aapt` and `apksigner`. It also checks that prebuild did
 not change tracked files. Output goes to `.agents/artifacts/real-app-qa/builds/<id>/`:
-the APK, `build.json` (commit, Java, controls, APK hash and identity) and
-`build.log`.
+the APK, `build.json` (commit, builder tool hashes, Java, controls, APK hash
+and identity) and `build.log`.
 
 ## 2. Select the device and install
 
@@ -380,8 +384,8 @@ Device evidence goes to `.agents/artifacts/real-app-qa/runs/<id>-<serial>/`.
 This directory is not in Git.
 
 - `evidence.jsonl`: one record per command, each with device identity, QA
-  commit, version and APK hash. An `observe` record with `--app` also has the
-  target APK that it verified;
+  commit, version, APK hash and tool hashes. An `observe` record with `--app`
+  also has the target APK that it verified;
 - `<time>-<label>-<random>-NN-<phase>.png`: screenshots;
 - `<time>-<label>-<random>.timeline.json`: samples;
 - `<time>-<label>-<random>.logcat.txt`: Zen Mode trace, React Native and crash
@@ -392,9 +396,54 @@ so two observations with the same label in the same second get different
 names. The tool never replaces an evidence file. If a file name exists,
 `observe` stops with an error and writes no record.
 
+### Tool provenance
+
+The tool and the app under test can come from different checkouts. A later
+command can also run another tool than the build. So each record names two
+tools by the SHA-256 hashes of their files:
+
+- `tool`: `cli.mjs` and `model.mjs` of the tool that ran this command;
+- `build.tool`: `cli.mjs`, `model.mjs` and `qa-build-type.init.gradle` of the
+  tool that made the build. Each command copies it from `build.json` and never
+  puts its own hashes there.
+
+A changed copy, or a copy outside Git, gets its own hashes. No commit can name
+such a copy, so the records do not use Git to identify the tool.
+
+Before a run, select the accepted tool: the reviewed commit of the tool. In a
+Git checkout of the tool, get the hashes from that commit, not from the files
+on disk:
+
+```bash
+for file in cli.mjs model.mjs qa-build-type.init.gradle; do
+  git show "<reviewed-commit>:scripts/real-app-qa/$file" | shasum -a 256
+done
+```
+
+A record is evidence only when its `tool` matches the accepted `cli.mjs` and
+`model.mjs` hashes. A build comes from an accepted tool only when its
+`build.tool` matches all three hashes. The builder and a later command can be
+different accepted tools, for example after a review fix. The report then
+names both. A record or build whose hashes match no accepted tool is not
+evidence. Do not change the tool files while a command runs.
+
+`build.tool` is `null` when `build.json` comes from a tool that did not record
+it. The builder of that build is unknown. The build stays usable with the
+evidence that you already have for it. The report says that its builder is
+unknown and never uses the `tool` of a later record as the builder. For new
+evidence, build again under a new ID with an accepted tool. A record without
+`tool` comes from a tool that did not record it, so the tool that wrote it is
+also unknown. The tool does not add hashes to earlier files.
+
+The hashes identify only these tool files. They do not identify Node, the
+Android SDK tools or the device. The commit and the APK hash identify the app.
+
 A report gives these items for each journey:
 
 - QA ID, commit and APK hash;
+- builder tool hashes, or "builder unknown" when `build.tool` is `null`;
+- for each record used, its tool hashes, or "tool unknown" when it has none,
+  and the accepted tool that they match;
 - device fingerprint;
 - target app version and signer;
 - `PASS`, `FAIL`, `BLOCKED` or not run, with the evidence files. For an

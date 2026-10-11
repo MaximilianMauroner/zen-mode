@@ -19,6 +19,12 @@ import * as model from './model.mjs';
 // head from another checkout. Evidence stays with that checkout, outside Git.
 const root = process.cwd();
 const initScript = fileURLToPath(new URL('qa-build-type.init.gradle', import.meta.url));
+// The tool that runs this command, by the SHA-256 of its own files. The commit of the
+// checkout under test does not name it, and no commit names a changed copy or one outside Git.
+const tool = {
+  cli: sha256File(fileURLToPath(import.meta.url)),
+  model: sha256File(fileURLToPath(new URL('model.mjs', import.meta.url))),
+};
 const artifacts = join(root, '.agents/artifacts/real-app-qa');
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const quote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
@@ -127,6 +133,8 @@ async function build(options) {
   sdkRoot();
   const java = javaHome();
   const env = buildEnvironment(java);
+  // The tool that makes this build, with the init script that Gradle gets.
+  const builder = { ...tool, initScript: sha256File(initScript) };
 
   // Keep the evidence of every earlier attempt, failed or not.
   const dir = join(artifacts, 'builds', identity.id);
@@ -177,6 +185,8 @@ async function build(options) {
   const record = {
     builtAt: new Date().toISOString(),
     source: { head, branch: git('rev-parse', '--abbrev-ref', 'HEAD'), committedAt: git('log', '-1', '--format=%cI') },
+    // A later command can run another tool. It records its own and keeps this one as build.tool.
+    tool: builder,
     identity,
     abi,
     java: java.version,
@@ -238,11 +248,13 @@ function evidenceLog(build, device) {
   const dir = join(artifacts, 'runs', `${build.identity.id}-${device.serial.replace(/[^\w.-]/g, '_')}`);
   mkdirSync(dir, { recursive: true });
   const file = join(dir, 'evidence.jsonl');
-  // The device and QA build that every record is evidence for.
+  // The tool that writes each record, and the device and QA build that it is evidence for.
+  // build.tool is the tool that made the build, or null when build.json does not name it: the builder is unknown.
   const subject = {
+    tool,
     device: device.identity,
     build: { id: build.identity.id, package: build.identity.package, source: build.record.source.head,
-      versionName: build.record.apk.versionName, apkSha256: build.record.apk.sha256 },
+      tool: build.record.tool ?? null, versionName: build.record.apk.versionName, apkSha256: build.record.apk.sha256 },
   };
   return {
     dir,

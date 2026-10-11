@@ -424,7 +424,8 @@ export default function AppLimitsScreen() {
       )}
 
       <AppPicker visible={pickerOpen} configuredPackages={new Set(guardedByPackage.keys())} onClose={() => setPickerOpen(false)} onSelect={(app) => { setPickerOpen(false); selectApp(app); }} />
-      <ErrorNote message={error || (readState === 'error' ? 'The app rules could not be loaded.' : '')} />
+      <ErrorNote message={readState === 'error' ? 'The app rules could not be loaded.' : ''} />
+      <ErrorNote message={error} />
       {lockBlocked ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
     </Screen>
   );

@@ -4,8 +4,11 @@ import android.content.Context
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.View
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.Button
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -18,6 +21,8 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ServiceController
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
+import org.robolectric.shadow.api.Shadow
+import org.robolectric.shadows.ShadowWindowManagerImpl
 
 /** The real service counts a boundary only after Android attaches it, not when addView returns. */
 @RunWith(RobolectricTestRunner::class)
@@ -80,6 +85,16 @@ class OverlayAttachmentTest {
     assertEquals(2L, count(EnforcementReason.BLOCKED_SITE))
   }
 
+  @Test fun `a later site boundary counts after Home dismisses the first`() {
+    visitSite(BLOCKED_HOST)
+    runLayoutPass()
+    pressSiteHome() // Robolectric sends no launcher event after the Home action.
+    visitSite(ALLOWED_HOST)
+    visitSite(BLOCKED_HOST)
+    runLayoutPass()
+    assertEquals(2L, count(EnforcementReason.BLOCKED_SITE))
+  }
+
   @Test fun `an Instagram boundary counts once after the delayed attachment`() {
     deliver(INSTAGRAM, node(INSTAGRAM, "$INSTAGRAM:id/explore_grid"))
     assertEquals(0L, count(EnforcementReason.INSTAGRAM_EXPLORE))
@@ -94,6 +109,16 @@ class OverlayAttachmentTest {
   /** Leaving for an app with no browser window clears the site boundary unconditionally. */
   private fun leaveBrowser() =
     deliver(NOTES, node(NOTES), AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
+
+  /** The site detail copy also says "go home", so match only the button. */
+  private fun pressSiteHome() {
+    val windows = Shadow.extract<ShadowWindowManagerImpl>(service.getSystemService(WindowManager::class.java))
+    val matches = ArrayList<View>()
+    windows.views.forEach {
+      it.findViewsWithText(matches, service.getString(R.string.zen_guard_go_home), View.FIND_VIEWS_WITH_TEXT)
+    }
+    matches.filterIsInstance<Button>().single().performClick()
+  }
 
   private fun deliver(
     packageName: String,

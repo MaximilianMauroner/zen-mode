@@ -1155,7 +1155,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   }
 
   private fun leaveBlockedSiteHome() {
-    adultSiteOverlay.hide()
+    clearAdultSiteEnforcement()
     if (canRunEnforcementAction()) performGlobalAction(GLOBAL_ACTION_HOME)
   }
 

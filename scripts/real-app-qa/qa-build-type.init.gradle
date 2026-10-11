@@ -1,0 +1,44 @@
+// Adds a `qa` build type for real-app testing: release configuration and an
+// embedded JavaScript bundle, signed with the debug key, installed under a
+// separate application ID and label. Its task names do not contain "release",
+// so the release signing guard and the upload key are not involved.
+// Run through `node scripts/real-app-qa/cli.mjs build`; see docs/real-app-testing.md.
+
+// Gradle also runs this script for the included plugin builds of React Native
+// and Expo. Those builds do not get the -P properties, so only the app checks them.
+def properties = gradle.startParameter.projectProperties
+def qaId = properties.zenQaId
+def qaResDir = properties.zenQaResDir
+def qaVersionSuffix = properties.zenQaVersionSuffix
+
+gradle.beforeProject { project ->
+    // React Native runs Ninja directly, which ignores CMAKE_BUILD_PARALLEL_LEVEL.
+    // One-slot job pools keep native compile and link to one job per CMake build.
+    ['com.android.application', 'com.android.library'].each { plugin ->
+        project.pluginManager.withPlugin(plugin) {
+            project.extensions.getByName('android').defaultConfig.externalNativeBuild.cmake.arguments.addAll([
+                '-DCMAKE_JOB_POOLS=zen_qa_compile=1;zen_qa_link=1',
+                '-DCMAKE_JOB_POOL_COMPILE=zen_qa_compile',
+                '-DCMAKE_JOB_POOL_LINK=zen_qa_link',
+            ])
+        }
+    }
+    project.plugins.withId('com.android.application') {
+        if (!qaId || !qaResDir || !qaVersionSuffix) {
+            throw new GradleException('Set -PzenQaId, -PzenQaResDir and -PzenQaVersionSuffix for the QA build type.')
+        }
+        project.androidComponents.finalizeDsl { android ->
+            android.buildTypes.create('qa') {
+                initWith(android.buildTypes.release)
+                applicationIdSuffix = ".qa${qaId}"
+                versionNameSuffix = qaVersionSuffix
+                signingConfig = android.signingConfigs.debug
+                matchingFallbacks = ['release']
+            }
+            android.sourceSets.getByName('qa').res.srcDir(qaResDir)
+        }
+    }
+    project.plugins.withId('com.facebook.react') {
+        project.extensions.getByName('react').extraPackagerArgs.set(['--max-workers', '1'])
+    }
+}

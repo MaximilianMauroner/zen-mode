@@ -10,12 +10,22 @@ const MAIN_ACTIVITY = 'com.lab4code.zenmode.MainActivity';
 // signs with it on purpose; the release signing guard rejects it for release artifacts.
 export const QA_SIGNER_SHA256 = 'fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c';
 
+const GOOGLE_PLAY = 'com.android.vending';
+// Recorded from the authentic apps. Chrome and YouTube in the Google Play emulator
+// image list this Google certificate among their signers.
+const GOOGLE_SYSTEM_SIGNER = '3257d599a49d2c961a471ca9843f59d341a405884583fc087df4237b733bbd6d';
+// Mozilla publishes it in https://accounts.firefox.com/.well-known/assetlinks.json.
+const MOZILLA_FIREFOX_SIGNER = 'a78b62a5165b4494b2fead9e76a280d22d937fee6251aece599446b2ea319b04';
+
+// `origin` is how an authentic copy reaches the device: `play` (installed by the system
+// Google Play, see targetProblem), `system` (in the system image, with `signer`) or
+// `apk` (an official APK with `signer`).
 export const TARGETS = {
-  youtube: { package: 'com.google.android.youtube', signIn: false },
-  instagram: { package: 'com.instagram.android', signIn: true },
-  x: { package: 'com.twitter.android', signIn: true },
-  chrome: { package: 'com.android.chrome', signIn: false },
-  firefox: { package: 'org.mozilla.firefox', signIn: false },
+  youtube: { package: 'com.google.android.youtube', signIn: false, origin: 'system', signer: GOOGLE_SYSTEM_SIGNER },
+  instagram: { package: 'com.instagram.android', signIn: true, origin: 'play' },
+  x: { package: 'com.twitter.android', signIn: true, origin: 'play' },
+  chrome: { package: 'com.android.chrome', signIn: false, origin: 'system', signer: GOOGLE_SYSTEM_SIGNER },
+  firefox: { package: 'org.mozilla.firefox', signIn: false, origin: 'apk', signer: MOZILLA_FIREFOX_SIGNER },
 };
 
 // Acceptance journeys for the open PRs. Steps and expected results are in docs/real-app-testing.md.
@@ -45,12 +55,6 @@ export function qaIdentity(id) {
     serviceComponent: `${packageName}/${SERVICE_CLASS}`,
     launchComponent: `${packageName}/${MAIN_ACTIVITY}`,
   };
-}
-
-export function normalizeSha256(value) {
-  const normalized = value?.replaceAll(':', '').toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(normalized ?? '')) throw new Error(`Not a SHA-256 fingerprint: ${value}`);
-  return normalized;
 }
 
 export function deviceState(devicesOutput, serial) {
@@ -85,10 +89,10 @@ export function parseSignerDigests(apksignerOutput) {
 
 /**
  * Checks that supplied files form one installable app: one base APK, optional
- * splits of the same package and version, and one signer set. An expected
- * signer from an official source must be among the signers.
+ * splits of the same package and version, and one signer set. Only a target
+ * with an official APK can be installed this way, signed by its pinned signer.
  */
-export function checkTargetApks(files, expectedSigner) {
+export function checkTargetApks(files) {
   if (!files.length) throw new Error('Pass at least one --apk');
   const [first] = files;
   for (const file of files) {
@@ -99,8 +103,13 @@ export function checkTargetApks(files, expectedSigner) {
   }
   const bases = files.filter((file) => !file.split);
   if (bases.length !== 1) throw new Error(`Expected exactly one base APK, found ${bases.length}`);
-  if (expectedSigner && !first.signers.includes(normalizeSha256(expectedSigner))) {
-    throw new Error(`Signer ${first.signers.join(', ')} does not match the expected official signer`);
+  const key = Object.keys(TARGETS).find((name) => TARGETS[name].package === first.package);
+  if (TARGETS[key]?.origin !== 'apk') {
+    const apkTargets = Object.keys(TARGETS).filter((name) => TARGETS[name].origin === 'apk');
+    throw new Error(`install-target installs only the official APK of ${apkTargets.join(', ')}, not ${first.package}`);
+  }
+  if (!first.signers.includes(TARGETS[key].signer)) {
+    throw new Error(`Signer ${first.signers.join(', ')} is not the official ${key} signer`);
   }
   return {
     package: first.package,
@@ -110,7 +119,11 @@ export function checkTargetApks(files, expectedSigner) {
   };
 }
 
-/** Reads the active package section of `dumpsys package <name>`, before any hidden system copy. */
+/**
+ * Reads the active package section of `dumpsys package <name>`, before any hidden system copy.
+ * `installer` is the installing package, which adb can name freely. `initiator` is the package
+ * that started the install; Android records the shell for adb, and prints it from Android 14.
+ */
 export function parsePackageDump(text, packageName) {
   const start = text.indexOf(`Package [${packageName}]`);
   if (start < 0) throw new Error(`dumpsys has no package section for ${packageName}`);
@@ -118,11 +131,15 @@ export function parsePackageDump(text, packageName) {
   const end = rest.search(/\n\s*Package \[|\nHidden system packages:/);
   const section = end < 0 ? rest : rest.slice(0, end);
   const flags = /\bflags=\[([^\]]*)\]/.exec(section)?.[1].trim().split(/\s+/) ?? [];
-  const installer = /installerPackageName=(\S+)/.exec(section)?.[1];
+  const field = (name) => {
+    const value = new RegExp(`\\b${name}=(\\S+)`).exec(section)?.[1];
+    return value && value !== 'null' ? value : null;
+  };
   return {
     versionCode: Number(/versionCode=(\d+)/.exec(section)?.[1]),
     versionName: /versionName=(\S+)/.exec(section)?.[1] ?? null,
-    installer: installer && installer !== 'null' ? installer : null,
+    installer: field('installerPackageName'),
+    initiator: field('initiatingPackageName'),
     system: flags.includes('SYSTEM'),
     updatedSystemApp: flags.includes('UPDATED_SYSTEM_APP'),
     lastUpdateTime: /lastUpdateTime=([^\n]+)/.exec(section)?.[1].trim() ?? null,
@@ -183,6 +200,53 @@ export function mediaStates(text, packageName) {
 
 export const EXPECTATIONS = ['overlay', 'no-overlay', 'cleared'];
 
+// Longer than any journey and far below Node's timer limit of about 24.8 days.
+const MAX_OBSERVE_SECONDS = 3600;
+
+/** Parses `--seconds`, `--interval` and `--settle`: decimal seconds from 0 to one hour, and an interval above 0. */
+export function observeTiming({ seconds = '10', interval = '1', settle = '3' }) {
+  const timing = Object.fromEntries(Object.entries({ seconds, interval, settle }).map(([name, text]) => {
+    const value = /^\d+(\.\d+)?$/.test(text) ? Number(text) : NaN;
+    if (!(value <= MAX_OBSERVE_SECONDS)) {
+      throw new Error(`--${name} must be a number of seconds from 0 to ${MAX_OBSERVE_SECONDS}, got ${JSON.stringify(text)}`);
+    }
+    return [name, value];
+  }));
+  if (timing.interval === 0) throw new Error('--interval must be above 0');
+  return timing;
+}
+
+/**
+ * Takes the samples of one observation in time order, on one clock. `sample(ms)`,
+ * `open()` and `sleep(ms)` do the device work.
+ *
+ * For `cleared`, the first sample comes before the target opens, because a correct
+ * dismissal can finish before `am start -W` returns. Without the bound QA overlay
+ * over the target at that moment, the target does not open: BLOCKED. The observation
+ * lasts `seconds` from when `open()` returns, so a slow launch does not shorten it.
+ * Sleeps stop at that end, and the last sample is taken there.
+ */
+export async function takeSamples({ seconds, interval, expect, foreground, sample, open, sleep, now = Date.now }) {
+  const started = now();
+  const elapsed = () => now() - started;
+  const samples = [];
+  if (expect === 'cleared') {
+    const initial = { ...await sample(elapsed()), beforeOpen: true };
+    if (!initial.bound || !initial.overlay || initial.foreground !== foreground) {
+      throw new Error(`BLOCKED: --expect cleared needs the bound QA overlay over ${foreground} before the URL opens`);
+    }
+    samples.push(initial);
+  }
+  await open?.();
+  const end = elapsed() + seconds * 1000;
+  for (;;) {
+    samples.push(await sample(elapsed()));
+    const remaining = end - elapsed();
+    if (remaining <= 0) return samples;
+    await sleep(Math.min(interval * 1000, remaining));
+  }
+}
+
 /**
  * Result of one observation. Samples taken while the QA service was unbound, or
  * after the QA app crashed, prove nothing: INVALID. With a target app, every
@@ -190,43 +254,69 @@ export const EXPECTATIONS = ['overlay', 'no-overlay', 'cleared'];
  * Without an expectation the operator judges the evidence: OBSERVED.
  *
  * `overlay`: the QA overlay shows at the end. `no-overlay`: it never shows.
- * `cleared`: it shows first and is gone at the end.
+ * `cleared`: it shows before the target opens and is gone at the end.
  */
 export function observationResult(samples, { expect, foreground, crashed }) {
   if (!samples.length) throw new Error('No samples were recorded');
   if (crashed || samples.some((sample) => !sample.bound)) return 'INVALID';
   if (foreground && samples.some((sample) => sample.foreground !== foreground)) return 'INVALID';
   if (!expect) return 'OBSERVED';
-  const first = samples[0].overlay;
   const last = samples.at(-1).overlay;
   const met = {
     overlay: last,
     'no-overlay': samples.every((sample) => !sample.overlay),
-    cleared: first && !last,
+    cleared: Boolean(samples[0].beforeOpen && samples[0].overlay) && !last,
   }[expect];
   if (met === undefined) throw new Error(`--expect must be ${EXPECTATIONS.join(', ')}, got ${expect}`);
   return met ? 'PASS' : 'FAIL';
 }
 
+const sameFields = (recorded, current) => Object.entries(current).every(([key, value]) => recorded?.[key] === value);
+
 /**
- * An absent overlay only means something after the same build blocked the same
- * app on this device. Otherwise a service that never reads the app also passes.
+ * An absent overlay only means something after the same QA build blocked the same
+ * target APK on this device. Otherwise a service that never reads the app also
+ * passes. An emulator serial alone is not the device: other AVDs reuse it.
  */
-export function hasPositiveControl(evidenceRecords, app) {
+export function hasPositiveControl(evidenceRecords, { app, device, build, target }) {
   return evidenceRecords.some((record) => record.command === 'observe' && record.app === app &&
-    record.openUrl && record.expect === 'overlay' && record.result === 'PASS');
+    record.openUrl && record.expect === 'overlay' && record.result === 'PASS' &&
+    sameFields(record.device, device) && sameFields(record.build, build) &&
+    record.target?.baseSha256 === target.baseSha256);
 }
 
-/** A journey is READY only with the matching QA build bound and every real target app present and signed in. */
+/**
+ * Why an installed target is not the authentic app, or null. A valid signature
+ * alone proves nothing, because anyone can sign an APK with the same package name.
+ *
+ * A Play target needs Google Play as installer and as initiator, and that Google Play
+ * (`initiatorSystem`) must be in the system image. `adb install -i com.android.vending`
+ * sets only the installer, and another app can take the Google Play package name only
+ * on an image without Google Play. Without a recorded initiator, as before Android 14,
+ * the target is refused.
+ */
+export function targetProblem(key, app) {
+  const { origin, signer } = TARGETS[key];
+  if (!app?.installed) return 'not installed';
+  if (!app.signers?.length) return 'signer not recorded';
+  if (origin === 'play' && app.installer !== GOOGLE_PLAY) return 'not installed by Google Play';
+  if (origin === 'play' && (app.initiator !== GOOGLE_PLAY || !app.initiatorSystem)) {
+    return 'install not started by the system Google Play';
+  }
+  if (origin === 'system' && !app.system) return 'not in the system image';
+  if (signer && !app.signers.includes(signer)) return 'not signed by the official signer';
+  return null;
+}
+
+/** A journey is READY only with the matching QA build bound and every target authentic, present and signed in. */
 export function journeyReadiness(journey, { qa, targets, signedIn }) {
   const reasons = [];
   if (!qa.installed) reasons.push('QA build not installed');
   else if (!qa.matchesBuild) reasons.push('installed QA APK differs from this build');
   else if (!qa.access.enabled || !qa.access.bound) reasons.push('QA service not enabled and bound');
   for (const key of journey.targets) {
-    const target = targets[key];
-    if (!target?.installed) reasons.push(`${key} not installed`);
-    else if (!target.signers?.length) reasons.push(`${key} signer not recorded`);
+    const problem = targetProblem(key, targets[key]);
+    if (problem) reasons.push(`${key} ${problem}`);
     else if (TARGETS[key].signIn && !signedIn.includes(key)) reasons.push(`${key} sign-in not confirmed`);
   }
   return { ...journey, status: reasons.length ? 'BLOCKED' : 'READY', reasons };

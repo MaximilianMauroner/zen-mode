@@ -144,22 +144,53 @@ the APK on the device matches the build.
 
 ## 3. Target apps
 
-| Target | Package | Official source | Sign-in |
-| --- | --- | --- | --- |
-| Chrome | `com.android.chrome` | Google Play emulator image | No |
-| YouTube | `com.google.android.youtube` | Google Play emulator image | No |
-| Firefox | `org.mozilla.firefox` | Mozilla release archive | No |
-| Instagram | `com.instagram.android` | Google Play | Test account |
-| X | `com.twitter.android` | Google Play | Test account |
+| Target | Package | Official source | Authentic when | Sign-in |
+| --- | --- | --- | --- | --- |
+| Chrome | `com.android.chrome` | Google Play emulator image | System app signed by Google certificate `3257d599…` | No |
+| YouTube | `com.google.android.youtube` | Google Play emulator image | System app signed by Google certificate `3257d599…` | No |
+| Firefox | `org.mozilla.firefox` | Mozilla release archive | Signed by Mozilla certificate `a78b62a5…` | No |
+| Instagram | `com.instagram.android` | Google Play | Installed and started by the system Google Play | Test account |
+| X | `com.twitter.android` | Google Play | Installed and started by the system Google Play | Test account |
 
-`install-target` installs a base APK and its splits only after these checks:
+A valid signature alone does not make an app authentic: anyone can sign an APK
+with the same package name. `model.mjs` pins the full certificates. A target
+that fails its rule is never `READY`, and `observe` does not open it.
+
+Instagram and X do not publish a signing certificate, so the tool does not pin
+one. It accepts them only from the install record in `dumpsys package`:
+
+- `installerPackageName` is `com.android.vending` (Google Play);
+- `initiatingPackageName`, the package that started the install, is also
+  `com.android.vending`;
+- that `com.android.vending` package is in the system image.
+
+`adb install -i com.android.vending` sets only the installer. Android records
+the shell, `com.android.shell`, as the initiator, so the app stays `BLOCKED`.
+An app that uses the Google Play package name on an image without Google Play
+is not in the system image.
+
+Limits of this check:
+
+- Android 13 and earlier do not print `initiatingPackageName`. There Instagram
+  and X stay `BLOCKED`. Use the API 36 Play Store image.
+- The check trusts Android's install record and the system Google Play. Root
+  access can change the record. Use the Play Store image, which has no
+  `adb root`, and do not root an owned test device.
+- The record proves that Google Play installed the current version. It does
+  not prove which Play release or account supplied it.
+
+`install-target` installs only an official APK of a target with a pinned
+signer, at present Firefox. It installs a base APK and its splits only after
+these checks:
 
 - every file has a valid `apksigner` signature;
 - all files have one package, version and signer set;
+- the pinned official signer signed the files;
 - the device does not already have that app.
 
 It never replaces or downgrades an installed app. It records the source, file
-hashes, version and signer certificate. Do not use APK mirror sites.
+hashes, version and signer certificate. Do not use APK mirror sites. Install
+Instagram and X from Google Play only.
 
 Firefox 157 for ARM64. Mozilla publishes the Firefox signer in
 <https://accounts.firefox.com/.well-known/assetlinks.json>. Put the download in
@@ -170,8 +201,7 @@ URL=https://archive.mozilla.org/pub/fenix/releases/157.0/android/fenix-157.0-and
 mkdir -p .agents/artifacts/real-app-qa/targets/firefox-157.0
 curl -fL --proto '=https' -o .agents/artifacts/real-app-qa/targets/firefox-157.0/fenix.apk "$URL"
 $QA install-target --build pr77a --serial emulator-5554 \
-  --apk .agents/artifacts/real-app-qa/targets/firefox-157.0/fenix.apk --source "$URL" \
-  --expect-signer a78b62a5165b4494b2fead9e76a280d22d937fee6251aece599446b2ea319b04
+  --apk .agents/artifacts/real-app-qa/targets/firefox-157.0/fenix.apk --source "$URL"
 ```
 
 Instagram and X need the Play Store on the emulator, a test Google account and
@@ -208,9 +238,10 @@ $QA inventory --build pr77a --serial emulator-5554 [--signed-in instagram --sign
 ```
 
 This records the device model, Android version, API and build fingerprint. It
-also records the QA install state and the version, installer and signer
-certificate of each target. It pulls each target APK to read its signer and
-deletes the copy afterwards. Then it lists every PR journey as `READY` or
+also records the QA install state and, for each target, the version, installer,
+install initiator and signer certificate. It pulls each target APK to read its
+signer and deletes the copy afterwards, and checks each target against its
+authenticity rule in section 3. Then it lists every PR journey as `READY` or
 `BLOCKED`, with reasons.
 
 ## 6. Observe without disturbing accessibility
@@ -229,15 +260,24 @@ Before it captures anything, `observe` checks these points:
 
 - the installed QA APK is this build;
 - the QA service is enabled;
+- with `--app`, the installed target APK is authentic now. It pulls the APK
+  again and does not trust an earlier `inventory`;
 - the service is bound again, then waits `--settle` seconds (default 3).
 
 With `--open-url` and `--app`, it opens the URL in that app with `am start -W`.
-Then it samples each `--interval` second (default 1) for `--seconds`:
+It samples each `--interval` second (default 1) for `--seconds` (default 10)
+after `am start -W` returns, or after the first sample without `--open-url`.
+It takes the last sample at that end, so a slow launch does not shorten the
+observation. Times in the timeline count from the first sample. Each sample
+records:
 
 - whether a QA-owned accessibility overlay is on screen;
 - the foreground app;
 - whether the service is still bound;
 - optional `--audio-package` media session states.
+
+Each time is a decimal number of seconds from 0 to 3600. `--interval` must be
+above 0. `--seconds 0` takes one sample, for a capture.
 
 It takes screenshots at the start, at each overlay or foreground change, and at
 the end. It also saves a logcat slice and the crash buffer.
@@ -246,9 +286,16 @@ the end. It also saves a logcat slice and the crash buffer.
 
 - `overlay`: the overlay shows at the end;
 - `no-overlay`: the overlay never shows. This is allowed only after an
-  `overlay` PASS in the same app for this build and device. A service that
-  never reads the app would otherwise pass;
-- `cleared`: the overlay shows first and is gone at the end.
+  `overlay` PASS in the same app on the same device (every recorded device
+  field, such as serial, AVD and build fingerprint), with the same QA build
+  and the same target APK. A service that
+  never reads the app would otherwise pass. Other AVDs can reuse a serial such
+  as `emulator-5554`;
+- `cleared`: the QA overlay shows over the target before the tool opens the
+  URL, and is gone at the end. A correct dismissal can finish before
+  `am start -W` returns, so the first sample comes before the URL opens. If
+  that sample does not show the bound overlay with the target in front,
+  `observe` stops with `BLOCKED` and does not open the URL.
 
 The result is `INVALID` in these cases:
 
@@ -270,11 +317,11 @@ the disposable QA storage. Run the lock journey last.
 | --- | --- | --- |
 | `pr77-firefox-address-bar` (#67) | Sites on, add `example.com`. Run `observe --open-url https://example.com --app firefox --expect overlay`, then `--open-url https://example.org --expect no-overlay`. Open Sites and capture Firefox readiness with `observe --seconds 0`. | PASS, PASS, and Firefox `READY` in the capture. |
 | `pr78-site-stats` (#72) | Capture Statistics. Make one Firefox and one Chrome boundary with `observe --expect overlay`. Leave each with its Go home button. Refresh Statistics and capture. | Site count rises by one for each boundary. |
-| `pr78-domain-error` (#68) | Sites: submit `localhost` as a custom domain and capture. | "Local and IP addresses are not supported." No `java.lang` or `ZenGuard.addBlockedDomain` text. |
-| `pr76-usage-on-resume` (#69) | Add a 1m daily Clock rule and keep App limits selected. Start Clock with `am start -n com.google.android.deskclock/com.android.deskclock.DeskClock`, then `observe --seconds 75`. When Home shows, bring the QA app to the front and capture. | Clock is sent Home after about 60 s. The list shows 1 of 1m and SPENT with no tab switch. |
+| `pr78-domain-error` (#68) | Sites: submit `localhost` as a custom domain and capture. Then submit `127.0.0.1` and capture. | `localhost`: "Enter a complete domain like example.com." The dot check runs before the local address check. `127.0.0.1`: "Local and IP addresses are not supported." No `java.lang` or `ZenGuard.addBlockedDomain` text in either. |
+| `pr76-usage-on-resume` (#69) | Add a 5m daily Clock rule, the shortest daily option, and keep App limits selected. Start Clock with `am start -n com.google.android.deskclock/com.android.deskclock.DeskClock`, then `observe --seconds 320`. When Home shows, bring the QA app to the front and capture. | Clock is sent Home after about 300 s, before the observation ends. The list shows "5 of 5 minutes today" and SPENT with no tab switch. |
 | `pr76-editor-error` (#73) | Add a 5m daily Clock rule. Lock settings. Change Clock to Visit and save, then Cancel. Add another launchable app and choose Timed visit. Capture each state. | The refusal shows for Clock. The new editor shows no earlier error and no Manage lock. Saving the new rule works. |
 | `pr77-reels-deadline` (#71) | Instagram signed in. Observe setup, set a 30s pause and a 1m Reels window, start protection. Open a shared Reel from a DM and swipe to get the pause. Run `observe --seconds 110`. Tap Continue when it unlocks, then touch nothing. | The timeline shows the overlay go at Continue and return 60 to 62 s later. |
-| `pr77-x-search-under-break` (#70) | X signed in. Set Home breaks to 1m and view Home until the break shows. Run `observe --open-url 'twitter://search?query=nasa' --app x --expect cleared`. Then open Home again and capture with `observe`. | PASS: the break closes over Search. Home stays blocked during the rest. |
+| `pr77-x-search-under-break` (#70) | X signed in. Set Home breaks to 1m and view Home until the break shows. While it shows, run `observe --open-url 'twitter://search?query=nasa' --app x --expect cleared`. Then open Home again and capture with `observe`. | PASS: the break shows over X before Search opens and closes over Search. Home stays blocked during the rest. |
 | `pr78-instagram-stats` (#72) | Instagram signed in. Capture Statistics. Make one Reels, Explore and Home boundary. Refresh and capture. | Each Instagram category rises by one. |
 | `pr79-reels-close-audio` (#74) | Instagram signed in. Play and pause a YouTube video. Open a Reel until the blocker shows. Run `observe --audio-package com.google.android.youtube --seconds 20` and tap Leave. Repeat with Continue, and once with YouTube still playing. | YouTube never returns to `PLAYING` after the blocker closes. |
 
@@ -284,7 +331,8 @@ Device evidence goes to `.agents/artifacts/real-app-qa/runs/<id>-<serial>/`.
 This directory is not in Git.
 
 - `evidence.jsonl`: one record per command, each with device identity, QA
-  commit, version and APK hash;
+  commit, version and APK hash. An `observe` record with `--app` also has the
+  target APK that it verified;
 - `<time>-<label>-NN-<phase>.png`: screenshots;
 - `<time>-<label>.timeline.json`: samples;
 - `<time>-<label>.logcat.txt`: Zen Mode trace, React Native and crash logs.

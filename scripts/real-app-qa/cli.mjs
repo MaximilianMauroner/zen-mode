@@ -238,20 +238,20 @@ function evidenceLog(build, device) {
   const dir = join(artifacts, 'runs', `${build.identity.id}-${device.serial.replace(/[^\w.-]/g, '_')}`);
   mkdirSync(dir, { recursive: true });
   const file = join(dir, 'evidence.jsonl');
+  // The device and QA build that every record is evidence for.
+  const subject = {
+    device: device.identity,
+    build: { id: build.identity.id, package: build.identity.package, source: build.record.source.head,
+      versionName: build.record.apk.versionName, apkSha256: build.record.apk.sha256 },
+  };
   return {
     dir,
+    subject,
     records: () => existsSync(file)
       ? readFileSync(file, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line))
       : [],
     write(command, details) {
-      appendFileSync(file, `${JSON.stringify({
-        at: new Date().toISOString(),
-        command,
-        device: device.identity,
-        build: { id: build.identity.id, package: build.identity.package, source: build.record.source.head,
-          versionName: build.record.apk.versionName, apkSha256: build.record.apk.sha256 },
-        ...details,
-      })}\n`);
+      appendFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), command, ...subject, ...details })}\n`);
     },
   };
 }
@@ -280,6 +280,16 @@ function installedSigners(device, path) {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** Install facts and signers of a target, read from the installed APK now. */
+function targetStatus(device, key) {
+  const packageName = model.TARGETS[key].package;
+  const info = installedPackage(device, packageName);
+  if (!info) return { package: packageName, installed: false };
+  // An app that only uses the name of the package that started the install is not a system app.
+  const initiatorSystem = Boolean(info.initiator && installedPackage(device, info.initiator)?.system);
+  return { ...info, initiatorSystem, ...installedSigners(device, info.basePath) };
 }
 
 function accessStatus(device, identity) {
@@ -331,7 +341,7 @@ function installTarget(options) {
   requireDisposable(device, options['allow-physical']);
   const paths = options.apk.map((file) => resolve(file));
   const files = paths.map(apkFacts);
-  const target = model.checkTargetApks(files, options['expect-signer']);
+  const target = model.checkTargetApks(files);
   const details = { source: options.source, target, files: files.map(({ file, sha256, split }) => ({ file, sha256, split })) };
   const existing = installedPackage(device, target.package);
   if (existing && existing.versionCode !== target.versionCode) {
@@ -357,10 +367,7 @@ function inventory(options) {
     if (!model.TARGETS[key]?.signIn) throw new Error(`--signed-in accepts ${Object.keys(model.TARGETS).filter((name) => model.TARGETS[name].signIn).join(', ')}`);
   }
   const qa = qaStatus(device, build);
-  const targets = Object.fromEntries(Object.entries(model.TARGETS).map(([key, target]) => {
-    const info = installedPackage(device, target.package);
-    return [key, info ? { ...info, ...installedSigners(device, info.basePath) } : { package: target.package, installed: false }];
-  }));
+  const targets = Object.fromEntries(Object.keys(model.TARGETS).map((key) => [key, targetStatus(device, key)]));
   const journeys = model.JOURNEYS.map((journey) => model.journeyReadiness(journey, { qa, targets, signedIn }));
   evidenceLog(build, device).write('inventory', { qa, targets, signedIn, journeys });
 
@@ -375,6 +382,7 @@ function inventory(options) {
     version: target.installed ? `${target.versionName} (${target.versionCode})` : 'not installed',
     installer: target.installer ?? (target.system ? 'system image' : ''),
     signer: target.signers?.join(', ') ?? target.signatureError ?? '',
+    authentic: model.targetProblem(key, target) ?? 'yes',
   }])));
   console.table(Object.fromEntries(journeys.map((journey) => [journey.id, {
     pr: `#${journey.pr} (issue #${journey.issue})`, status: journey.status, reasons: journey.reasons.join('; '),
@@ -411,10 +419,7 @@ async function observe(options) {
   const { identity } = build;
   const label = options.label ?? '';
   if (!/^[a-z0-9][a-z0-9-]{0,60}$/.test(label)) throw new Error('Pass --label with lowercase letters, digits and dashes');
-  const seconds = Number(options.seconds ?? 10);
-  const interval = Number(options.interval ?? 1);
-  const settle = Number(options.settle ?? 3);
-  if (![seconds, interval, settle].every((value) => value >= 0) || interval <= 0) throw new Error('Invalid timing');
+  const { seconds, interval, settle } = model.observeTiming(options);
   const app = options['open-url'] ? model.TARGETS[options.app] : null;
   if (options['open-url'] && !app) throw new Error(`--open-url needs --app ${Object.keys(model.TARGETS).join('|')}`);
   // Only an observation that opens the target itself is judged; a manual one is OBSERVED.
@@ -429,11 +434,17 @@ async function observe(options) {
   }
   if (!qa.access.enabled) throw new Error('BLOCKED: QA service is not enabled. Run access enable.');
   const log = evidenceLog(build, device);
+  let target = null;
   if (app) {
     requireDisposable(device, options['allow-physical']);
-    if (!installedPackage(device, app.package)) throw new Error(`BLOCKED: ${options.app} is not installed`);
-    if (options.expect === 'no-overlay' && !model.hasPositiveControl(log.records(), options.app)) {
-      throw new Error(`BLOCKED: first record a PASS with --expect overlay in ${options.app} for this build and device`);
+    // Verify the APK installed now; an earlier inventory can describe another install.
+    target = targetStatus(device, options.app);
+    const problem = model.targetProblem(options.app, target);
+    if (problem) throw new Error(`BLOCKED: ${options.app} ${problem}`);
+    if (options.expect === 'no-overlay' &&
+      !model.hasPositiveControl(log.records(), { app: options.app, target, ...log.subject })) {
+      throw new Error(`BLOCKED: first record a PASS with --expect overlay in ${options.app} ` +
+        'for this build, device and app version');
     }
   }
 
@@ -449,30 +460,31 @@ async function observe(options) {
     writeFileSync(join(log.dir, file), device.raw(['exec-out', 'screencap', '-p'], { encoding: 'buffer' }).stdout);
     screenshots.push(file);
   };
-  const logStart = device.shell(`date ${quote('+%m-%d %H:%M:%S.000')}`).trim();
-  if (app) {
-    const launch = device.shell(`am start -W -a android.intent.action.VIEW -d ${quote(options['open-url'])} -p ${app.package}`);
-    if (/^Error:/m.test(launch)) throw new Error(`BLOCKED: ${options.app} did not open the URL\n${launch}`);
-  }
-
-  const started = Date.now();
-  const samples = [];
-  screenshot('start');
-  do {
+  let previous = null;
+  const sample = (ms) => {
     const windows = model.parseWindowRecords(device.shell('dumpsys', 'window', 'windows'));
-    const sample = { ms: Date.now() - started, overlay: model.overlayShown(windows, identity.package),
+    const current = { ms, overlay: model.overlayShown(windows, identity.package),
       foreground: model.foregroundPackage(windows),
       bound: model.serviceBound(device.shell('dumpsys', 'accessibility'), identity) };
     if (options['audio-package']) {
-      sample.audio = model.mediaStates(device.shell('dumpsys', 'media_session'), options['audio-package']);
+      current.audio = model.mediaStates(device.shell('dumpsys', 'media_session'), options['audio-package']);
     }
-    const previous = samples.at(-1);
-    samples.push(sample);
-    if (previous && (previous.overlay !== sample.overlay || previous.foreground !== sample.foreground)) {
-      screenshot(`${sample.ms}ms-${sample.overlay ? 'overlay' : 'no-overlay'}`);
+    if (!previous) screenshot('start');
+    else if (previous.overlay !== current.overlay || previous.foreground !== current.foreground) {
+      screenshot(`${ms}ms-${current.overlay ? 'overlay' : 'no-overlay'}`);
     }
-    await sleep(interval * 1000);
-  } while (Date.now() - started < seconds * 1000);
+    previous = current;
+    return current;
+  };
+  const open = app ? () => {
+    const launch = device.shell(`am start -W -a android.intent.action.VIEW -d ${quote(options['open-url'])} -p ${app.package}`);
+    if (/^Error:/m.test(launch)) throw new Error(`BLOCKED: ${options.app} did not open the URL\n${launch}`);
+  } : null;
+
+  const logStart = device.shell(`date ${quote('+%m-%d %H:%M:%S.000')}`).trim();
+  const samples = await model.takeSamples({
+    seconds, interval, expect: options.expect, foreground: app?.package, sample, open, sleep,
+  });
   screenshot('end');
 
   const logcat = device.adb('logcat', '-d', '-v', 'threadtime', '-T', logStart,
@@ -486,7 +498,7 @@ async function observe(options) {
   const result = model.observationResult(samples, { expect: options.expect, foreground: app?.package, crashed });
   log.write('observe', {
     label, result, expect: options.expect ?? null, openUrl: options['open-url'] ?? null, app: options.app ?? null,
-    audioPackage: options['audio-package'] ?? null, boundThroughout: bound, targetInFront, crashed,
+    target, audioPackage: options['audio-package'] ?? null, boundThroughout: bound, targetInFront, crashed,
     firstOverlayMs: samples.find((sample) => sample.overlay)?.ms ?? null, screenshots,
     timeline: `${name}.timeline.json`, logcat: `${name}.logcat.txt`,
   });
@@ -517,7 +529,6 @@ try {
       'allow-physical': { type: 'boolean' },
       apk: { type: 'string', multiple: true },
       source: { type: 'string' },
-      'expect-signer': { type: 'string' },
       'signed-in': { type: 'string', multiple: true },
       label: { type: 'string' },
       seconds: { type: 'string' },

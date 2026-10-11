@@ -57,6 +57,7 @@
     "test:native": "node scripts/run-native-tests.mjs",
     "test:android-fabric-startup": "node scripts/android-fabric-cold-start-regression.mjs",
     "test:android-settings-safety": "node scripts/android-settings-escape-integration.mjs",
+    "qa:real-app": "node scripts/real-app-qa/cli.mjs",
     "release:internal": "node scripts/nightly-release.mjs run",
     "release:status": "node scripts/nightly-release.mjs status",
     "test:nightly": "node --test tests/release-environment.test.mjs tests/nightly-finalization.test.mjs tests/nightly-version.test.mjs tests/upload-play-internal.test.mjs && python3 tests/nightly-ledger.test.py"

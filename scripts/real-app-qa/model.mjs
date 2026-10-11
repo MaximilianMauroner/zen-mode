@@ -231,7 +231,8 @@ export function observeTiming({ seconds = '10', interval = '1', settle = '3' }) 
  *
  * For `cleared`, the first sample comes before the target opens, because a correct
  * dismissal can finish before `am start -W` returns. Without the bound QA overlay
- * over the target at that moment, the target does not open: BLOCKED. The later
+ * over the target at that moment, the target does not open: BLOCKED. The work of
+ * that sample takes time, so `open()` in cli.mjs checks once more. The later
  * times of `cleared` include the launch.
  */
 export async function takeSamples({ seconds, interval, expect, foreground, sample, open, sleep, now = Date.now }) {
@@ -264,11 +265,13 @@ export async function takeSamples({ seconds, interval, expect, foreground, sampl
  * sample must show that app in front, so a failed intent or chooser cannot pass.
  * Without an expectation the operator judges the evidence: OBSERVED.
  *
- * `overlay`: the QA overlay shows at the end. `cleared`: it shows before the
- * target opens and is gone at the end. `no-overlay`: an overlay in any sample
- * is FAIL. Its absence is OBSERVED, never PASS. The tool cannot read the rules
- * that are active now, so an absent overlay can also mean that the rule was
- * cleared or turned off, and an earlier overlay can come from another rule.
+ * `overlay`: the QA overlay shows at the end: PASS. `no-overlay`: an overlay in
+ * any sample is FAIL. `cleared`: no overlay before the target opens, or an overlay
+ * at the end, is FAIL. An absent overlay is OBSERVED, never PASS. The tool cannot
+ * read the rules that are active now, so an absent overlay can also mean that the
+ * rule was cleared, turned off or ended, and an earlier overlay can come from
+ * another rule. The overlay before the target opens is a sample, not proof that
+ * the rule was active at the launch: a break that ends then looks like a dismissal.
  */
 export function observationResult(samples, { expect, foreground, crashed }) {
   if (!samples.length) throw new Error('No samples were recorded');
@@ -277,12 +280,9 @@ export function observationResult(samples, { expect, foreground, crashed }) {
   if (!expect) return 'OBSERVED';
   if (expect === 'no-overlay') return samples.some((sample) => sample.overlay) ? 'FAIL' : 'OBSERVED';
   const last = samples.at(-1).overlay;
-  const met = {
-    overlay: last,
-    cleared: Boolean(samples[0].beforeOpen && samples[0].overlay) && !last,
-  }[expect];
-  if (met === undefined) throw new Error(`--expect must be ${EXPECTATIONS.join(', ')}, got ${expect}`);
-  return met ? 'PASS' : 'FAIL';
+  if (expect === 'overlay') return last ? 'PASS' : 'FAIL';
+  if (expect === 'cleared') return samples[0].beforeOpen && samples[0].overlay && !last ? 'OBSERVED' : 'FAIL';
+  throw new Error(`--expect must be ${EXPECTATIONS.join(', ')}, got ${expect}`);
 }
 
 /**

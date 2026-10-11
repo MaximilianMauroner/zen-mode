@@ -252,7 +252,7 @@ test('observations pass only with the bound service and the opened target in fro
   assert.equal(judge(samples(false, false), 'no-overlay'), 'OBSERVED', 'the tool cannot tell an allow from a missing rule');
   assert.equal(judge(samples(false, true, false), 'no-overlay'), 'FAIL');
   const beforeOpen = (list) => list.map((sample, index) => index ? sample : { ...sample, beforeOpen: true });
-  assert.equal(judge(beforeOpen(samples(true, true, false)), 'cleared'), 'PASS');
+  assert.equal(judge(beforeOpen(samples(true, true, false)), 'cleared'), 'OBSERVED', 'a dismissal and a rule that ended look the same');
   assert.equal(judge(samples(true, true, false), 'cleared'), 'FAIL', 'an overlay seen only after opening is not cleared');
   assert.equal(judge(beforeOpen(samples(false, false)), 'cleared'), 'FAIL');
   assert.throws(() => judge(samples(true), 'block'), /--expect/);
@@ -268,7 +268,7 @@ test('observations pass only with the bound service and the opened target in fro
   assert.equal(observationResult(manual, { crashed: false }), 'OBSERVED');
 });
 
-test('cleared keeps the overlay seen before the target opens, so an immediate dismissal passes', async () => {
+test('cleared keeps the overlay seen before the target opens, so an immediate dismissal is observed', async () => {
   const x = 'com.twitter.android';
   // A fake device whose overlay closes as soon as the target opens, before any later sample.
   const device = ({ overlay = true, foreground = x } = {}) => {
@@ -292,7 +292,7 @@ test('cleared keeps the overlay seen before the target opens, so an immediate di
   assert.deepEqual(dismissed.calls, ['sample 0', 'open', 'sample 0', 'sleep 1000', 'sample 1000', 'sleep 1000', 'sample 2000']);
   assert.deepEqual(timeline.map((sample) => sample.overlay), [true, false, false, false]);
   const judge = (list) => observationResult(list, { expect: 'cleared', foreground: x, crashed: false });
-  assert.equal(judge(timeline), 'PASS');
+  assert.equal(judge(timeline), 'OBSERVED');
   assert.equal(judge(timeline.slice(1)), 'FAIL', 'samples after opening alone cannot prove the overlay was there');
 
   for (const before of [{ overlay: false }, { foreground: 'com.google.android.apps.nexuslauncher' }]) {

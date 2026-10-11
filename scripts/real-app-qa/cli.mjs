@@ -471,6 +471,19 @@ async function observe(options) {
     return current;
   };
   const open = app ? () => {
+    if (options.expect === 'cleared') {
+      // The overlay can close during the screenshot and dumps of the first sample. Check again,
+      // binding first and windows last, with no other work before the launch. This narrows the
+      // gap but does not close it: the rule can still end during the launch.
+      const bound = model.serviceBound(device.shell('dumpsys', 'accessibility'), identity);
+      const windows = model.parseWindowRecords(device.shell('dumpsys', 'window', 'windows'));
+      const overlay = model.overlayShown(windows, identity.package);
+      const foreground = model.foregroundPackage(windows);
+      if (!bound || !overlay || foreground !== app.package) {
+        throw new Error(`BLOCKED: right before the launch the bound QA overlay was not over ${app.package} ` +
+          `(bound ${bound}, overlay ${overlay}, foreground ${foreground}). The URL did not open.`);
+      }
+    }
     const launch = device.shell(`am start -W -a android.intent.action.VIEW -d ${quote(options['open-url'])} -p ${app.package}`);
     if (/^Error:/m.test(launch)) throw new Error(`BLOCKED: ${options.app} did not open the URL\n${launch}`);
   } : null;
@@ -504,6 +517,8 @@ async function observe(options) {
     crashed && 'QA app crashed',
     result === 'OBSERVED' && options.expect === 'no-overlay' &&
       'the tool cannot read the active rules, so accept or reject the absent overlay by hand',
+    result === 'OBSERVED' && options.expect === 'cleared' &&
+      'the tool cannot tell a dismissal from a rule that ended, so accept or reject the cleared overlay by hand',
   ].filter(Boolean);
   console.log(`${result} ${label}: ${overlayChanges.join(' -> ')}${notes.map((note) => `; ${note}`).join('')}\n${log.dir}`);
   if (['FAIL', 'INVALID'].includes(result)) process.exitCode = 1;
@@ -512,8 +527,8 @@ async function observe(options) {
 // --- entry -----------------------------------------------------------------
 
 const usage = 'Usage: node scripts/real-app-qa/cli.mjs <build|install|install-target|inventory|access|observe> [options]\n' +
-  'observe --expect no-overlay never passes: an overlay is FAIL, and no overlay is OBSERVED for the operator,\n' +
-  'because the tool cannot read which rules are active.\n' +
+  'observe --expect no-overlay and --expect cleared never pass. The tool cannot read which rules are active,\n' +
+  'so an absent overlay is OBSERVED for the operator. An overlay where none is expected is FAIL.\n' +
   'See docs/real-app-testing.md.';
 let parsed;
 try {

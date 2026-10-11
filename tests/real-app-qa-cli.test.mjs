@@ -14,10 +14,14 @@ const firefoxSigner = 'a78b62a5165b4494b2fead9e76a280d22d937fee6251aece599446b2e
 
 // An emulator with the bound QA service and an official Firefox in front, in the formats
 // of the real tools. FAKE_OVERLAY=1 shows the QA overlay. FAKE_TAG marks the screenshot
-// and logcat bytes of one run.
+// and logcat bytes of one run. FAKE_CALLS gets each adb command. When FAKE_LOSE_AT
+// (screencap or launch) runs, FAKE_LOSE (overlay, foreground or binding) is lost.
 const adb = `#!/bin/sh
 [ "$1" = devices ] && { printf 'List of devices attached\\nemulator-5554\\tdevice\\n\\n'; exit 0; }
 shift 2
+echo "$*" >> "$FAKE_CALLS"
+lose() { [ "$FAKE_LOSE_AT" = "$1" ] && : > "$FAKE_LOST"; }
+lost() { [ "$FAKE_LOSE" = "$1" ] && [ -e "$FAKE_LOST" ]; }
 window() {
   printf '  Window #%s Window{%s u0 %s}:\\n    package=%s appop=NONE\\n' "$1" "$1" "$2" "$2"
   printf '    mAttrs={(0,0)(fillxfill) ty=%s fmt=TRANSLUCENT}\\n    isOnScreen=true\\n    isVisible=true\\n' "$3"
@@ -31,14 +35,17 @@ case "$*" in
   'shell dumpsys package '*) printf '  Package [%s] (1a2b):\\n    versionCode=5\\n    versionName=1.0\\n    flags=[ HAS_CODE ]\\n' "$4" ;;
   "shell sha256sum /data/app/$QA_PACKAGE/base.apk") echo "$QA_SHA256  $3" ;;
   'shell settings get secure enabled_accessibility_services') echo "$QA_SERVICE" ;;
-  'shell dumpsys accessibility') echo "     Bound services:{Service[label=$QA_SERVICE_LABEL, feedbackType[FEEDBACK_GENERIC]]}" ;;
+  'shell dumpsys accessibility')
+    if lost binding; then echo '     Bound services:{}'
+    else echo "     Bound services:{Service[label=$QA_SERVICE_LABEL, feedbackType[FEEDBACK_GENERIC]]}"; fi ;;
   'shell dumpsys window windows')
-    [ "$FAKE_OVERLAY" = 1 ] && window 0 "$QA_PACKAGE" ACCESSIBILITY_OVERLAY
-    window 1 org.mozilla.firefox BASE_APPLICATION ;;
-  'shell am start '*) echo 'Status: ok' ;;
+    [ "$FAKE_OVERLAY" = 1 ] && ! lost overlay && window 0 "$QA_PACKAGE" ACCESSIBILITY_OVERLAY
+    if lost foreground; then window 1 com.google.android.apps.nexuslauncher BASE_APPLICATION
+    else window 1 org.mozilla.firefox BASE_APPLICATION; fi ;;
+  'shell am start '*) lose launch; echo 'Status: ok' ;;
   'shell date '*) echo '10-11 14:00:00.000' ;;
   'pull '*) printf 'firefox apk' > "$3" ;;
-  'exec-out screencap -p') printf 'screenshot %s' "$FAKE_TAG" ;;
+  'exec-out screencap -p') lose screencap; printf 'screenshot %s' "$FAKE_TAG" ;;
   'logcat -b crash '*) ;;
   'logcat '*) echo "logcat $FAKE_TAG" ;;
   *) echo "unexpected adb $*" >&2; exit 1 ;;
@@ -80,15 +87,24 @@ function fixture() {
   }));
   const runs = join(checkout, '.agents/artifacts/real-app-qa/runs', `${qa.id}-emulator-5554`);
 
-  const observe = (args, { overlay = false, tag = 'run', now, uuid } = {}) => spawnSync(process.execPath, [
-    ...now ? ['--import', pathToFileURL(join(dir, 'clock.mjs')).href] : [],
-    cli, 'observe', '--build', qa.id, '--serial', 'emulator-5554', '--settle', '0', '--seconds', '0', ...args,
-  ], {
-    cwd: checkout, encoding: 'utf8',
-    env: { PATH: process.env.PATH, ANDROID_HOME: sdk, QA_PACKAGE: qa.package, QA_SHA256: sha256,
-      QA_SERVICE: qa.serviceComponent, QA_SERVICE_LABEL: qa.serviceLabel, FAKE_OVERLAY: overlay ? '1' : '0',
-      FAKE_TAG: tag, ...now && { FAKE_NOW: now }, ...uuid && { FAKE_UUID: uuid } },
-  });
+  const calls = join(dir, 'calls.txt');
+  const lost = join(dir, 'lost');
+  // Returns the process result and the adb commands of this run.
+  const observe = (args, { overlay = false, tag = 'run', now, uuid, lose, loseAt } = {}) => {
+    rmSync(calls, { force: true });
+    rmSync(lost, { force: true });
+    const run = spawnSync(process.execPath, [
+      ...now ? ['--import', pathToFileURL(join(dir, 'clock.mjs')).href] : [],
+      cli, 'observe', '--build', qa.id, '--serial', 'emulator-5554', '--settle', '0', '--seconds', '0', ...args,
+    ], {
+      cwd: checkout, encoding: 'utf8',
+      env: { PATH: process.env.PATH, ANDROID_HOME: sdk, QA_PACKAGE: qa.package, QA_SHA256: sha256,
+        QA_SERVICE: qa.serviceComponent, QA_SERVICE_LABEL: qa.serviceLabel, FAKE_OVERLAY: overlay ? '1' : '0',
+        FAKE_TAG: tag, FAKE_CALLS: calls, FAKE_LOST: lost, ...lose && { FAKE_LOSE: lose, FAKE_LOSE_AT: loseAt },
+        ...now && { FAKE_NOW: now }, ...uuid && { FAKE_UUID: uuid } },
+    });
+    return { ...run, calls: readFileSync(calls, 'utf8').split('\n').filter(Boolean) };
+  };
   const records = () => readFileSync(join(runs, 'evidence.jsonl'), 'utf8').split('\n').filter(Boolean)
     .map((line) => JSON.parse(line));
   const contents = () => Object.fromEntries(readdirSync(runs).map((file) => [file, readFileSync(join(runs, file), 'utf8')]));
@@ -132,6 +148,34 @@ test('without earlier records, an absent overlay is for the operator to judge', 
     assert.equal(run.status, 0, run.stderr);
     assert.match(run.stdout, /^OBSERVED allowed: 0ms no overlay \(org\.mozilla\.firefox\); .*absent overlay by hand/);
     assert.deepEqual(records().map(({ expect, result }) => [expect, result]), [['no-overlay', 'OBSERVED']]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('cleared opens the target only over a live overlay, and a cleared overlay never passes', () => {
+  const { dir, observe, records } = fixture();
+  const clear = (label, lose, loseAt) => observe(['--open-url', 'https://example.org', '--app', 'firefox',
+    '--expect', 'cleared', '--label', label], { overlay: true, lose, loseAt });
+  const lastCheck = ['shell dumpsys accessibility', 'shell dumpsys window windows'];
+  try {
+    // The first sample sees the overlay. It is lost during the start screenshot, before the launch.
+    for (const lose of ['overlay', 'foreground', 'binding']) {
+      const run = clear(`lost-${lose}`, lose, 'screencap');
+      assert.equal(run.status, 1, lose);
+      assert.match(run.stderr, /^BLOCKED: right before the launch the bound QA overlay was not over org\.mozilla\.firefox/, lose);
+      assert.ok(!run.calls.some((call) => call.startsWith('shell am start')), `${lose}: the URL does not open`);
+      assert.deepEqual(run.calls.slice(-lastCheck.length), lastCheck, `${lose}: binding first, windows last`);
+    }
+
+    // The overlay is lost at the launch, after the last check. A dismissal and a break that
+    // ended look the same, so the operator judges it.
+    const run = clear('lost-at-launch', 'overlay', 'launch');
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /^OBSERVED lost-at-launch: 0ms overlay \(org\.mozilla\.firefox\) -> \d+ms no overlay \(org\.mozilla\.firefox\); .*cleared overlay by hand/);
+    const launch = run.calls.findIndex((call) => call.startsWith('shell am start'));
+    assert.deepEqual(run.calls.slice(launch - 3, launch), ['exec-out screencap -p', ...lastCheck],
+      'no screenshot or media work between the last check and the launch');
+    assert.deepEqual(records().map(({ label, expect, result }) => [label, expect, result]),
+      [['lost-at-launch', 'cleared', 'OBSERVED']], 'a BLOCKED run writes no record');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

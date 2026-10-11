@@ -16,7 +16,8 @@ itself. All other observations are `OBSERVED` for the operator to judge.
 
 The tool cannot read which Zen Mode rules are active on the device. It can
 prove that an overlay showed, but not that an absent overlay is correct, so an
-absent overlay is never a `PASS`. See `--expect no-overlay` in section 6.
+absent overlay is never a `PASS`. See `--expect no-overlay` and
+`--expect cleared` in section 6.
 
 Use a disposable emulator or an owned test device. Do not use a personal
 phone. Commands that change device state refuse a physical device unless you
@@ -320,12 +321,30 @@ the end. It also saves a logcat slice and the crash buffer.
   visit. The operator accepts the absence only with evidence of the current
   rule, as the journey in section 7 shows;
 - `cleared`: the QA overlay shows over the target before the tool opens the
-  URL, and is gone at the end. A correct dismissal can finish before
-  `am start -W` returns, so the first sample comes before the URL opens. If
-  that sample does not show the bound overlay with the target in front,
-  `observe` stops with `BLOCKED` and does not open the URL. Times count from
-  this sample, so the later times include the launch. The observation still
-  lasts `--seconds` after `am start -W` returns.
+  URL. An overlay at the end is `FAIL`. When the overlay is gone at the end,
+  the result is `OBSERVED`, never `PASS`, and the output tells the operator to
+  judge it. A correct dismissal can finish before `am start -W` returns, so
+  the first sample comes before the URL opens. If that sample does not show
+  the bound overlay with the target in front, `observe` stops with `BLOCKED`
+  and does not open the URL. Times count from this sample, so the later times
+  include the launch. The observation still lasts `--seconds` after
+  `am start -W` returns.
+
+The screenshot and dumps of the first `cleared` sample take time, and the
+overlay can close during them. So, right before `am start`, `observe` reads the
+service binding and then the windows, with no other work after them. If the
+service is not bound, the overlay is gone or another app is in front, `observe`
+stops with `BLOCKED`, does not open the URL and writes no `evidence.jsonl`
+record. This last check is not in the timeline.
+
+The two checks before the launch are samples. They do not prove that the rule
+was still active when the target handled the URL: a break can end after the
+last check or during the launch, and that looks the same as a correct
+dismissal. The tool cannot read the deadline of the rule. Accept a `cleared`
+`OBSERVED` result by hand only with evidence that the same rule stayed active,
+as the X journey in section 7 shows. If the rule can have ended, or the
+evidence is unclear, do not accept the result. Run it again under a new break
+that you see start.
 
 The result is `INVALID` in these cases:
 
@@ -351,7 +370,7 @@ the disposable QA storage. Run the lock journey last.
 | `pr76-usage-on-resume` (#69) | Add a 5m daily Clock rule, the shortest daily option, and keep App limits selected. Start Clock with `am start -n com.google.android.deskclock/com.android.deskclock.DeskClock`, then `observe --seconds 320`. When Home shows, bring the QA app to the front and capture. | Clock is sent Home after about 300 s, before the observation ends. The list shows "5 of 5 minutes today" and SPENT with no tab switch. |
 | `pr76-editor-error` (#73) | Add a 5m daily Clock rule. Lock settings. Change Clock to Visit and save, then Cancel. Add another launchable app and choose Timed visit. Capture each state. | The refusal shows for Clock. The new editor shows no earlier error and no Manage lock. Saving the new rule works. |
 | `pr77-reels-deadline` (#71) | Instagram signed in. Observe setup, set a 30s pause and a 1m Reels window, start protection. Open a shared Reel from a DM and swipe to get the pause. Run `observe --seconds 110`. Tap Continue when it unlocks, then touch nothing. | The timeline shows the overlay go at Continue and return 60 to 62 s later. |
-| `pr77-x-search-under-break` (#70) | X signed in. Set Home breaks to 1m and view Home until the break shows. While it shows, run `observe --open-url 'twitter://search?query=nasa' --app x --expect cleared`. Then open Home again and capture with `observe`. | PASS: the break shows over X before Search opens and closes over Search. Home stays blocked during the rest. |
+| `pr77-x-search-under-break` (#70) | X signed in. Set Home breaks to 1m and view Home until the break shows. While it shows, run `observe --open-url 'twitter://search?query=nasa' --app x --expect cleared`. Then, before the break ends, open Home again and capture with `observe`. | `OBSERVED`: the break shows over X before Search opens and is gone over Search. The operator accepts it by hand only when Search stays clear and the Home capture shows Home still blocked by the same break. If the break can have ended before Search opened, or the evidence is unclear, the result is not accepted: run it again under a new break. `BLOCKED` when the break is not over X right before the launch. An overlay over Search at the end is `FAIL`. |
 | `pr78-instagram-stats` (#72) | Instagram signed in. Capture Statistics. Make one Reels, Explore and Home boundary. Refresh and capture. | Each Instagram category rises by one. |
 | `pr79-reels-close-audio` (#74) | Instagram signed in. Play and pause a YouTube video. Open a Reel until the blocker shows. Run `observe --audio-package com.google.android.youtube --seconds 20` and tap Leave. Repeat with Continue, and once with YouTube still playing. | YouTube never returns to `PLAYING` after the blocker closes. |
 
@@ -379,12 +398,14 @@ A report gives these items for each journey:
 - device fingerprint;
 - target app version and signer;
 - `PASS`, `FAIL`, `BLOCKED` or not run, with the evidence files. For an
-  `OBSERVED` result that the operator accepts, such as an absent overlay, the
-  report says that it is a manual acceptance and names the evidence for the
-  current rule.
+  `OBSERVED` result that the operator accepts, such as an absent or cleared
+  overlay, the report says that it is a manual acceptance and names the
+  evidence for the current rule.
 
-A `BLOCKED` journey is not a pass. Screenshots must not show private messages
-or account details.
+Earlier versions of the tool recorded `PASS` for `--expect cleared`. Such a
+record is not a pass: read it as `OBSERVED`, and accept it only with the
+evidence that section 6 asks for. A `BLOCKED` journey is not a pass.
+Screenshots must not show private messages or account details.
 
 ## 9. Cleanup
 

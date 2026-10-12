@@ -154,7 +154,10 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
             {targetPresentation.showOpener ? (
               <SecondaryButton className="mt-5" title={isInstagram ? 'Open Instagram to check' : isX ? 'Open X to check' : 'Open YouTube to check'} disabled={disabled} onPress={() => run(async () => { if (isInstagram) await openInstagram(); else if (isX) await openX(); else await openYouTube(); })} />
             ) : null}
-            <ErrorNote message={error || readError} />
+            <View className="gap-2">
+              <ErrorNote message={readError} />
+              <ErrorNote message={error} />
+            </View>
           </ScrollView>
         </SafeAreaView>
         <WeakeningGateDialog gate={gate} embedded />

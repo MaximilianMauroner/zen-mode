@@ -76,6 +76,7 @@ class InstagramBlockerOverlayAudioTest {
         resetsInMs = 0L,
       ),
       debugInfo = null,
+      onAttached = {},
     )
     shadowOf(Looper.getMainLooper()).idle()
     assertTrue(overlay.isShowing)

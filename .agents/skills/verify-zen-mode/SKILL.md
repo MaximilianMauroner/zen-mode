@@ -19,6 +19,10 @@ With the Android SDK configured, `npm run android` installs the native build.
 Confirm the app opens before enabling its service in Android Accessibility.
 Do not use release/internal upload commands. Expo Go and web cannot enforce rules.
 
+For real YouTube, Instagram, X, Chrome or Firefox, follow
+[real-app testing](../../../docs/real-app-testing.md): QA build, explicit serial,
+authentic targets and observations without UI Automator.
+
 Run feature rows in order. Use a disposable app/profile and short rule durations.
 Observe setup's signal before asserting readiness. Unknown signals must not
 trigger enforcement. Record action, visible outcome and overlay/Home effect.

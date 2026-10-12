@@ -143,9 +143,13 @@ internal class InstagramGuardStateMachine(
     return true
   }
 
+  /** Time left in the Reels window granted by Continue: 0 once it has ended, null when none is open. */
+  fun reelsWindowRemainingMs(nowMs: Long): Long? =
+    reelsWindowUntil?.let { deadline -> if (deadline > nowMs) deadline - nowMs else 0L }
+
   fun debugState(nowMs: Long): InstagramGuardDebugState = InstagramGuardDebugState(
     homeElapsedMs = homeElapsedMs,
-    reelsWindowRemainingMs = reelsWindowUntil?.let { deadline -> if (deadline > nowMs) deadline - nowMs else 0L },
+    reelsWindowRemainingMs = reelsWindowRemainingMs(nowMs),
     dmProvenanceAgeMs = lastDmThreadClickAt?.let { elapsedMsSince(nowMs, it) },
     dmThreadActive = dmThreadActive,
     blockerReason = blocker?.reason,

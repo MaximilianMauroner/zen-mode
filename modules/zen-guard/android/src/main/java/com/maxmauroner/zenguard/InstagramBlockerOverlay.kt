@@ -33,11 +33,11 @@ import kotlin.math.roundToInt
 
 /** Real figures for the phase-two usage grid, collected by the service. */
 internal data class InstagramBlockerStats(
-  val homeUsedMinutes: Int,
+  val home: HomeFeedRuntimeState,
   val homeAllowanceMinutes: Int,
   val stoppedToday: Int,
   val continuedToday: Int,
-  val resetsInMs: Long,
+  val dailyCountsResetInMs: Long,
 )
 
 internal data class InstagramBlockerDebugInfo(
@@ -159,6 +159,7 @@ internal class InstagramBlockerOverlay(
   private val onLeave: () -> Unit,
   private val onOpenMessages: () -> Unit,
   private val onContinue: () -> Boolean,
+  private val readStats: () -> InstagramBlockerStats,
 ) {
   private val handler = Handler(Looper.getMainLooper())
   private val windowManager = service.getSystemService(WindowManager::class.java)
@@ -173,6 +174,7 @@ internal class InstagramBlockerOverlay(
   private var pauseDurationMs: Long = 15_000L
   private var reelsMinutes: Int = 5
   private var stats: InstagramBlockerStats? = null
+  private var blockReason: InstagramBlockReason? = null
   private var isPhaseTwo = false
   private var isUnlocked = false
 
@@ -184,6 +186,11 @@ internal class InstagramBlockerOverlay(
   private var eyebrowView: TextView? = null
   private var titleView: TextView? = null
   private var descriptionView: TextView? = null
+  private var stateView: TextView? = null
+  private var homeStat: StatCell? = null
+  private var dailyResetStat: StatCell? = null
+  private var stoppedStat: StatCell? = null
+  private var continuedStat: StatCell? = null
 
   // Triple-tap gesture state for debug-build diagnostics.
   private var debugTapCount = 0
@@ -200,11 +207,16 @@ internal class InstagramBlockerOverlay(
     }
   }
 
+  private val statsTick = object : Runnable {
+    override fun run() {
+      if (root == null) return
+      handler.postDelayed(this, updateStats())
+    }
+  }
+
   fun show(
     action: InstagramGuardAction.ShowBlocker,
-    homeMinutes: Int,
     reelsMinutes: Int,
-    stats: InstagramBlockerStats,
     debugInfo: InstagramBlockerDebugInfo?,
   ) {
     root?.let {
@@ -213,7 +225,7 @@ internal class InstagramBlockerOverlay(
     }
     continueAt = action.continueAvailableAt
     this.reelsMinutes = reelsMinutes
-    this.stats = stats
+    blockReason = action.reason
     val hasPause = action.continueAvailableAt != null
     action.continueAvailableAt?.let { target ->
       pauseDurationMs = (target - SystemClock.elapsedRealtime()).coerceAtLeast(1_000L)
@@ -231,8 +243,7 @@ internal class InstagramBlockerOverlay(
     val line2 = service.getColor(R.color.zen_line2)
     val accentLine = service.getColor(R.color.zen_accent_line)
 
-    // Root full-screen container. Plain solid background, no custom onDraw,
-    // so nothing repaints after the first layout.
+    // Plain solid background. Only countdown or minute-level stats changes repaint.
     val container = LinearLayout(service).apply {
       orientation = LinearLayout.VERTICAL
       setBackgroundColor(night)
@@ -283,12 +294,13 @@ internal class InstagramBlockerOverlay(
     // Right State Pill Badge
     val isPauseReason = action.reason == InstagramBlockReason.REELS_SWIPE ||
       action.reason == InstagramBlockReason.REELS_WINDOW_EXPIRED
-    val topState = styledText(topState(action, homeMinutes), 11f, if (isPauseReason) accent else muted, bold = true).apply {
+    val topState = styledText(topState(action), 11f, if (isPauseReason) accent else muted, bold = true).apply {
       letterSpacing = 0.08f
       gravity = Gravity.CENTER
       setPadding(dp(12), dp(5), dp(12), dp(5))
       background = roundedBackground(panel2, if (isPauseReason) accentLine else line2, dp(20).toFloat())
     }
+    stateView = topState
     top.addView(topState, wrapContent())
     container.addView(top, matchWrap())
 
@@ -339,7 +351,7 @@ internal class InstagramBlockerOverlay(
       ),
     )
 
-    val grid = buildStatsGrid(stats, copy, muted).apply {
+    val grid = buildStatsGrid(copy, muted).apply {
       alpha = if (isPhaseTwo) 1f else 0f
     }
     statsLayer = grid
@@ -458,12 +470,14 @@ internal class InstagramBlockerOverlay(
       PixelFormat.TRANSLUCENT,
     )
     root = container
+    val nextStatsUpdateMs = updateStats()
     try {
       windowManager.addView(container, params)
     } catch (_: RuntimeException) {
       hide()
       return
     }
+    handler.postDelayed(statsTick, nextStatsUpdateMs)
 
     if (hasPause) {
       // Halfway switch, one shot. Cancelled in hide() so an early exit
@@ -557,12 +571,19 @@ internal class InstagramBlockerOverlay(
     eyebrowView = null
     titleView = null
     descriptionView = null
+    stateView = null
+    homeStat = null
+    dailyResetStat = null
+    stoppedStat = null
+    continuedStat = null
     stats = null
+    blockReason = null
     continueAt = null
     isPhaseTwo = false
     isUnlocked = false
     handler.removeCallbacks(tick)
     handler.removeCallbacks(enterPhaseTwoRunnable)
+    handler.removeCallbacks(statsTick)
     existingRoot?.let {
       try {
         windowManager.removeView(it)
@@ -642,7 +663,6 @@ internal class InstagramBlockerOverlay(
   }
 
   private fun buildStatsGrid(
-    stats: InstagramBlockerStats,
     copy: Int,
     muted: Int,
   ): LinearLayout {
@@ -654,73 +674,110 @@ internal class InstagramBlockerOverlay(
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER
     }
-    topRow.addView(
-      statCell(
-        value = "${stats.homeUsedMinutes} / ${stats.homeAllowanceMinutes}m",
-        label = service.getString(R.string.zen_guard_stat_home_used),
-        copy = copy,
-        muted = muted,
-      ),
-      cellWeight(),
-    )
-    topRow.addView(
-      statCell(
-        value = formatResets(stats.resetsInMs),
-        label = service.getString(R.string.zen_guard_stat_resets),
-        copy = copy,
-        muted = muted,
-      ),
-      cellWeight(),
-    )
+    homeStat = statCell(copy, muted).also { topRow.addView(it.container, cellWeight()) }
+    dailyResetStat = statCell(copy, muted).also { topRow.addView(it.container, cellWeight()) }
     grid.addView(topRow, matchWrap())
 
     val bottomRow = LinearLayout(service).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER
     }
-    bottomRow.addView(
-      statCell(
-        value = stats.stoppedToday.toString(),
-        label = service.getString(R.string.zen_guard_stat_stopped),
-        copy = copy,
-        muted = muted,
-      ),
-      cellWeight(),
-    )
-    bottomRow.addView(
-      statCell(
-        value = stats.continuedToday.toString(),
-        label = service.getString(R.string.zen_guard_stat_continued),
-        copy = copy,
-        muted = muted,
-      ),
-      cellWeight(),
-    )
+    stoppedStat = statCell(copy, muted).also { bottomRow.addView(it.container, cellWeight()) }
+    continuedStat = statCell(copy, muted).also { bottomRow.addView(it.container, cellWeight()) }
     grid.addView(bottomRow, matchWrap(topMargin = dp(12)))
     return grid
   }
 
-  private fun statCell(value: String, label: String, copy: Int, muted: Int): LinearLayout {
+  private data class StatCell(val container: LinearLayout, val value: TextView, val label: TextView) {
+    fun update(value: String, label: String) {
+      if (this.value.text.toString() != value) this.value.text = value
+      if (this.label.text.toString() != label) this.label.text = label
+    }
+  }
+
+  private fun statCell(copy: Int, muted: Int): StatCell {
     val cell = LinearLayout(service).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER_HORIZONTAL
     }
-    val valueView = styledText(value, 16f, copy, bold = true).apply {
+    val valueView = styledText("", 16f, copy, bold = true).apply {
       gravity = Gravity.CENTER_HORIZONTAL
       textAlignment = View.TEXT_ALIGNMENT_CENTER
     }
     cell.addView(valueView, matchWrap())
-    val labelView = styledText(label, 11f, muted).apply {
+    val labelView = styledText("", 11f, muted).apply {
       gravity = Gravity.CENTER_HORIZONTAL
       textAlignment = View.TEXT_ALIGNMENT_CENTER
       setPadding(0, dp(2), 0, 0)
     }
     cell.addView(labelView, matchWrap())
-    return cell
+    return StatCell(cell, valueView, labelView)
   }
 
-  private fun formatResets(resetsInMs: Long): String {
-    val totalMinutes = (resetsInMs / 60_000L).coerceAtLeast(0L)
+  /** Refresh only at displayed minute boundaries, including Home expiry and daily rollover. */
+  private fun updateStats(): Long {
+    val current = readStats()
+    stats = current
+    val home = current.home
+    val nowMs = SystemClock.elapsedRealtime()
+    val homeRemainingMs = if (home.storageState == HomeFeedStorageState.AVAILABLE &&
+      home.usageState != HomeFeedUsageState.UNKNOWN && home.lockoutState == HomeFeedLockoutState.ACTIVE
+    ) {
+      home.blockedUntilElapsedMs?.let { (it - nowMs).coerceAtLeast(0L) }
+    } else null
+    if (blockReason == InstagramBlockReason.HOME_LIMIT) {
+      updateHomeAvailability(home, homeRemainingMs)
+    } else {
+      val homeUsedMinutes = (home.usedMs / 60_000L).toInt()
+      val usage = if (home.usageState == HomeFeedUsageState.UNKNOWN || home.storageState == HomeFeedStorageState.UNAVAILABLE) {
+        service.getString(R.string.zen_guard_time_unavailable)
+      } else {
+        "$homeUsedMinutes / ${current.homeAllowanceMinutes}m"
+      }
+      homeStat?.update(usage, service.getString(R.string.zen_guard_stat_home_used))
+    }
+    dailyResetStat?.update(formatDuration(current.dailyCountsResetInMs), service.getString(R.string.zen_guard_stat_resets))
+    stoppedStat?.update(current.stoppedToday.toString(), service.getString(R.string.zen_guard_stat_stopped))
+    continuedStat?.update(current.continuedToday.toString(), service.getString(R.string.zen_guard_stat_continued))
+    if (continueAt != null && isUnlocked) descriptionView?.text = pauseOverDetail()
+
+    // Ceiling-minute values change at these boundaries. Unknown Home state has no deadline.
+    return listOfNotNull(homeRemainingMs, current.dailyCountsResetInMs)
+      .filter { it > 0L }
+      .minOfOrNull { (it - 1L) % 60_000L + 1L } ?: 60_000L
+  }
+
+  private fun updateHomeAvailability(home: HomeFeedRuntimeState, remainingMs: Long?) {
+    val unavailable = home.storageState == HomeFeedStorageState.UNAVAILABLE ||
+      home.usageState == HomeFeedUsageState.UNKNOWN || home.lockoutState == HomeFeedLockoutState.UNKNOWN ||
+      (home.lockoutState == HomeFeedLockoutState.ACTIVE && remainingMs == null)
+    when {
+      unavailable -> {
+        homeStat?.update(
+          service.getString(R.string.zen_guard_time_unavailable),
+          service.getString(R.string.zen_guard_stat_home_availability),
+        )
+        stateView?.text = service.getString(R.string.zen_guard_state_closed)
+        descriptionView?.text = service.getString(R.string.zen_guard_instagram_home_unavailable_detail)
+      }
+      remainingMs != null && remainingMs > 0L -> {
+        homeStat?.update(formatDuration(remainingMs), service.getString(R.string.zen_guard_stat_home_available_in))
+        stateView?.text = service.getString(R.string.zen_guard_state_break)
+        descriptionView?.text = service.getString(R.string.zen_guard_instagram_home_detail)
+      }
+      else -> {
+        homeStat?.update(
+          service.getString(R.string.zen_guard_stat_home_available_now),
+          service.getString(R.string.zen_guard_stat_home_available),
+        )
+        stateView?.text = service.getString(R.string.zen_guard_state_ready)
+        descriptionView?.text = service.getString(R.string.zen_guard_instagram_home_ready_detail)
+      }
+    }
+  }
+
+  private fun formatDuration(remainingMs: Long): String {
+    val totalMinutes = ceil(remainingMs.coerceAtLeast(0L) / 60_000.0).toLong()
     val hours = (totalMinutes / 60).toInt()
     val minutes = (totalMinutes % 60).toInt()
     return if (hours > 0) {
@@ -861,8 +918,8 @@ internal class InstagramBlockerOverlay(
     else -> service.getString(R.string.zen_guard_surface_reels)
   }
 
-  private fun topState(action: InstagramGuardAction.ShowBlocker, homeMinutes: Int): String = when (action.reason) {
-    InstagramBlockReason.HOME_LIMIT -> service.getString(R.string.zen_guard_state_minutes_used, homeMinutes)
+  private fun topState(action: InstagramGuardAction.ShowBlocker): String = when (action.reason) {
+    InstagramBlockReason.HOME_LIMIT -> service.getString(R.string.zen_guard_state_closed)
     InstagramBlockReason.REELS_SWIPE,
     InstagramBlockReason.REELS_WINDOW_EXPIRED,
     -> service.getString(R.string.zen_guard_state_pause)

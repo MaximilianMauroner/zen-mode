@@ -197,11 +197,13 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
           val continued = instagramStateMachine.continueReels(SystemClock.elapsedRealtime(), preferences.instagramSettings())
           if (continued) {
             resetInstagramStatsDedupe(instagramBlockReason)
+            instagramBlockReason = null
             dailyTally.recordContinue(System.currentTimeMillis())
           }
           continued
         } else false
       },
+      readStats = ::instagramBlockerStats,
     )
   }
 
@@ -791,18 +793,9 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
         instagramBlockReason = action.reason
         val wallNow = System.currentTimeMillis()
         if (isNewBlock) dailyTally.recordStop(wallNow)
-        val tally = dailyTally.counts(wallNow)
         instagramOverlay.show(
           action = action,
-          homeMinutes = preferences.instagramHomeMinutes,
           reelsMinutes = preferences.instagramReelsMinutes,
-          stats = InstagramBlockerStats(
-            homeUsedMinutes = (instagramStateMachine.homeElapsedMs() / 60_000L).toInt(),
-            homeAllowanceMinutes = preferences.instagramHomeMinutes,
-            stoppedToday = tally.stopped,
-            continuedToday = tally.continued,
-            resetsInMs = millisUntilLocalMidnight(wallNow),
-          ),
           debugInfo = if (BuildConfig.DEBUG) {
             val debugState = instagramStateMachine.debugState(nowMs)
             InstagramBlockerDebugInfo(
@@ -837,6 +830,18 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       }
     }
     publishInstagramHomeStatus()
+  }
+
+  private fun instagramBlockerStats(): InstagramBlockerStats {
+    val wallNow = System.currentTimeMillis()
+    val tally = dailyTally.counts(wallNow)
+    return InstagramBlockerStats(
+      home = instagramStateMachine.homeRuntimeState(SystemClock.elapsedRealtime()),
+      homeAllowanceMinutes = preferences.instagramHomeMinutes,
+      stoppedToday = tally.stopped,
+      continuedToday = tally.continued,
+      dailyCountsResetInMs = millisUntilLocalMidnight(wallNow),
+    )
   }
 
   override fun onInterrupt() {

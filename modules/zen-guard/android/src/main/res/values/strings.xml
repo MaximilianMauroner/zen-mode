@@ -12,7 +12,9 @@
   <string name="zen_guard_instagram_reels_entry_blocked">Reels can\nwait.</string>
   <string name="zen_guard_instagram_home_limit">The feed can\nwait.</string>
   <string name="zen_guard_instagram_explore_blocked">Explore can\nwait.</string>
-  <string name="zen_guard_instagram_home_detail">Your Home allowance is complete. Return to Zen Mode and choose what comes next.</string>
+  <string name="zen_guard_instagram_home_detail">Your Home visit is complete. Home opens again when the break ends. Messages are still available.</string>
+  <string name="zen_guard_instagram_home_unavailable_detail">Home availability could not be verified. Leave Instagram and return after Zen Mode reconnects.</string>
+  <string name="zen_guard_instagram_home_ready_detail">Home is available again. Leave this screen and return to Home to start another visit.</string>
   <string name="zen_guard_instagram_reels_detail">Wait here, or leave Instagram. Continue unlocks when the pause ends.</string>
   <string name="zen_guard_instagram_reels_entry_detail">Reels are closed here. Return to Messages to choose what comes next.</string>
   <string name="zen_guard_instagram_explore_detail">Explore is closed. Return to Messages to keep your route intentional.</string>
@@ -22,11 +24,16 @@
   <string name="zen_guard_eyebrow_pause">TAKE A SMALL PAUSE</string>
 
   <!-- Blocked screen, phase two: the numbers behind the block. -->
-  <string name="zen_guard_eyebrow_stats">WHERE YOU STAND TODAY</string>
+  <string name="zen_guard_eyebrow_stats">YOUR LIMITS AND DAILY COUNTS</string>
   <string name="zen_guard_stat_stopped">Stopped today</string>
   <string name="zen_guard_stat_continued">Continued today</string>
-  <string name="zen_guard_stat_home_used">Home used</string>
-  <string name="zen_guard_stat_resets">Resets in</string>
+  <string name="zen_guard_stat_home_used">Home visit used</string>
+  <string name="zen_guard_stat_home_availability">Home availability</string>
+  <string name="zen_guard_stat_home_available_in">Home available again in</string>
+  <string name="zen_guard_stat_home_available">Home available again</string>
+  <string name="zen_guard_stat_home_available_now">Now</string>
+  <string name="zen_guard_time_unavailable">Unavailable</string>
+  <string name="zen_guard_stat_resets">Daily counts reset in</string>
   <string name="zen_guard_stat_of_minutes"> / %1$dm</string>
   <string name="zen_guard_stat_hours_minutes">%1$dh %2$dm</string>
   <string name="zen_guard_stat_minutes">%1$dm</string>
@@ -40,7 +47,7 @@
   <string name="zen_guard_state_ready">READY</string>
   <string name="zen_guard_state_pause">PAUSE</string>
   <string name="zen_guard_state_closed">CLOSED</string>
-  <string name="zen_guard_state_minutes_used">%1$dm USED</string>
+  <string name="zen_guard_state_break">BREAK</string>
   <string name="zen_guard_surface_home">INSTAGRAM / HOME</string>
   <string name="zen_guard_surface_explore">INSTAGRAM / EXPLORE</string>
   <string name="zen_guard_surface_reels">INSTAGRAM / REELS</string>

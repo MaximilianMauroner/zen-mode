@@ -60,7 +60,7 @@ export function WeakeningGateDialog({ gate, embedded = false }: { gate: Gate; em
   const session = gate.session;
   const confirming = session.phase === 'confirm';
   const content = (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1 justify-center bg-black/75 px-4">
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="justify-center bg-black/75 px-4" style={{ flex: 1 }}>
       <SafeAreaView edges={['top', 'bottom']} className="max-h-full rounded-3xl border border-line2 bg-panel p-5">
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 16 }}>
           <Text accessibilityRole="header" className="text-[20px] font-semibold text-copy">{confirming ? 'Confirm this change' : 'Pause before changing this rule'}</Text>

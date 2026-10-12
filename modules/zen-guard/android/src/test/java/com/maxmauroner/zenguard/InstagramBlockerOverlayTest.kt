@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import java.time.Duration
+import java.time.Instant
 import java.util.TimeZone
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -33,9 +34,12 @@ class InstagramBlockerOverlayTest {
   private val policy = InstagramGuardStateMachine()
   private val settings = InstagramGuardSettings(homeAllowanceMs = 60_000)
   private var statsReads = 0
+  private val setupWallMs = Instant.parse("2026-10-12T23:59:30Z").toEpochMilli()
+  private var setupElapsedMs = 0L
   private lateinit var originalTimeZone: TimeZone
 
   @Before fun setUp() {
+    setupElapsedMs = SystemClock.elapsedRealtime()
     originalTimeZone = TimeZone.getDefault()
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
     controller = Robolectric.buildService(ZenGuardAccessibilityService::class.java).create()
@@ -47,7 +51,7 @@ class InstagramBlockerOverlayTest {
       onContinue = { false },
       readStats = {
         statsReads++
-        val wallNow = System.currentTimeMillis()
+        val wallNow = wallNowMs()
         val counts = tally.counts(wallNow)
         InstagramBlockerStats(
           home = policy.homeRuntimeState(SystemClock.elapsedRealtime()),
@@ -140,13 +144,17 @@ class InstagramBlockerOverlayTest {
   }
 
   @Test fun `daily tally and reset time refresh after midnight on an open overlay`() {
-    tally.recordStop(System.currentTimeMillis())
-    tally.recordContinue(System.currentTimeMillis())
+    tally.recordStop(wallNowMs())
+    tally.recordContinue(wallNowMs())
     show(InstagramGuardAction.ShowBlocker(InstagramBlockReason.EXPLORE, null))
     assertEquals("1", statValue("Stopped today"))
     assertEquals("1", statValue("Continued today"))
 
-    idle(Duration.ofMillis(millisUntilLocalMidnight(System.currentTimeMillis())))
+    idle(Duration.ofSeconds(29))
+    assertEquals("1", statValue("Stopped today"))
+    assertEquals("1", statValue("Continued today"))
+
+    idle(Duration.ofSeconds(1))
 
     assertEquals("0", statValue("Stopped today"))
     assertEquals("0", statValue("Continued today"))
@@ -181,6 +189,8 @@ class InstagramBlockerOverlayTest {
   private fun idle(duration: Duration) {
     shadowOf(Looper.getMainLooper()).idleFor(duration)
   }
+
+  private fun wallNowMs(): Long = setupWallMs + (SystemClock.elapsedRealtime() - setupElapsedMs)
 
   private fun statValue(label: String): String {
     val labelView = views(root()).filterIsInstance<TextView>().single { it.text.toString() == label }

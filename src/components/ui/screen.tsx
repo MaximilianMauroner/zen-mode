@@ -11,7 +11,7 @@ import { metrics } from '@/theme/metrics';
 export function Screen({ children, refreshControl, edges = ['top'] }: { children: ReactNode; refreshControl?: ScrollViewProps['refreshControl']; edges?: Edge[] }) {
   return (
     <SafeAreaView className="flex-1 bg-night" edges={edges}>
-      <ScrollView contentContainerClassName="mx-auto w-full max-w-xl gap-5 px-5 pb-14 pt-3" refreshControl={refreshControl}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerClassName="mx-auto w-full max-w-xl gap-5 px-5 pb-14 pt-3" refreshControl={refreshControl}>
         {children}
       </ScrollView>
     </SafeAreaView>

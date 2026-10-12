@@ -35,6 +35,15 @@ class InstagramBlockerOverlayAudioTest {
       onLeave = {},
       onOpenMessages = {},
       onContinue = { true },
+      readStats = {
+        InstagramBlockerStats(
+          home = HomeFeedRuntimeState(usedMs = 0L, blockedUntilElapsedMs = null),
+          homeAllowanceMinutes = 30,
+          stoppedToday = 0,
+          continuedToday = 0,
+          dailyCountsResetInMs = 0L,
+        )
+      },
     )
   }
 
@@ -66,15 +75,7 @@ class InstagramBlockerOverlayAudioTest {
   private fun showReelsBlocker() {
     overlay.show(
       action = InstagramGuardAction.ShowBlocker(InstagramBlockReason.REELS_ENTRY, continueAvailableAt = null),
-      homeMinutes = 30,
       reelsMinutes = 5,
-      stats = InstagramBlockerStats(
-        homeUsedMinutes = 0,
-        homeAllowanceMinutes = 30,
-        stoppedToday = 0,
-        continuedToday = 0,
-        resetsInMs = 0L,
-      ),
       debugInfo = null,
       onAttached = {},
     )

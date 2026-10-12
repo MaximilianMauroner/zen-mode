@@ -1,4 +1,5 @@
 import ZenGuardModule, { type AdultSiteSettings, type AppLimit, type EnforcementStats, type InstalledApp, type IntentApp, type RollingLimit, type ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
+import { getAddDomainErrorMessage } from './site-rule-errors';
 
 export type { AdultSiteSettings, AppLimit, EnforcementStats, InstalledApp, IntentApp, RollingLimit, ZenGuardStatus };
 
@@ -38,6 +39,9 @@ export const setXSettings = (homeEnabled: boolean, videosEnabled: boolean, homeM
 export const setXObservationMode = (enabled: boolean) => ZenGuardModule.setXObservationMode(enabled);
 export const getAdultSiteSettings = () => ZenGuardModule.getAdultSiteSettings();
 export const setAdultSiteBlockingEnabled = (enabled: boolean) => ZenGuardModule.setAdultSiteBlockingEnabled(enabled);
-export const addBlockedDomain = (input: string) => ZenGuardModule.addBlockedDomain(input);
+export const addBlockedDomain = (input: string) =>
+  ZenGuardModule.addBlockedDomain(input).catch((cause: unknown) => {
+    throw new Error(getAddDomainErrorMessage(cause));
+  });
 export const removeBlockedDomain = (host: string) => ZenGuardModule.removeBlockedDomain(host);
 export const openBrowserCheck = () => ZenGuardModule.openBrowserCheck();

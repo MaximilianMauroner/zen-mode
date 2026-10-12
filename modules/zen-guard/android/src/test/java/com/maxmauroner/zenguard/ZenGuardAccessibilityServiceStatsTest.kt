@@ -16,8 +16,6 @@ class ZenGuardAccessibilityServiceStatsTest {
     assertFalse(service.recordYouTubeShortsStats(1, EnforcementStatsOutcome.FAILED))
     assertFalse(service.recordXVideoStats("failed-node-action", EnforcementStatsOutcome.FAILED))
     assertFalse(service.recordXHomeStats(false, false, EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordInstagramBlockStats(InstagramBlockReason.REELS_ENTRY, false, false, EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordBlockedSiteStats("browser", null, false, EnforcementStatsOutcome.SUCCESS))
     assertFalse(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.FAILED))
     assertFalse(service.recordRollingLimitStats("app.one", EnforcementStatsOutcome.FAILED))
     assertFalse(service.recordTimedVisitStats("app.one", EnforcementStatsOutcome.FAILED))
@@ -63,64 +61,13 @@ class ZenGuardAccessibilityServiceStatsTest {
         outcome = EnforcementStatsOutcome.SUCCESS,
       ),
     )
-    assertTrue(
-      service.recordInstagramBlockStats(
-        reason = InstagramBlockReason.REELS_ENTRY,
-        wasShowing = false,
-        overlayAttached = true,
-        outcome = EnforcementStatsOutcome.SUCCESS,
-      ),
-    )
-    assertFalse(
-      service.recordInstagramBlockStats(
-        reason = InstagramBlockReason.REELS_ENTRY,
-        wasShowing = true,
-        overlayAttached = true,
-        outcome = EnforcementStatsOutcome.SUCCESS,
-      ),
-    )
-    assertTrue(
-      service.recordInstagramBlockStats(
-        reason = InstagramBlockReason.HOME_LIMIT,
-        wasShowing = false,
-        overlayAttached = true,
-        outcome = EnforcementStatsOutcome.SUCCESS,
-      ),
-    )
-    assertFalse(
-      service.recordInstagramBlockStats(
-        reason = InstagramBlockReason.HOME_LIMIT,
-        wasShowing = false,
-        overlayAttached = true,
-        outcome = EnforcementStatsOutcome.SUCCESS,
-      ),
-    )
-    assertTrue(
-      service.recordInstagramBlockStats(
-        reason = InstagramBlockReason.EXPLORE,
-        wasShowing = false,
-        overlayAttached = true,
-        outcome = EnforcementStatsOutcome.SUCCESS,
-      ),
-    )
+    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.REELS_ENTRY, EnforcementStatsOutcome.SUCCESS))
+    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.HOME_LIMIT, EnforcementStatsOutcome.SUCCESS))
+    assertFalse(service.recordInstagramBlockStats(InstagramBlockReason.HOME_LIMIT, EnforcementStatsOutcome.SUCCESS))
+    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, EnforcementStatsOutcome.SUCCESS))
     assertTrue(service.recordXVideoStats("video-callback-1", EnforcementStatsOutcome.SUCCESS))
     assertFalse(service.recordXVideoStats("video-callback-1", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(
-      service.recordBlockedSiteStats(
-        browserPackage = "com.android.chrome",
-        previousPackage = null,
-        overlayAttached = true,
-        outcome = EnforcementStatsOutcome.SUCCESS,
-      ),
-    )
-    assertFalse(
-      service.recordBlockedSiteStats(
-        browserPackage = "com.android.chrome",
-        previousPackage = "com.android.chrome",
-        overlayAttached = true,
-        outcome = EnforcementStatsOutcome.SUCCESS,
-      ),
-    )
+    assertTrue(service.recordBlockedSiteStats("com.android.chrome", EnforcementStatsOutcome.SUCCESS))
     assertTrue(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.SUCCESS))
     assertFalse(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.SUCCESS))
     assertTrue(service.recordAppLimitStats("app.two", EnforcementStatsOutcome.SUCCESS))
@@ -174,10 +121,10 @@ class ZenGuardAccessibilityServiceStatsTest {
     val fixture = fixture()
     val service = fixture.service
 
-    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, false, true, EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, false, true, EnforcementStatsOutcome.SUCCESS))
+    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, EnforcementStatsOutcome.SUCCESS))
+    assertFalse(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, EnforcementStatsOutcome.SUCCESS))
     service.resetInstagramStatsDedupe(InstagramBlockReason.EXPLORE)
-    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, false, true, EnforcementStatsOutcome.SUCCESS))
+    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, EnforcementStatsOutcome.SUCCESS))
 
     assertEquals(2L, fixture.store.snapshot().counts[EnforcementReason.INSTAGRAM_EXPLORE.key])
   }

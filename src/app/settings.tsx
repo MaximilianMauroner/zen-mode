@@ -63,8 +63,7 @@ export default function SettingsScreen() {
       ) : status?.available ? (
         <PrimaryButton title={busy ? 'Working…' : 'Resume protection'} disabled={disabled} onPress={changeProtection} />
       ) : null}
-      <ErrorNote message={readError} />
-      <ErrorNote message={error} />
+      <ErrorNote message={error || readError} />
       <WeakeningGateDialog gate={gate} />
       {error ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
       {readError ? <SecondaryButton title="Try again" disabled={busy || loading} onPress={() => void refresh()} /> : null}

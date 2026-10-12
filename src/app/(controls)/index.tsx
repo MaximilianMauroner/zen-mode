@@ -99,8 +99,7 @@ export default function FeedsScreen() {
           <PrimaryButton title={busy ? 'Working…' : nextAction.title} disabled={busy || loading} onPress={() => runAction(nextAction.run)} />
         </View>
       ) : null}
-      <ErrorNote message={readError} />
-      <ErrorNote message={error} />
+      <ErrorNote message={error || readError} />
 
       <View className="gap-3">
         <RowGroup>

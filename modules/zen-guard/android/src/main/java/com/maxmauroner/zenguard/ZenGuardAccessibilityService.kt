@@ -346,8 +346,16 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     if (dailyAt == null && rollingAt == null) return false
 
     endExpiredIntentSession(packageName)
-    val cooldownMs = intentStore.cooldownRemainingMs(packageName, wallNow)
-    val availableAt = maxOf(dailyAt ?: wallNow, rollingAt ?: wallNow, wallNow + cooldownMs)
+    val budgetAt = maxOf(dailyAt ?: wallNow, rollingAt ?: wallNow)
+    val visitRemainingMs = intentSessions.remainingMs(packageName, SystemClock.elapsedRealtime())
+    val visitCooldownMs = (intentStore.intents()[packageName]?.cooldownMinutes ?: 0) * 60_000L
+    val upcomingCooldownMs = if (visitRemainingMs > 0L && visitCooldownMs > 0L && budgetAt - wallNow >= visitRemainingMs) {
+      visitRemainingMs + visitCooldownMs
+    } else {
+      0L
+    }
+    val cooldownMs = if (visitRemainingMs > 0L) upcomingCooldownMs else intentStore.cooldownRemainingMs(packageName, wallNow)
+    val availableAt = maxOf(budgetAt, wallNow + cooldownMs)
     val appLabel = labelFor(packageName)
     val details = buildList {
       if (dailyAt != null) add(getString(R.string.zen_guard_app_limit_detail, appLabel))
@@ -405,7 +413,12 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     if (!canRunEnforcementAction()) return
     val blockedPackage = appRuleOverlay.requestedPackage() ?: return
     val foreground = foregroundAppPackage()
-    if (foreground != null && foreground != blockedPackage) {
+    if (foreground == null) {
+      // Keep the boundary and paused accounting until the actual app can be verified.
+      scheduleAppRuleRefresh()
+      return
+    }
+    if (foreground != blockedPackage) {
       closeAppRuleOverlay()
       currentForegroundPackage = foreground
       usageTracker.onForeground(foreground, SystemClock.elapsedRealtime())
@@ -420,9 +433,8 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   }
 
   /**
-   * Asks for a timed visit when an intent-gated app opens. An active session
-   * resumes quietly; an expired one starts the app's downtime before the next
-   * ask; anything else goes home without starting a session.
+   * Shows the Start or downtime card for an intent-gated app in place. An active
+   * visit resumes quietly; an expired one begins the configured downtime.
    */
   private fun handleIntentForeground(packageName: String) {
     if (!::intentStore.isInitialized || !::appRuleOverlay.isInitialized) return
@@ -509,7 +521,11 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     if (!canRunEnforcementAction()) return
     val packageName = foregroundAppPackage() ?: return
     if (!appRuleSafety.allowsTimedVisitEnforcement(packageName)) return
-    if (intentSessions.isActive(packageName, SystemClock.elapsedRealtime())) return
+    if (intentSessions.isActive(packageName, SystemClock.elapsedRealtime())) {
+      // Uptime-based dispatch can round ahead of the elapsed-time grant deadline.
+      scheduleIntentDeadline(packageName)
+      return
+    }
     if (!intentSessions.end(packageName)) return
     intentStore.recordSessionEnd(packageName, appRuleWallClock())
     resetStatsDedupe(EnforcementReason.TIMED_VISIT)

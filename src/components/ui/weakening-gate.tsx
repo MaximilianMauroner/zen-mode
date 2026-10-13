@@ -61,10 +61,10 @@ export function WeakeningGateDialog({ gate, embedded = false }: { gate: Gate; em
   const confirming = session.phase === 'confirm';
   const content = (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="justify-center bg-black/75 px-4" style={{ flex: 1 }}>
-      <SafeAreaView edges={['top', 'bottom']} className="max-h-full rounded-3xl border border-line2 bg-panel p-5">
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 16 }}>
-          <Text accessibilityRole="header" className="text-[20px] font-semibold text-copy">{confirming ? 'Confirm this change' : 'Pause before changing this rule'}</Text>
-          <Text className="text-[14px] leading-[21px] text-muted">{confirming
+      <SafeAreaView edges={['top', 'bottom']} className="max-h-full rounded-3xl border border-line2 bg-panel">
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 16, padding: 20 }}>
+          <Text accessibilityRole="header" className="text-headline font-semibold text-copy">{confirming ? 'Confirm this change' : 'Pause before changing this rule'}</Text>
+          <Text className="text-body text-muted">{confirming
             ? `You completed the challenges. ${gate.action} will happen only if you confirm below.`
             : `${gate.action} weakens a protection. Complete three short questions before choosing whether to continue.`}</Text>
           {confirming ? (
@@ -74,11 +74,11 @@ export function WeakeningGateDialog({ gate, embedded = false }: { gate: Gate; em
             </>
           ) : (
             <>
-              <Text className="text-[13px] font-semibold text-copy">Question {session.step + 1} of {session.kinds.length}</Text>
-              <Text accessibilityLiveRegion="polite" className="text-[17px] leading-[25px] text-copy">{session.challenge?.prompt}</Text>
+              <Text className="text-support font-semibold text-muted">Question {session.step + 1} of {session.kinds.length}</Text>
+              <Text accessibilityLiveRegion="polite" className="text-title text-copy">{session.challenge?.prompt}</Text>
               <TextInput
                 accessibilityLabel="Challenge answer"
-                className="rounded-2xl border border-line bg-night px-4 py-3.5 text-[17px] text-copy"
+                className="min-h-[48px] rounded-2xl border border-line2 bg-night px-4 py-3 text-title text-copy"
                 keyboardType="number-pad"
                 placeholder="Enter your answer"
                 placeholderTextColor={colors.faint}
@@ -86,7 +86,7 @@ export function WeakeningGateDialog({ gate, embedded = false }: { gate: Gate; em
                 onChangeText={gate.setAnswer}
                 onSubmitEditing={gate.submit}
               />
-              {gate.feedback ? <Text accessibilityLiveRegion="polite" className="text-[13px] text-muted">{gate.feedback}</Text> : null}
+              {gate.feedback ? <Text accessibilityLiveRegion="polite" className="text-support text-danger">{gate.feedback}</Text> : null}
               <DangerButton title="Check answer" disabled={!gate.answer.trim()} onPress={gate.submit} />
               <SecondaryButton title="Try a different kind of question" onPress={gate.alternate} />
               <SecondaryButton title="Cancel — keep protection" onPress={() => gate.finish(false)} />

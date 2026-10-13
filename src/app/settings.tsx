@@ -33,11 +33,11 @@ export default function SettingsScreen() {
   const statusKnown = Boolean(status?.available);
   const protectionLabel = !statusKnown ? loading ? 'Checking' : 'Unavailable' : !status?.serviceEnabled ? 'Access needed' : status.protectionEnabled ? 'Running' : 'Paused';
   const shortsDetection = !status?.available
-    ? { detail: loading ? 'Reading the current status.' : 'Status unavailable', value: loading ? 'CHECKING' : 'UNAVAILABLE' }
-    : { detail: `${status.detectionCount} detections recorded`, value: status.lastDetectionAt > 0 ? 'FOUND' : 'WAITING' };
+    ? { detail: loading ? 'Reading the current status.' : 'Status unavailable', statusLabel: loading ? 'Checking' : 'Unavailable' }
+    : { detail: `${status.detectionCount} detections recorded`, statusLabel: status.lastDetectionAt > 0 ? 'Found' : 'Waiting' };
   const instagramChecks = !status?.available
-    ? { detail: loading ? 'Reading the current status.' : 'Status unavailable', value: loading ? 'CHECKING' : 'UNAVAILABLE' }
-    : { detail: 'Messages and a Reel opened from a message', value: `${Number((status.instagramSignalMask & 1) !== 0) + Number((status.instagramSignalMask & 2) !== 0)}/2` };
+    ? { detail: loading ? 'Reading the current status.' : 'Status unavailable', statusLabel: loading ? 'Checking' : 'Unavailable' }
+    : { detail: 'Messages and a Reel opened from a message', statusLabel: `${Number((status.instagramSignalMask & 1) !== 0) + Number((status.instagramSignalMask & 2) !== 0)}/2` };
   const disabled = busy || loading || !status?.available;
   const changeProtection = () => runAction(async () => {
     const fresh = await getZenGuardStatus();
@@ -51,7 +51,7 @@ export default function SettingsScreen() {
 
   return (
     <Screen refreshControl={<RefreshControl refreshing={loading} onRefresh={() => { if (!busy) void refresh(); }} tintColor={colors.accent} />}>
-      <ScreenHeader label="SETTINGS" onBack={() => router.back()} backDisabled={busy} />
+      <ScreenHeader title="Settings" onBack={() => router.back()} backDisabled={busy} />
       <RowGroup>
         <Row label="Android access" detail="Needed to apply your rules. Tap to open Android settings." statusLabel={statusKnown ? status?.serviceEnabled ? 'Granted' : 'Needed' : loading ? 'Checking' : 'Unavailable'} tone={statusKnown && status?.serviceEnabled ? 'accent' : 'neutral'} disabled={disabled} onPress={() => runAction(openAccessibilitySettings)} />
         <Row label="Protection" detail={!statusKnown ? 'The current status could not be read.' : !status?.serviceEnabled ? 'Rules cannot run without Android access.' : status.protectionEnabled ? 'Applies configured rules. Feed status is shown below.' : 'Rules are saved but are not being applied.'} statusLabel={protectionLabel} tone={protectionLabel === 'Running' ? 'accent' : 'neutral'} />
@@ -69,7 +69,7 @@ export default function SettingsScreen() {
       {error ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
       {readError ? <SecondaryButton title="Try again" disabled={busy || loading} onPress={() => void refresh()} /> : null}
       <View className="gap-3">
-        <Text accessibilityRole="header" className="text-[18px] font-semibold text-copy">Guard details</Text>
+        <Text accessibilityRole="header" className="text-title font-semibold text-copy">Guard details</Text>
         <RowGroup>
           <Row label="Shorts detection" {...shortsDetection} />
           <Row label="YouTube Shorts" {...getFeedPresentation(status, 'shorts', loading)} />
@@ -83,16 +83,21 @@ export default function SettingsScreen() {
         </RowGroup>
       </View>
       <View className="gap-3">
-        <Text accessibilityRole="header" className="text-[18px] font-semibold text-copy">About</Text>
+        <Text accessibilityRole="header" className="text-title font-semibold text-copy">About</Text>
         <RowGroup>
           <Row label="Zen Mode" detail="Version installed on this device" value={Constants.expoConfig?.version ?? 'Unknown'} />
+          <Row label="View statistics" disabled={busy} onPress={() => router.navigate('/stats')} />
+          <Row label="Privacy" disabled={busy} onPress={() => router.navigate('/privacy')} />
+          <Row label="Send feedback" disabled={busy} onPress={() => runAction(openFeedbackIssue)} />
         </RowGroup>
-        <SecondaryButton title="View statistics" onPress={() => router.navigate('/stats')} disabled={busy} />
-        <SecondaryButton title="Privacy" onPress={() => router.navigate('/privacy')} disabled={busy} />
-        <SecondaryButton title="Send feedback" disabled={busy} onPress={() => runAction(openFeedbackIssue)} />
-        <SecondaryButton title="Check YouTube app opener" disabled={disabled} onPress={() => runAction(openYouTube)} />
-        <SecondaryButton title="Check Instagram app opener" disabled={disabled} onPress={() => runAction(openInstagram)} />
-        <SecondaryButton title="Check X app opener" disabled={disabled} onPress={() => runAction(openX)} />
+      </View>
+      <View className="gap-3">
+        <Text accessibilityRole="header" className="text-title font-semibold text-copy">App openers</Text>
+        <RowGroup>
+          <Row label="Check YouTube app opener" disabled={disabled} onPress={() => runAction(openYouTube)} />
+          <Row label="Check Instagram app opener" disabled={disabled} onPress={() => runAction(openInstagram)} />
+          <Row label="Check X app opener" disabled={disabled} onPress={() => runAction(openX)} />
+        </RowGroup>
       </View>
     </Screen>
   );

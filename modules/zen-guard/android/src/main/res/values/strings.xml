@@ -61,7 +61,10 @@
   <string name="zen_guard_return_to_dm">Return to DM</string>
   <string name="zen_guard_leave_reels">Leave Reels</string>
   <string name="zen_guard_open_messages">Open Messages</string>
-  <string name="zen_guard_continue_doomscrolling">Continue for %1$d minutes</string>
+  <plurals name="zen_guard_continue_doomscrolling">
+    <item quantity="one">Continue for %1$d minute</item>
+    <item quantity="other">Continue for %1$d minutes</item>
+  </plurals>
   <string name="zen_guard_continue_in_seconds">Continue in %1$ds</string>
   <string name="zen_guard_quiet_boundary">Zen Mode is holding this boundary</string>
 
@@ -69,8 +72,14 @@
   <string name="zen_guard_intent_eyebrow">CHECK IN FIRST</string>
   <string name="zen_guard_intent_eyebrow_cooldown">BETWEEN VISITS</string>
   <string name="zen_guard_intent_state_ask">%1$d MIN VISIT</string>
-  <string name="zen_guard_intent_title">Take %1$d\nminutes.</string>
-  <string name="zen_guard_intent_detail">%1$s stays open for %2$d minutes. The clock runs from Start, even if you step out. When it ends, %1$s rests.</string>
+  <plurals name="zen_guard_intent_title">
+    <item quantity="one">Take %1$d\nminute.</item>
+    <item quantity="other">Take %1$d\nminutes.</item>
+  </plurals>
+  <plurals name="zen_guard_intent_detail">
+    <item quantity="one">%1$s stays open for %2$d minute. The clock runs from Start, even if you step out. When it ends, %1$s rests.</item>
+    <item quantity="other">%1$s stays open for %2$d minutes. The clock runs from Start, even if you step out. When it ends, %1$s rests.</item>
+  </plurals>
   <string name="zen_guard_intent_start">Start %1$d min</string>
   <string name="zen_guard_intent_leave">Not now</string>
   <string name="zen_guard_intent_cooldown_title">Still\nresting.</string>

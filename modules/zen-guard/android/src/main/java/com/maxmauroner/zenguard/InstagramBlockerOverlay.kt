@@ -615,7 +615,8 @@ internal class InstagramBlockerOverlay(
       timerLabel?.text = service.getString(R.string.zen_guard_pause_label) + " " +
         service.getString(R.string.zen_guard_pause_done)
       button.isEnabled = true
-      button.text = service.getString(R.string.zen_guard_continue_doomscrolling, button.tag as Int)
+      val minutes = button.tag as Int
+      button.text = service.resources.getQuantityString(R.plurals.zen_guard_continue_doomscrolling, minutes, minutes)
       // Continue becomes real but stays the quiet button. Leave keeps accent.
       button.setTextColor(copy)
       button.background = roundedBackground(panel2, line2, dp(16).toFloat())

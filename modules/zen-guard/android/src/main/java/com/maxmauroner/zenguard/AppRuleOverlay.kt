@@ -212,7 +212,7 @@ internal class AppRuleOverlay(
     centerBody.addView(eyebrow, matchWrap(topMargin = dp(12)))
 
     val title = styledTitle(
-      if (isLimit) limitTitle else if (cooldown) service.getString(R.string.zen_guard_intent_cooldown_title) else service.getString(R.string.zen_guard_intent_title, sessionMinutes),
+      if (isLimit) limitTitle else if (cooldown) service.getString(R.string.zen_guard_intent_cooldown_title) else service.resources.getQuantityString(R.plurals.zen_guard_intent_title, sessionMinutes, sessionMinutes),
       copy,
       accent,
     ).apply {
@@ -222,7 +222,7 @@ internal class AppRuleOverlay(
     centerBody.addView(title, matchWrap(topMargin = dp(8)))
 
     val description = styledText(
-      if (isLimit) limitDetail else if (cooldown) service.getString(R.string.zen_guard_intent_cooldown_detail, appLabel) else service.getString(R.string.zen_guard_intent_detail, appLabel, sessionMinutes),
+      if (isLimit) limitDetail else if (cooldown) service.getString(R.string.zen_guard_intent_cooldown_detail, appLabel) else service.resources.getQuantityString(R.plurals.zen_guard_intent_detail, sessionMinutes, appLabel, sessionMinutes),
       15f,
       muted,
     ).apply {

@@ -39,8 +39,8 @@ export function AppPicker({ visible, configuredPackages, onClose, onSelect }: Ap
           <SafeAreaView edges={['bottom']} className="flex-1 rounded-t-3xl border-t border-line2 bg-panel pt-3">
             <SheetHeader title="Add app" closeLabel="Close app picker" onClose={onClose} />
             <View className="flex-1 px-5">
-              <TextInput accessibilityLabel="Search apps" placeholder="Search apps" placeholderTextColor={colors.faint} value={query} onChangeText={setQuery} autoCorrect={false} autoCapitalize="none" className="mb-2 min-h-12 rounded-2xl border border-line2 bg-night px-4 py-3 text-item text-copy" />
-              {error ? <Pressable accessibilityRole="button" onPress={() => { void loadApps(); }} className="min-h-12 justify-center"><Text className="text-support font-medium text-danger">{error}</Text></Pressable> : null}
+              <TextInput accessibilityLabel="Search apps" placeholder="Search apps" placeholderTextColor={colors.faint} value={query} onChangeText={setQuery} autoCorrect={false} autoCapitalize="none" className="mb-2 min-h-[48px] rounded-2xl border border-line2 bg-night px-4 py-3 text-item text-copy" />
+              {error ? <Pressable accessibilityRole="button" onPress={() => { void loadApps(); }} className="min-h-[48px] min-w-[48px] justify-center"><Text className="text-support font-medium text-danger">{error}</Text></Pressable> : null}
               <FlatList
                 data={visible ? filtered : []}
                 keyExtractor={(app) => app.packageName}

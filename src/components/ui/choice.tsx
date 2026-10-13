@@ -35,7 +35,7 @@ export function ChipGroup<T extends string | number | boolean>({
             accessibilityState={{ checked: active, selected: active, disabled }}
             disabled={disabled}
             onPress={() => onSelect(option.value)}
-            className={`min-h-12 min-w-[56px] items-center justify-center rounded-2xl border px-3 ${fill ? 'flex-1' : ''} ${active ? 'border-accent bg-accentBg' : 'border-line2 bg-panel2'} ${disabled ? 'opacity-40' : 'active:opacity-70'}`}>
+            className={`min-h-[48px] min-w-[56px] items-center justify-center rounded-2xl border px-3 ${fill ? 'flex-1' : ''} ${active ? 'border-accent bg-accentBg' : 'border-line2 bg-panel2'} ${disabled ? 'opacity-40' : 'active:opacity-70'}`}>
             <Text className={`text-center text-body font-semibold ${active ? 'text-accent' : 'text-copy'}`}>{option.label}</Text>
           </Pressable>
         );
@@ -52,7 +52,7 @@ export function ChoiceCard({ title, detail, selected, disabled = false, onPress 
       accessibilityState={{ checked: selected, selected, disabled }}
       disabled={disabled}
       onPress={onPress}
-      className={`min-h-12 flex-row items-start gap-3 rounded-2xl border p-3.5 ${selected ? 'border-accent bg-accentBg' : 'border-line2 bg-panel2'} ${disabled ? 'opacity-40' : 'active:opacity-70'}`}>
+      className={`min-h-[48px] flex-row items-start gap-3 rounded-2xl border p-3.5 ${selected ? 'border-accent bg-accentBg' : 'border-line2 bg-panel2'} ${disabled ? 'opacity-40' : 'active:opacity-70'}`}>
       <View className={`mt-0.5 h-5 w-5 items-center justify-center rounded-full border-2 ${selected ? 'border-accent' : 'border-muted'}`}>
         {selected ? <View className="h-2.5 w-2.5 rounded-full bg-accent" /> : null}
       </View>

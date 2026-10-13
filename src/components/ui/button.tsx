@@ -13,7 +13,7 @@ function Button({ title, disabled, onPress, className = '', tone }: ButtonProps 
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ disabled: Boolean(disabled) }}
-      className={`min-h-12 items-center justify-center rounded-2xl border px-4 py-3 ${TONE[tone].surface} ${disabled ? 'opacity-40' : 'active:opacity-80'} ${className}`}
+      className={`min-h-[48px] min-w-[48px] items-center justify-center rounded-2xl border px-4 py-3 ${TONE[tone].surface} ${disabled ? 'opacity-40' : 'active:opacity-80'} ${className}`}
       disabled={disabled}
       onPress={onPress}>
       <Text className={`text-center text-item ${TONE[tone].text}`}>{title}</Text>

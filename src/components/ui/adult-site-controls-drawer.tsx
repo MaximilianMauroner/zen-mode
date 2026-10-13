@@ -171,7 +171,7 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
                 accessibilityLabel="Domain to block"
                 autoCapitalize="none"
                 autoCorrect={false}
-                className="min-h-12 flex-1 rounded-2xl border border-line2 bg-night px-4 text-body text-copy"
+                className="min-h-[48px] flex-1 rounded-2xl border border-line2 bg-night px-4 text-body text-copy"
                 editable={!disabled}
                 keyboardType="url"
                 onChangeText={setInput}
@@ -185,7 +185,7 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel="Add blocked domain"
                 accessibilityState={{ disabled: disabled || !input.trim() }}
-                className={`min-h-12 items-center justify-center rounded-2xl bg-accent px-5 ${disabled || !input.trim() ? 'opacity-40' : 'active:opacity-80'}`}
+                className={`min-h-[48px] min-w-[48px] items-center justify-center rounded-2xl bg-accent px-5 ${disabled || !input.trim() ? 'opacity-40' : 'active:opacity-80'}`}
                 disabled={disabled || !input.trim()}
                 onPress={add}>
                 <Text className="text-item font-bold text-onAccent">Add</Text>

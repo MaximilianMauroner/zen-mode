@@ -323,6 +323,12 @@ export default function AppLimitsScreen() {
       <WeakeningGateDialog gate={gate} />
       <TopTabs.Screen options={{ swipeEnabled: !busy }} />
       {selected ? <ScreenHeader title={selected.label} onBack={closeEditor} backDisabled={busy} /> : null}
+      {readState === 'error' ? (
+        <View className="gap-3">
+          <ErrorNote message="The app rules could not be loaded." />
+          <SecondaryButton title="Try again" disabled={busy} onPress={() => void refresh()} />
+        </View>
+      ) : null}
 
       {selected ? (
         <>
@@ -398,12 +404,7 @@ export default function AppLimitsScreen() {
               <Card>
                 <Text className="text-support text-muted">App limits require the native Android app. This web preview cannot read or enforce app rules.</Text>
               </Card>
-            ) : readState === 'error' ? (
-              <View className="gap-3">
-                <ErrorNote message="The app rules could not be loaded." />
-                <SecondaryButton title="Try again" disabled={busy} onPress={() => void refresh()} />
-              </View>
-            ) : currentLimits === null || currentIntents === null || currentRolling === null ? (
+            ) : readState === 'error' ? null : currentLimits === null || currentIntents === null || currentRolling === null ? (
               <Card>
                 <Text className="text-support text-muted">Reading your app rules.</Text>
               </Card>

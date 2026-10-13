@@ -52,7 +52,7 @@ export function ControlHeader({ position, state: navigationState, descriptors }:
           <Image source={require('@/assets/images/refuge/mark-header.png')} style={{ width: 32, height: 32 }} accessibilityIgnoresInvertColors />
           <Text className="text-caption font-bold tracking-[0.14em] text-copy">ZEN MODE</Text>
         </View>
-        <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={() => router.push('/settings')} className={`-mr-2 min-h-12 flex-row items-center gap-1.5 px-2 ${disabled ? 'opacity-40' : 'active:opacity-60'}`}>
+        <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={() => router.push('/settings')} className={`-mr-2 min-h-[48px] min-w-[48px] flex-row items-center gap-1.5 px-2 ${disabled ? 'opacity-40' : 'active:opacity-60'}`}>
           <Settings color={colors.muted} size={17} />
           <Text className="text-support font-medium text-muted">Settings</Text>
         </Pressable>
@@ -64,7 +64,7 @@ export function ControlHeader({ position, state: navigationState, descriptors }:
       <View className="flex-row border-b border-line" accessibilityRole="tablist" onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
         {tabs.map(({ href, label }) => (
           <Link key={href} href={href} asChild>
-            <Pressable disabled={disabled} role="tab" aria-selected={pathname === href} aria-disabled={disabled} className={`min-h-12 flex-1 items-center justify-center px-1 py-3 ${disabled ? 'opacity-40' : 'active:opacity-60'}`}>
+            <Pressable disabled={disabled} role="tab" aria-selected={pathname === href} aria-disabled={disabled} className={`min-h-[48px] min-w-[48px] flex-1 items-center justify-center px-1 py-3 ${disabled ? 'opacity-40' : 'active:opacity-60'}`}>
               <Text className={`text-center text-body ${pathname === href ? 'font-semibold text-accent' : 'font-medium text-muted'}`}>{label}</Text>
             </Pressable>
           </Link>

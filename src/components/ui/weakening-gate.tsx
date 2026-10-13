@@ -78,7 +78,7 @@ export function WeakeningGateDialog({ gate, embedded = false }: { gate: Gate; em
               <Text accessibilityLiveRegion="polite" className="text-title text-copy">{session.challenge?.prompt}</Text>
               <TextInput
                 accessibilityLabel="Challenge answer"
-                className="min-h-12 rounded-2xl border border-line2 bg-night px-4 py-3 text-title text-copy"
+                className="min-h-[48px] rounded-2xl border border-line2 bg-night px-4 py-3 text-title text-copy"
                 keyboardType="number-pad"
                 placeholder="Enter your answer"
                 placeholderTextColor={colors.faint}

@@ -147,14 +147,14 @@ export default function SetupScreen() {
         <Text className="mt-2.5 text-body text-muted">
           Screen contents and browser addresses stay on this device. Zen Mode does not record what you type, take screenshots, or send this data anywhere.
         </Text>
-        <Pressable accessibilityRole="button" accessibilityState={{ expanded: showDetails, disabled: busy }} disabled={busy} onPress={() => setShowDetails((value) => !value)} className="mt-1 min-h-12 justify-center self-start">
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded: showDetails, disabled: busy }} disabled={busy} onPress={() => setShowDetails((value) => !value)} className="mt-1 min-h-[48px] justify-center self-start">
           <Text className="text-support font-semibold text-accent">{showDetails ? 'Hide access details' : 'More about this access'}</Text>
         </Pressable>
         {showDetails ? <Text className="mb-1 text-support text-muted">When you add an app limit or timed visit, Zen Mode lists launchable apps on this device so you can choose one. It stores guard settings and local usage and detection summaries, not visited addresses, screen text, or the installed-app inventory. It does not inspect browser page content.</Text> : null}
         <Pressable
           accessibilityRole="checkbox"
           accessibilityState={{ checked: consented, disabled: selectionDisabled }}
-          className={`mt-3 min-h-12 flex-row items-center rounded-2xl border px-3.5 ${consented ? 'border-accent bg-accentBg' : 'border-line2 bg-panel2'} ${selectionDisabled ? 'opacity-40' : 'active:opacity-70'}`}
+          className={`mt-3 min-h-[48px] flex-row items-center rounded-2xl border px-3.5 ${consented ? 'border-accent bg-accentBg' : 'border-line2 bg-panel2'} ${selectionDisabled ? 'opacity-40' : 'active:opacity-70'}`}
           disabled={selectionDisabled}
           onPress={() => setConsented((value) => !value)}>
           <View className={`h-5 w-5 items-center justify-center rounded-md border-2 ${consented ? 'border-accent bg-accent' : 'border-muted'}`}>

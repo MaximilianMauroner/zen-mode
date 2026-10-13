@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, RefreshControl, Text, View } from 'react-native';
+import { RefreshControl, Text, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Clapperboard, Globe2, House, LockKeyhole, Play } from 'lucide-react-native';
 
@@ -7,7 +7,7 @@ import { AdultSiteControlsDrawer } from '@/components/ui/adult-site-controls-dra
 import { FeedControlsDrawer, type FeedDrawer } from '@/components/ui/feed-controls-drawer';
 import { PrimaryButton } from '@/components/ui/button';
 import { TopTabs } from 'expo-router/js-top-tabs';
-import { Row, RowGroup } from '@/components/ui/card';
+import { Card, Row, RowGroup } from '@/components/ui/card';
 import { ErrorNote, Screen } from '@/components/ui/screen';
 import { formatRemaining, readLockState, type LockState } from '@/features/protection/lock';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
@@ -88,41 +88,42 @@ export default function FeedsScreen() {
     <Screen edges={[]} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => { if (!busy) void refresh(); }} tintColor={colors.accent} />}>
       <TopTabs.Screen options={{ swipeEnabled: !busy && drawer === null && !siteDrawerOpen }} />
 
-      {shouldShowCustomizePrompt(setup, status) ? <View className="rounded-2xl border border-line2 bg-panel2 p-4">
-        <Text className="text-[15px] font-semibold text-copy">Choose your rules</Text>
-        <Text className="mt-1 text-[13px] leading-[19px] text-muted">Open YouTube, Instagram, X, and Sites below to review their starting values. Protection is paused until you decide to resume it.</Text>
-      </View> : null}
-      {status ? <Text accessibilityLiveRegion="polite" className="text-[13px] leading-[19px] text-muted">{getFeedStatusDetail(status)}</Text> : null}
+      {shouldShowCustomizePrompt(setup, status) ? <Card emphasis>
+        <Text accessibilityRole="header" className="text-item font-semibold text-copy">Choose your rules</Text>
+        <Text className="mt-1 text-support text-muted">Open YouTube, Instagram, X, and Sites below to review their starting values. Protection is paused until you decide to resume it.</Text>
+      </Card> : null}
+      {status ? <Text accessibilityLiveRegion="polite" className="text-body text-muted">{getFeedStatusDetail(status)}</Text> : null}
       {nextAction ? (
         <View className="gap-2">
-          {state === 'setup' && (status?.shortsEnabled && status.observationMode || status?.instagramObservationMode) ? <Text className="text-[13px] leading-[19px] text-muted">{status?.observationMode ? status.lastDetectionAt ? 'Shorts detected. Blocking is ready.' : 'Open one Short, then return here. Zen Mode checks the current YouTube screen before limiting scrolling; unknown layouts stay unblocked.' : ((status?.instagramSignalMask ?? 0) & 3) === 3 ? 'Instagram checks passed. Protection is ready.' : 'Open Direct Messages, then one Reel from a message. Return here when done.'}</Text> : null}
+          {state === 'setup' && (status?.shortsEnabled && status.observationMode || status?.instagramObservationMode) ? <Text className="text-support text-muted">{status?.observationMode ? status.lastDetectionAt ? 'Shorts detected. Blocking is ready.' : 'Open one Short, then return here. Zen Mode checks the current YouTube screen before limiting scrolling; unknown layouts stay unblocked.' : ((status?.instagramSignalMask ?? 0) & 3) === 3 ? 'Instagram checks passed. Protection is ready.' : 'Open Direct Messages, then one Reel from a message. Return here when done.'}</Text> : null}
           <PrimaryButton title={busy ? 'Working…' : nextAction.title} disabled={busy || loading} onPress={() => runAction(nextAction.run)} />
         </View>
       ) : null}
       <ErrorNote message={readError} />
       <ErrorNote message={error} />
 
-      <View className="gap-3">
-        <RowGroup>
-          <Row icon={Play} label="YouTube" detail={`Home: ${getFeedPresentation(status, 'youtubeHome', loading).statusLabel} · Shorts: ${getFeedPresentation(status, 'shorts', loading).statusLabel}`} onPress={() => setDrawer('youtube')} disabled={!editable} />
-          <Row icon={Clapperboard} label="Instagram" detail={`Reels: ${getFeedPresentation(status, 'reels', loading).statusLabel} · Home: ${instagramHomeTime ?? getFeedPresentation(status, 'home', loading).statusLabel} · Explore: ${getFeedPresentation(status, 'explore', loading).statusLabel}`} onPress={() => setDrawer('instagram')} disabled={!editable} />
-          <Row icon={House} label="X" detail={`Home: ${xHomeTime ?? getFeedPresentation(status, 'xHome', loading).statusLabel} · Videos: ${getFeedPresentation(status, 'xVideos', loading).statusLabel}`} onPress={() => setDrawer('x')} disabled={!editable} />
-          <Row
-            icon={Globe2}
-            label="Sites"
-            {...adultSites}
-            onPress={() => setSiteDrawerOpen(true)}
-            disabled={!editable}
-          />
-        </RowGroup>
-      </View>
+      <RowGroup>
+        <Row icon={Play} label="YouTube" detail={`Home: ${getFeedPresentation(status, 'youtubeHome', loading).statusLabel} · Shorts: ${getFeedPresentation(status, 'shorts', loading).statusLabel}`} onPress={() => setDrawer('youtube')} disabled={!editable} />
+        <Row icon={Clapperboard} label="Instagram" detail={`Reels: ${getFeedPresentation(status, 'reels', loading).statusLabel} · Home: ${instagramHomeTime ?? getFeedPresentation(status, 'home', loading).statusLabel} · Explore: ${getFeedPresentation(status, 'explore', loading).statusLabel}`} onPress={() => setDrawer('instagram')} disabled={!editable} />
+        <Row icon={House} label="X" detail={`Home: ${xHomeTime ?? getFeedPresentation(status, 'xHome', loading).statusLabel} · Videos: ${getFeedPresentation(status, 'xVideos', loading).statusLabel}`} onPress={() => setDrawer('x')} disabled={!editable} />
+        <Row
+          icon={Globe2}
+          label="Sites"
+          {...adultSites}
+          onPress={() => setSiteDrawerOpen(true)}
+          disabled={!editable}
+        />
+      </RowGroup>
 
-      <Pressable accessibilityRole="button" accessibilityLabel="Manage settings lock" disabled={busy} onPress={() => router.navigate('/lock')} className="flex-row items-center gap-3 rounded-2xl border border-line2 bg-panel2 p-4 active:opacity-60">
-        <LockKeyhole color={colors.accent} size={18} />
-        <View className="flex-1">
-          <Text className="text-[14px] font-semibold text-copy">{lock === null ? 'Check settings lock' : lock.kind === 'open' ? 'Lock your settings' : `${lock.kind === 'pending' ? 'Unlocks in' : 'Settings locked ·'} ${formatRemaining(lock.endsAt)}`}</Text>
-        </View>
-      </Pressable>
+      <RowGroup>
+        <Row
+          icon={LockKeyhole}
+          label={lock === null ? 'Check settings lock' : lock.kind === 'open' ? 'Lock your settings' : `${lock.kind === 'pending' ? 'Unlocks in' : 'Settings locked ·'} ${formatRemaining(lock.endsAt)}`}
+          accessibilityLabel="Manage settings lock"
+          disabled={busy}
+          onPress={() => router.navigate('/lock')}
+        />
+      </RowGroup>
 
       <FeedControlsDrawer feed={drawer} onClose={() => setDrawer(null)} />
       <AdultSiteControlsDrawer visible={siteDrawerOpen} onClose={() => setSiteDrawerOpen(false)} />

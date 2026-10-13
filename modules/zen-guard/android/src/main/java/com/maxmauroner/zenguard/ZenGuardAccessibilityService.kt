@@ -56,21 +56,24 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private lateinit var instagramOverlay: InstagramBlockerOverlay
   private var instagramBlockReason: InstagramBlockReason? = null
   private var instagramNavigationSuppressedUntilMs = 0L
+  /** Wall-clock injection keeps daily and rolling service tests independent of host time. */
+  internal var appRuleWallClock: () -> Long = System::currentTimeMillis
   private lateinit var appLimits: AppLimitStore
   private lateinit var dailyTally: DailyTally
   private lateinit var intentStore: IntentAppStore
   private lateinit var rollingLimits: RollingLimitStore
   private lateinit var appRuleSafety: AppRuleSafety
   private val intentSessions = IntentSessionTracker()
-  private lateinit var intentOverlay: IntentOverlay
+  private lateinit var appRuleOverlay: AppRuleOverlay
+  private val appRuleHandler by lazy { Handler(Looper.getMainLooper()) }
+  private val appRuleRefresh = Runnable { refreshAppRuleOverlay() }
+  private val intentDeadlineCheck = Runnable { enforceIntentSession() }
   private lateinit var adultSiteStore: AdultSiteRuleStore
   private lateinit var adultSiteOverlay: AdultSiteBlockerOverlay
   private lateinit var homeFeedStatusStore: HomeFeedStatusStore
   private val browserHandler by lazy { Handler(Looper.getMainLooper()) }
-  private var lastExternalPackage: String? = null
   private val usageTracker = AppUsageTracker()
   private val usageHandler by lazy { Handler(Looper.getMainLooper()) }
-  private var lastLimitToastAtMs = 0L
   private var currentForegroundPackage: String? = null
   private var screenReceiverRegistered = false
   private val screenStateReceiver = object : BroadcastReceiver() {
@@ -94,8 +97,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     override fun run() {
       if (canRunEnforcementAction()) {
         usageTracker.tick(SystemClock.elapsedRealtime())?.let(::bankUsage)
-        enforceAppLimit(currentForegroundPackage)
-        enforceRollingLimit(currentForegroundPackage)
+        enforceAppLimits(currentForegroundPackage)
         enforceIntentSession()
       }
       usageHandler.postDelayed(this, USAGE_TICK_MS)
@@ -115,7 +117,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     intentStore = IntentAppStore(this)
     rollingLimits = RollingLimitStore(this)
     appRuleSafety = AppRuleSafety.resolve(this)
-    intentOverlay = IntentOverlay(this)
+    appRuleOverlay = AppRuleOverlay(this)
     adultSiteStore = AdultSiteRuleStore(this)
     adultSiteOverlay = AdultSiteBlockerOverlay(this)
     youtubeShortsResultOverlay = YouTubeShortsResultOverlay(this)
@@ -157,14 +159,22 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     }
     screenReceiverRegistered = true
     usageHandler.postDelayed(usageTicker, USAGE_TICK_MS)
-    xOverlay = XBreakOverlay(this) {
-      if (canRunEnforcementAction()) {
-        xStateMachine.leaveBlockedSurface()
-        xOverlay.hide()
+    xOverlay = XBreakOverlay(
+      service = this,
+      onLeave = {
+        if (canRunEnforcementAction()) {
+          xStateMachine.leaveBlockedSurface()
+          xOverlay.hide()
+          resetStatsDedupe(EnforcementReason.X_HOME)
+          performGlobalAction(GLOBAL_ACTION_HOME)
+        }
+      },
+      onExpired = {
+        xStateMachine.homeRuntimeState(SystemClock.elapsedRealtime())
         resetStatsDedupe(EnforcementReason.X_HOME)
-        performGlobalAction(GLOBAL_ACTION_HOME)
-      }
-    }
+        publishXHomeStatus()
+      },
+    )
     xHandler.postDelayed(xTicker, 1_000L)
     instagramOverlay = InstagramBlockerOverlay(
       service = this,
@@ -234,6 +244,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     }
 
     trackForegroundApp(event)
+    if (appRuleOverlay.requestedPackage() != null) return
     // The blocker is an accessibility overlay owned by this package. Ignore its own focus and
     // content events; treating them as an external app would immediately remove the blocker.
     if (eventPackage == packageName) {
@@ -287,17 +298,24 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private fun trackForegroundApp(event: AccessibilityEvent) {
     if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
-    val packageName = event.packageName?.toString() ?: return
+    var packageName = event.packageName?.toString() ?: return
+    val blockedPackage = appRuleOverlay.requestedPackage()
+    if (blockedPackage != null) {
+      if (packageName == this.packageName) return
+      // A keyboard or system window is not a switch away from the app under our overlay.
+      packageName = foregroundAppPackage() ?: return
+      if (packageName != blockedPackage) closeAppRuleOverlay()
+    }
     if (statsDedupeKeys[EnforcementReason.APP_LIMIT] != packageName) resetStatsDedupe(EnforcementReason.APP_LIMIT)
     if (statsDedupeKeys[EnforcementReason.ROLLING_LIMIT] != packageName) resetStatsDedupe(EnforcementReason.ROLLING_LIMIT)
     if (statsDedupeKeys[EnforcementReason.TIMED_VISIT] != packageName) resetStatsDedupe(EnforcementReason.TIMED_VISIT)
-    usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())?.let(::bankUsage)
+    if (appRuleOverlay.requestedPackage() == null) {
+      usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())?.let(::bankUsage)
+    }
     if (packageName != YOUTUBE_PACKAGE && packageName != this.packageName) resetYouTubeEnforcement()
     currentForegroundPackage = packageName
-    enforceAppLimit(packageName)
-    enforceRollingLimit(packageName)
+    if (enforceAppLimits(packageName)) return
     if (packageName != this.packageName) {
-      lastExternalPackage = packageName
       handleIntentForeground(packageName)
     }
   }
@@ -306,7 +324,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private fun bankUsage(attribution: AppUsageTracker.Attribution) {
     if (!::appLimits.isInitialized || !::rollingLimits.isInitialized) return
     if (::appRuleSafety.isInitialized && appRuleSafety.isExempt(attribution.packageName)) return
-    val nowWallMs = System.currentTimeMillis()
+    val nowWallMs = appRuleWallClock()
     if (appLimits.limits().containsKey(attribution.packageName)) {
       appLimits.addUsage(attribution.packageName, attribution.durationMs, nowWallMs)
     }
@@ -315,62 +333,90 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     }
   }
 
-  /**
-   * Sends the user home once an app has spent its daily budget.
-   *
-   * Unlike the Shorts and Instagram guards this does not wait for observation
-   * mode to end. There is nothing to learn about an app first: the user named
-   * the app and the number, so the budget applies from that moment.
-   */
-  private fun enforceAppLimit(packageName: String?) {
-    if (!canRunEnforcementAction()) return
-    if (packageName == null || !::appRuleSafety.isInitialized || !appRuleSafety.allowsDailyEnforcement(packageName)) return
-    if (!appLimits.isOverBudget(packageName, System.currentTimeMillis())) {
-      resetStatsDedupe(EnforcementReason.APP_LIMIT)
-      return
+  /** All active whole-app limits must finish before access returns. */
+  private fun enforceAppLimits(packageName: String?): Boolean {
+    if (!canRunEnforcementAction()) return false
+    if (packageName == null || !::appRuleSafety.isInitialized || appRuleSafety.isExempt(packageName)) return false
+    if (foregroundAppPackage()?.let { it != packageName } == true) return false
+    val wallNow = appRuleWallClock()
+    val dailyAt = appLimits.availableAgainAt(packageName, wallNow)
+    val rollingAt = rollingLimits.availableAgainAt(packageName, wallNow)
+    if (dailyAt == null) resetStatsDedupe(EnforcementReason.APP_LIMIT)
+    if (rollingAt == null) resetStatsDedupe(EnforcementReason.ROLLING_LIMIT)
+    if (dailyAt == null && rollingAt == null) return false
+
+    endExpiredIntentSession(packageName)
+    val cooldownMs = intentStore.cooldownRemainingMs(packageName, wallNow)
+    val availableAt = maxOf(dailyAt ?: wallNow, rollingAt ?: wallNow, wallNow + cooldownMs)
+    val appLabel = labelFor(packageName)
+    val details = buildList {
+      if (dailyAt != null) add(getString(R.string.zen_guard_app_limit_detail, appLabel))
+      if (rollingAt != null) add(getString(R.string.zen_guard_rolling_limit_detail, appLabel))
+      if (cooldownMs > 0L) add(getString(R.string.zen_guard_intent_cooldown_detail, appLabel))
     }
-
-    val actionSucceeded = performGlobalAction(GLOBAL_ACTION_HOME)
-    usageTracker.reset()
-    currentForegroundPackage = null
-    recordAppLimitStats(
+    prepareAppRuleOverlay(packageName, AppRuleOverlayMode.LIMIT)
+    appRuleOverlay.showLimit(
       packageName = packageName,
-      outcome = if (actionSucceeded) EnforcementStatsOutcome.SUCCESS else EnforcementStatsOutcome.FAILED,
+      title = getString(if (dailyAt != null) R.string.zen_guard_app_limit_reached else R.string.zen_guard_rolling_limit_reached),
+      detail = details.joinToString("\n\n"),
+      remainingMs = availableAt - wallNow,
+      onLeave = ::leaveAppRule,
+      onAttached = {
+        pauseAppRuleUsage()
+        if (dailyAt != null) {
+          recordAppLimitStats(packageName, EnforcementStatsOutcome.SUCCESS)
+        } else {
+          recordRollingLimitStats(packageName, EnforcementStatsOutcome.SUCCESS)
+        }
+      },
     )
-
-    val nowMs = SystemClock.elapsedRealtime()
-    if (nowMs - lastLimitToastAtMs < LIMIT_TOAST_INTERVAL_MS) return
-    lastLimitToastAtMs = nowMs
-    Toast.makeText(this, R.string.zen_guard_app_limit_reached, Toast.LENGTH_SHORT).show()
+    scheduleAppRuleRefresh()
+    return true
   }
 
-  /**
-   * Sends the user home once an app has spent its rolling allowance.
-   * Old slices age out on their own, so the allowance refills over time
-   * with nothing to reset.
-   */
-  private fun enforceRollingLimit(packageName: String?) {
+  /** Read only the top app window; never charge the blocker or trap another app under it. */
+  private fun foregroundAppPackage(): String? =
+    windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }?.root?.packageName?.toString()
+      ?: rootInActiveWindow?.packageName?.toString()?.takeIf { it != packageName }
+
+  private fun pauseAppRuleUsage() {
+    usageTracker.onForeground(null, SystemClock.elapsedRealtime())?.let(::bankUsage)
+  }
+
+  private fun prepareAppRuleOverlay(packageName: String, mode: AppRuleOverlayMode) {
+    if (appRuleOverlay.requestedPackage() == packageName && appRuleOverlay.mode == mode) return
+    closeAppRuleOverlay()
+  }
+
+  private fun closeAppRuleOverlay() {
+    if (::appRuleOverlay.isInitialized) appRuleOverlay.hide()
+    appRuleHandler.removeCallbacks(appRuleRefresh)
+    resetStatsDedupe(EnforcementReason.APP_LIMIT)
+    resetStatsDedupe(EnforcementReason.ROLLING_LIMIT)
+    resetStatsDedupe(EnforcementReason.TIMED_VISIT)
+  }
+
+  private fun scheduleAppRuleRefresh() {
+    appRuleHandler.removeCallbacks(appRuleRefresh)
+    if (appRuleOverlay.requestedPackage() != null) appRuleHandler.postDelayed(appRuleRefresh, 1_000L)
+  }
+
+  private fun refreshAppRuleOverlay() {
     if (!canRunEnforcementAction()) return
-    if (packageName == null || !::appRuleSafety.isInitialized || !appRuleSafety.allowsRollingEnforcement(packageName)) return
-    if (!::rollingLimits.isInitialized) return
-    if (!rollingLimits.isOver(packageName, System.currentTimeMillis())) {
-      resetStatsDedupe(EnforcementReason.ROLLING_LIMIT)
+    val blockedPackage = appRuleOverlay.requestedPackage() ?: return
+    val foreground = foregroundAppPackage()
+    if (foreground != null && foreground != blockedPackage) {
+      closeAppRuleOverlay()
+      currentForegroundPackage = foreground
+      usageTracker.onForeground(foreground, SystemClock.elapsedRealtime())
       return
     }
-
-    val actionSucceeded = performGlobalAction(GLOBAL_ACTION_HOME)
-    usageTracker.reset()
-    currentForegroundPackage = null
-    lastExternalPackage = null
-    recordRollingLimitStats(
-      packageName = packageName,
-      outcome = if (actionSucceeded) EnforcementStatsOutcome.SUCCESS else EnforcementStatsOutcome.FAILED,
-    )
-
-    val nowMs = SystemClock.elapsedRealtime()
-    if (nowMs - lastLimitToastAtMs < LIMIT_TOAST_INTERVAL_MS) return
-    lastLimitToastAtMs = nowMs
-    Toast.makeText(this, R.string.zen_guard_rolling_limit_reached, Toast.LENGTH_SHORT).show()
+    if (enforceAppLimits(blockedPackage)) return
+    handleIntentForeground(blockedPackage)
+    if (appRuleOverlay.requestedPackage() == null && foreground == blockedPackage) {
+      usageTracker.onForeground(blockedPackage, SystemClock.elapsedRealtime())
+    }
+    scheduleAppRuleRefresh()
   }
 
   /**
@@ -379,94 +425,95 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
    * ask; anything else goes home without starting a session.
    */
   private fun handleIntentForeground(packageName: String) {
-    if (!::intentStore.isInitialized || !::intentOverlay.isInitialized) return
+    if (!::intentStore.isInitialized || !::appRuleOverlay.isInitialized) return
     if (!canRunEnforcementAction()) return
-    if (!::appRuleSafety.isInitialized || !appRuleSafety.allowsTimedVisitEnforcement(packageName)) {
-      if (intentOverlay.shownPackage() != null) intentOverlay.hide()
+    if (!appRuleSafety.allowsTimedVisitEnforcement(packageName)) {
+      closeAppRuleOverlay()
       return
     }
     val rule = intentStore.intents()[packageName]
     if (rule == null) {
-      if (intentOverlay.shownPackage() != null) intentOverlay.hide()
+      closeAppRuleOverlay()
       return
     }
 
     val nowElapsedMs = SystemClock.elapsedRealtime()
     if (intentSessions.isActive(packageName, nowElapsedMs)) {
-      if (intentOverlay.shownPackage() == packageName) intentOverlay.hide()
+      closeAppRuleOverlay()
+      scheduleIntentDeadline(packageName)
       return
     }
-
-    // The grant ran out, in front or away. Close it so the downtime starts.
-    val nowWallMs = System.currentTimeMillis()
-    if (intentSessions.end(packageName)) {
-      intentStore.recordSessionEnd(packageName, nowWallMs)
+    endExpiredIntentSession(packageName)
+    val cooldownMs = intentStore.cooldownRemainingMs(packageName, appRuleWallClock())
+    val mode = if (cooldownMs > 0L) AppRuleOverlayMode.COOLDOWN else AppRuleOverlayMode.ASK
+    prepareAppRuleOverlay(packageName, mode)
+    val onAttached = {
+      pauseAppRuleUsage()
+      recordTimedVisitStats(packageName, EnforcementStatsOutcome.SUCCESS)
+      Unit
     }
-
-    val showingForThis = intentOverlay.shownPackage() == packageName
-    val cooldownMs = intentStore.cooldownRemainingMs(packageName, nowWallMs)
     if (cooldownMs > 0L) {
-      if (showingForThis && intentOverlay.isCooldown()) return
-      intentOverlay.showCooldown(packageName, labelFor(packageName), cooldownMs) { leaveIntent() }
-      if (intentOverlay.shownPackage() == packageName) {
-        recordTimedVisitStats(packageName, EnforcementStatsOutcome.SUCCESS)
-      }
+      appRuleOverlay.showCooldown(
+        packageName, labelFor(packageName), cooldownMs, ::leaveAppRule, onAttached,
+      )
     } else {
-      if (showingForThis && !intentOverlay.isCooldown()) return
-      intentOverlay.showAsk(
+      appRuleOverlay.showAsk(
         packageName,
         labelFor(packageName),
         rule.sessionMinutes,
         onStart = { grantIntentSession(packageName, rule.sessionMinutes) },
-        onLeave = { leaveIntent() },
+        onLeave = ::leaveAppRule,
+        onAttached = onAttached,
       )
-      if (intentOverlay.shownPackage() == packageName) {
-        recordTimedVisitStats(packageName, EnforcementStatsOutcome.SUCCESS)
-      }
+    }
+    scheduleAppRuleRefresh()
+  }
+
+  private fun endExpiredIntentSession(packageName: String) {
+    if (intentSessions.isActive(packageName, SystemClock.elapsedRealtime())) return
+    if (intentSessions.end(packageName)) {
+      intentStore.recordSessionEnd(packageName, appRuleWallClock())
+      resetStatsDedupe(EnforcementReason.TIMED_VISIT)
     }
   }
 
-  /** Starts one timed visit and lets the app through. */
+  /** Starts a visit in the same app. Recheck other limits before accepting a queued tap. */
   private fun grantIntentSession(packageName: String, minutes: Int) {
     if (!canRunEnforcementAction()) return
+    if (foregroundAppPackage() != packageName || enforceAppLimits(packageName)) return
+    if (intentStore.cooldownRemainingMs(packageName, appRuleWallClock()) > 0L) return
     intentSessions.grant(packageName, minutes, SystemClock.elapsedRealtime())
-    resetStatsDedupe(EnforcementReason.TIMED_VISIT)
-    if (intentOverlay.shownPackage() == packageName) intentOverlay.hide()
+    closeAppRuleOverlay()
+    usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())
+    scheduleIntentDeadline(packageName)
   }
 
-  /** Leaves without starting a session. */
-  private fun leaveIntent() {
-    intentOverlay.hide()
+  private fun scheduleIntentDeadline(packageName: String) {
+    appRuleHandler.removeCallbacks(intentDeadlineCheck)
+    val remaining = intentSessions.remainingMs(packageName, SystemClock.elapsedRealtime())
+    if (remaining > 0L) appRuleHandler.postDelayed(intentDeadlineCheck, remaining)
+  }
+
+  /** Leaves the current card without starting a visit or opening another app. */
+  private fun leaveAppRule() {
+    closeAppRuleOverlay()
     if (!canRunEnforcementAction()) return
+    usageTracker.reset()
+    currentForegroundPackage = null
     performGlobalAction(GLOBAL_ACTION_HOME)
   }
 
-  /**
-   * Ends a visit whose minutes ran out while its app is still in front.
-   * Runs on the usage tick, so an app the user simply sits in is still
-   * caught. Reopening starts the downtime overlay, not a new question.
-   */
+  /** An untouched timed visit still ends at its deadline and opens the downtime card. */
   private fun enforceIntentSession() {
-    if (!::intentStore.isInitialized || !::intentOverlay.isInitialized) return
+    if (!::intentStore.isInitialized || !::appRuleOverlay.isInitialized) return
     if (!canRunEnforcementAction()) return
-    val packageName = lastExternalPackage ?: return
-    if (!::appRuleSafety.isInitialized || !appRuleSafety.allowsTimedVisitEnforcement(packageName)) {
-      intentOverlay.hide()
-      lastExternalPackage = null
-      return
-    }
+    val packageName = foregroundAppPackage() ?: return
+    if (!appRuleSafety.allowsTimedVisitEnforcement(packageName)) return
     if (intentSessions.isActive(packageName, SystemClock.elapsedRealtime())) return
     if (!intentSessions.end(packageName)) return
-
-    intentStore.recordSessionEnd(packageName, System.currentTimeMillis())
-    intentOverlay.hide()
-    val actionSucceeded = performGlobalAction(GLOBAL_ACTION_HOME)
-    lastExternalPackage = null
-    recordTimedVisitStats(
-      packageName = packageName,
-      outcome = if (actionSucceeded) EnforcementStatsOutcome.SUCCESS else EnforcementStatsOutcome.FAILED,
-    )
-    Toast.makeText(this, R.string.zen_guard_intent_time_up, Toast.LENGTH_SHORT).show()
+    intentStore.recordSessionEnd(packageName, appRuleWallClock())
+    resetStatsDedupe(EnforcementReason.TIMED_VISIT)
+    if (!enforceAppLimits(packageName)) handleIntentForeground(packageName)
   }
 
   /** Human-readable app name, falling back to the package when unknown. */
@@ -614,11 +661,13 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     }
     when (action) {
       XAction.HOME_BREAK -> {
-        val wasShowing = xOverlay.isShowing
         xHomeUsageState = HomeFeedUsageState.PAUSED
-        xOverlay.show(preferences.xHomeMinutes)
         val lockoutDeadline = xStateMachine.homeRuntimeState(nowMs).blockedUntilElapsedMs
-        recordXHomeStats(wasShowing, xOverlay.isShowing, EnforcementStatsOutcome.SUCCESS, lockoutDeadline)
+        if (lockoutDeadline != null) {
+          xOverlay.show(preferences.xHomeMinutes, lockoutDeadline) {
+            recordXHomeStats(false, true, EnforcementStatsOutcome.SUCCESS, lockoutDeadline)
+          }
+        }
       }
       XAction.HOME_UNAVAILABLE -> {
         xHomeUsageState = HomeFeedUsageState.UNKNOWN
@@ -861,6 +910,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   }
 
   override fun onInterrupt() {
+    closeAppRuleOverlay()
     clearAdultSiteEnforcement()
     clearXEnforcement(preserveHomeLockout = true)
     resetYouTubeEnforcement()
@@ -879,6 +929,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   }
 
   override fun onDestroy() {
+    appRuleHandler.removeCallbacksAndMessages(null)
     browserHandler.removeCallbacksAndMessages(null)
     clearAdultSiteEnforcement()
     resetYouTubeEnforcement()
@@ -891,10 +942,11 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     } else {
       clearXEnforcement()
     }
+    if (::xOverlay.isInitialized) xOverlay.hide()
     navigationHandler.removeCallbacksAndMessages(null)
     usageHandler.removeCallbacksAndMessages(null)
     instagramDeadlineHandler.removeCallbacksAndMessages(null)
-    if (::intentOverlay.isInitialized) intentOverlay.hide()
+    closeAppRuleOverlay()
     clearInstagramEnforcement(preserveHomeSession = hasActiveProtection())
     clearStatsDedupeState()
     if (screenReceiverRegistered) {
@@ -1088,9 +1140,9 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     clearXEnforcement()
     usageTracker.reset()
     currentForegroundPackage = null
-    lastExternalPackage = null
     intentSessions.reset()
-    if (::intentOverlay.isInitialized) intentOverlay.hide()
+    appRuleHandler.removeCallbacks(intentDeadlineCheck)
+    closeAppRuleOverlay()
     navigationHandler.removeCallbacksAndMessages(null)
     instagramNavigationSuppressedUntilMs = 0L
     clearInstagramEnforcement()
@@ -1108,8 +1160,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     clearXEnforcement(preserveHomeLockout = true)
     usageTracker.reset()
     currentForegroundPackage = null
-    lastExternalPackage = null
-    if (::intentOverlay.isInitialized) intentOverlay.hide()
+    closeAppRuleOverlay()
     navigationHandler.removeCallbacksAndMessages(null)
     instagramNavigationSuppressedUntilMs = 0L
     clearInstagramEnforcement(preserveHomeSession = true)
@@ -1387,7 +1438,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     private const val MAIN_LAUNCH_ATTEMPT = 3
     private const val MAX_NAVIGATION_ATTEMPTS = 12
     private const val USAGE_TICK_MS = 15_000L
-    private const val LIMIT_TOAST_INTERVAL_MS = 30_000L
     private const val BROWSER_RECHECK_MS = 350L
     private const val MAX_BROWSER_NODES = 180
     private const val MAX_BROWSER_DEPTH = 18

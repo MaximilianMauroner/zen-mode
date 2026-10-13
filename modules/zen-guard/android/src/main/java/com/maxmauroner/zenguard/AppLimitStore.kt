@@ -58,6 +58,9 @@ internal class AppLimitStore(context: Context) {
     return used >= budgetMinutes * 60_000L
   }
 
+  fun availableAgainAt(packageName: String, nowWallMs: Long): Long? =
+    if (isOverBudget(packageName, nowWallMs)) nowWallMs + millisUntilLocalMidnight(nowWallMs) else null
+
   private fun writeLimits(values: Map<String, Int>) {
     val next = JSONObject()
     values.forEach { (key, value) -> next.put(key, value) }

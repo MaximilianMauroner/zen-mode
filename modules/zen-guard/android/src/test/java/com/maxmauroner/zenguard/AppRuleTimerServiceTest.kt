@@ -194,6 +194,144 @@ class AppRuleTimerServiceTest {
     assertFalse(handler.hasCallbacks(callback))
   }
 
+  @Test fun `an early timed deadline still blocks at the actual grant expiry`() {
+    startTimedVisit()
+    advance(Duration.ofMillis(59_999L))
+    val deadline = controller.get().privateField<Runnable>("intentDeadlineCheck")
+    val handler = controller.get().javaClass.getDeclaredMethod("getAppRuleHandler").apply { isAccessible = true }
+      .invoke(controller.get()) as android.os.Handler
+    // Model the platform dispatching and consuming the deadline one millisecond early.
+    handler.removeCallbacks(deadline)
+    deadline.run()
+    advance(Duration.ofMillis(20L))
+    assertEquals(AppRuleOverlayMode.COOLDOWN, overlay().mode)
+    assertTrue(texts().contains("Available again in 1:00"))
+  }
+
+  @Test fun `a combined card predicts the cooldown that starts before its budget clears`() {
+    startTimedVisit()
+    advance(Duration.ofSeconds(55))
+    val now = wallNow()
+    RollingLimitStore(context).apply {
+      setRule(APP, 1, 15)
+      addUsage(APP, 60_000L, now - 900_000L + 10_000L)
+    }
+    windowEvent(APP)
+    advance(Duration.ofMillis(20))
+    showOverlayWindow(APP)
+    assertTrue(texts().toString(), texts().contains("Available again in 1:05"))
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+  }
+
+  @Test fun `a budget clearing at grant expiry includes the impending downtime`() {
+    startTimedVisit()
+    advance(Duration.ofSeconds(55))
+    val now = wallNow()
+    RollingLimitStore(context).apply {
+      setRule(APP, 1, 15)
+      addUsage(APP, 60_000L, now - 900_000L + 5_000L)
+    }
+    windowEvent(APP)
+    advance(Duration.ofMillis(20))
+    showOverlayWindow(APP)
+    assertTrue(texts().toString(), texts().contains("Available again in 1:05"))
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+  }
+
+  @Test fun `a budget that clears before the grant ends resumes the active visit`() {
+    startTimedVisit()
+    advance(Duration.ofSeconds(50))
+    val now = wallNow()
+    RollingLimitStore(context).apply {
+      setRule(APP, 1, 15)
+      addUsage(APP, 60_000L, now - 900_000L + 5_000L)
+    }
+    windowEvent(APP)
+    advance(Duration.ofMillis(20))
+    showOverlayWindow(APP)
+    assertTrue(texts().toString(), texts().contains("Available again in 0:05"))
+    advance(Duration.ofSeconds(6))
+    assertNull(overlay().requestedPackage())
+    assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+  }
+
+  @Test fun `stored downtime cannot overstate access while an active grant survives a wall-clock change`() {
+    IntentAppStore(context).recordSessionEnd(APP, wallNow() - 61_000L)
+    startTimedVisit()
+    advance(Duration.ofSeconds(50))
+    val previousClock = controller.get().appRuleWallClock
+    controller.get().appRuleWallClock = { previousClock() - 70_000L }
+    assertTrue(IntentAppStore(context).cooldownRemainingMs(APP, wallNow()) > 0L)
+    RollingLimitStore(context).apply {
+      setRule(APP, 1, 15)
+      addUsage(APP, 60_000L, wallNow() - 900_000L + 5_000L)
+    }
+    windowEvent(APP)
+    advance(Duration.ofMillis(20))
+    showOverlayWindow(APP)
+    assertTrue(texts().toString(), texts().contains("Available again in 0:05"))
+    advance(Duration.ofSeconds(6))
+    assertNull(overlay().requestedPackage())
+    assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
+  }
+
+  @Test fun `a zero-minute downtime adds no future rest to a combined card`() {
+    startTimedVisit()
+    IntentAppStore(context).setIntent(APP, 1, 0)
+    advance(Duration.ofSeconds(55))
+    RollingLimitStore(context).apply {
+      setRule(APP, 1, 15)
+      addUsage(APP, 60_000L, wallNow() - 900_000L + 10_000L)
+    }
+    windowEvent(APP)
+    advance(Duration.ofMillis(20))
+    showOverlayWindow(APP)
+    assertTrue(texts().toString(), texts().contains("Available again in 0:10"))
+    assertFalse(texts().any { it.contains("opens again when the downtime ends") })
+    advance(Duration.ofSeconds(11))
+    assertEquals(AppRuleOverlayMode.ASK, overlay().mode)
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+  }
+
+  @Test fun `an unobservable foreground retains the card and resumes billing only after verified release`() {
+    val rolling = RollingLimitStore(context)
+    rolling.setRule(APP, 1, 15)
+    rolling.addUsage(APP, 60_000L, wallNow() - 900_000L + 5_000L)
+    openApp(APP)
+    shadowOf(controller.get()).apply { setRootInActiveWindow(null); setWindows(emptyList()) }
+    advance(Duration.ofSeconds(6))
+    assertEquals(APP, overlay().requestedPackage())
+    assertFalse(rolling.isOver(APP, wallNow()))
+    val usageBeforeRelease = rolling.usedMs(APP, wallNow())
+    val verifiedAt = SystemClock.elapsedRealtime()
+    showOverlayWindow(APP)
+    controller.get().onAccessibilityEvent(AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED).apply {
+      packageName = APP
+    })
+    advance(Duration.ofSeconds(1))
+    assertNull(overlay().requestedPackage())
+    advance(Duration.ofSeconds(16))
+    val used = rolling.usedMs(APP, wallNow())
+    assertTrue(used > usageBeforeRelease)
+    assertTrue(used <= usageBeforeRelease + SystemClock.elapsedRealtime() - verifiedAt)
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+  }
+
+  @Test fun `Settings stops a retry while the active root remains unobservable`() {
+    IntentAppStore(context).setIntent(APP, 1, 1)
+    openApp(APP)
+    controller.get().javaClass.getDeclaredField("appRuleSafety").apply { isAccessible = true }
+      .set(controller.get(), AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings")))
+    shadowOf(controller.get()).apply { setRootInActiveWindow(null); setWindows(emptyList()) }
+    advance(Duration.ofSeconds(1))
+    assertEquals(APP, overlay().requestedPackage())
+    shadowOf(controller.get()).setWindows(listOf(window(AccessibilityWindowInfo.TYPE_APPLICATION, node("com.android.settings"))))
+    advance(Duration.ofSeconds(1))
+    assertNull(overlay().requestedPackage())
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+  }
+
   @Test fun `an untouched app visit reaches its daily budget without a new event`() {
     val daily = AppLimitStore(context)
     daily.setLimit(APP, 1)
@@ -261,6 +399,14 @@ class AppRuleTimerServiceTest {
     assertFalse(handler.hasCallbacks(callback))
     advance(Duration.ofSeconds(2))
     assertNull(overlay().requestedPackage())
+  }
+
+  private fun startTimedVisit() {
+    IntentAppStore(context).setIntent(APP, 1, 1)
+    openApp(APP)
+    showOverlayWindow(APP)
+    views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
+    showAppWindows(APP)
   }
 
   private fun wallNow() = controller.get().appRuleWallClock()

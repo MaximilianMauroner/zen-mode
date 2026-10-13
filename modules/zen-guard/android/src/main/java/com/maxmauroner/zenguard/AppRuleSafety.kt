@@ -16,11 +16,7 @@ internal class AppRuleSafety private constructor(
 
   fun isSystemSettings(packageName: String?): Boolean = packageName in systemSettingsPackages
 
-  fun allowsDailyEnforcement(packageName: String?): Boolean = !isExempt(packageName)
-
   fun allowsTimedVisitEnforcement(packageName: String?): Boolean = !isExempt(packageName)
-
-  fun allowsRollingEnforcement(packageName: String?): Boolean = !isExempt(packageName)
 
   /** Settings can sit underneath Zen Mode's own accessibility overlay before its event arrives. */
   fun hasSystemSettingsWindow(activePackage: String?, windowPackages: Iterable<String?>): Boolean =

@@ -502,22 +502,13 @@ async function assertLockStillActive(expectedSecureStoreHash) {
   pass('in-app settings lock remains live in the real app UI');
 }
 
-async function assertHomeEnforcementResumes(mode) {
-  startComponent(clockActivity);
-  const focus = await waitForFocus(launcherPackage, 8_000);
-  assert.ok(focus.includes(launcherPackage));
-  await sleep(1_000);
-  assert.ok(currentFocus().includes(launcherPackage), 'Home enforcement transition did not settle');
-  pass(`${mode} enforcement resumed for ${clockPackage} and sent it Home`);
-}
-
-async function assertTimedOverlayAndSettingsEscape() {
+async function assertAppRuleOverlayAndSettingsEscape(mode) {
   shell('input', 'keyevent', 'KEYCODE_HOME');
   await waitForFocus(launcherPackage);
   await waitFor('accessibility service rebound after UI inspection', () => serviceIsBound(), 10_000);
   await sleep(2_000);
   startComponent(clockActivity);
-  const before = await waitFor('real timed-visit accessibility overlay above visible Clock', () => {
+  const before = await waitFor(`real ${mode} accessibility overlay above visible Clock`, () => {
     const windows = shell('dumpsys', 'window', 'windows');
     const records = parseWindowRecords(windows);
     const overlay = records.find((record) => record.ownerPackage === appPackage &&
@@ -526,7 +517,20 @@ async function assertTimedOverlayAndSettingsEscape() {
       record.isOnScreen && record.isVisible);
     return overlay && clock && overlay.index < clock.index ? { overlay, clock } : false;
   }, 10_000, 100);
-  pass(`real timed-visit Clock overlay relation: ${visibleWindowEvidence(before.overlay)} above ${visibleWindowEvidence(before.clock)}`);
+  pass(`real ${mode} Clock overlay relation: ${visibleWindowEvidence(before.overlay)} above ${visibleWindowEvidence(before.clock)}`);
+
+  if (mode !== 'timed-visit') {
+    await sleep(1_000);
+    assert.ok(!currentFocus().includes(launcherPackage), `${mode} automatically sent Clock Home`);
+    const records = parseWindowRecords(shell('dumpsys', 'window', 'windows'));
+    const overlay = records.find((record) => record.ownerPackage === appPackage &&
+      record.type === 'ACCESSIBILITY_OVERLAY' && record.isOnScreen && record.isVisible);
+    const clock = records.find((record) => record.ownerPackage === clockPackage &&
+      record.isOnScreen && record.isVisible);
+    assert.ok(overlay && clock && overlay.index < clock.index,
+      `${mode} LIMIT card did not remain attached above visible Clock`);
+    pass(`${mode} LIMIT card remains above Clock with no automatic Home action`);
+  }
 
   let settingsBeneathOverlay;
   await assertSettingsStaysForeground(
@@ -549,8 +553,8 @@ async function assertTimedOverlayAndSettingsEscape() {
   const afterRecords = parseWindowRecords(shell('dumpsys', 'window', 'windows'));
   assert.ok(!afterRecords.some((record) => record.ownerPackage === appPackage &&
     record.type === 'ACCESSIBILITY_OVERLAY' && record.isOnScreen && record.isVisible),
-  'The timed overlay remained visible above Settings');
-  pass('existing timed overlay was removed and did not run its Home callback over Settings');
+  'The app-rule overlay remained visible above Settings');
+  pass(`${mode} overlay was removed and did not run its Home callback over Settings`);
 }
 
 async function selectRuleMode(label) {
@@ -652,11 +656,7 @@ async function runScenario(mode, day, secureStoreHash) {
   await assertSettingsStaysForeground('android.settings.SETTINGS', `${mode}: Android Settings`);
   await assertSettingsStaysForeground('android.settings.ACCESSIBILITY_SETTINGS', `${mode}: Accessibility Settings`);
 
-  if (mode === 'timed-visit') {
-    await assertTimedOverlayAndSettingsEscape();
-  } else {
-    await assertHomeEnforcementResumes(mode);
-  }
+  await assertAppRuleOverlayAndSettingsEscape(mode);
 
   assertLockStorageIntact(secureStoreHash);
   await disableServiceThroughUi({ requireEnabled: true });

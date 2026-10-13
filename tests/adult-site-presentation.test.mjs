@@ -13,22 +13,22 @@ const status = {
 };
 
 test('website rules never claim blocking without runtime prerequisites', () => {
-  assert.equal(getAdultSitePresentation({ ...status, available: false }).statusLabel, 'ANDROID');
-  assert.equal(getAdultSitePresentation({ ...status, serviceEnabled: false }).statusLabel, 'SAVED');
-  assert.equal(getAdultSitePresentation({ ...status, protectionEnabled: false }).statusLabel, 'SAVED');
-  assert.equal(getAdultSitePresentation({ ...status, adultSiteEnabled: false }).statusLabel, 'OFF');
+  assert.equal(getAdultSitePresentation({ ...status, available: false }).statusLabel, 'Android');
+  assert.equal(getAdultSitePresentation({ ...status, serviceEnabled: false }).statusLabel, 'Saved');
+  assert.equal(getAdultSitePresentation({ ...status, protectionEnabled: false }).statusLabel, 'Saved');
+  assert.equal(getAdultSitePresentation({ ...status, adultSiteEnabled: false }).statusLabel, 'Off');
 });
 
 test('enabled rules require an observed browser before claiming active blocking', () => {
-  assert.equal(getAdultSitePresentation(status).statusLabel, 'CHECK');
+  assert.equal(getAdultSitePresentation(status).statusLabel, 'Check');
   assert.deepEqual(getAdultSitePresentation({ ...status, browserSignalMask: 3, adultSiteCustomCount: 2 }), {
     detail: 'Adult-site blocking in 2 checked supported browsers · 2 added.',
-    statusLabel: 'ON',
+    statusLabel: 'On',
     tone: 'accent',
   });
   assert.deepEqual(getAdultSitePresentation({ ...status, browserAvailability: { chrome: 'disabled', samsungInternet: 'absent', opera: 'absent', firefox: 'absent' }, browserSignalMask: 15 }), {
     detail: 'On · enable a supported browser in Android.',
-    statusLabel: 'ENABLE',
+    statusLabel: 'Enable',
     tone: 'neutral',
   });
 });

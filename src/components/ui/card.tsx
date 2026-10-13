@@ -5,18 +5,20 @@ import { colors } from '@/theme/colors';
 
 import { StatusPill, type PillTone } from '@/components/ui/pill';
 
+const TONE_TEXT: Record<PillTone, string> = { accent: 'text-accent', danger: 'text-danger', neutral: 'text-muted' };
+
 /** Standard surface. `emphasis` lifts a card to the top of the visual hierarchy. */
 export function Card({ children, emphasis = false, className = '' }: { children: ReactNode; emphasis?: boolean; className?: string }) {
   const surface = emphasis ? 'border-accentLine bg-accentBg' : 'border-line bg-panel';
   return <View className={`rounded-3xl border p-4 ${surface} ${className}`}>{children}</View>;
 }
 
-/** Eyebrow above a card group or a section of the page. */
+/** Short label above a group of controls or a section of the page. */
 export function SectionLabel({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <Text className={`text-[11px] font-bold tracking-[0.16em] text-faint ${className}`}>{children}</Text>;
+  return <Text className={`text-support font-semibold text-muted ${className}`}>{children}</Text>;
 }
 
-/** Card header line: an eyebrow on the left, an optional state pill on the right. */
+/** Card header line: a label on the left, an optional state pill on the right. */
 export function CardHeader({ label, icon, pill }: { label: string; icon?: ReactNode; pill?: { label: string; tone?: PillTone } }) {
   return (
     <View className="flex-row items-center justify-between">
@@ -49,8 +51,8 @@ export function RowGroup({ children, className = '' }: { children: ReactNode; cl
 
 /**
  * One line inside a `RowGroup`. Becomes pressable when `onPress` is given.
- * `destructive` marks a row that performs an action rather than reporting a
- * state, so it is tinted and carries no state pill.
+ * `statusLabel` is a short state word beside the label; `value` is a pill on
+ * the trailing edge for counts and states that need to scan as a column.
  */
 export function Row({
   icon: Icon,
@@ -59,42 +61,43 @@ export function Row({
   value,
   statusLabel,
   tone = 'neutral',
-  destructive = false,
   disabled,
+  accessibilityLabel,
   onPress,
 }: {
   icon?: LucideIcon;
   label: string;
-  detail: string;
+  detail?: string;
   value?: string;
   statusLabel?: string;
   tone?: PillTone;
-  destructive?: boolean;
   disabled?: boolean;
+  accessibilityLabel?: string;
   onPress?: () => void;
 }) {
   const content = (
     <>
       {Icon ? <View className="mr-3"><Icon color={colors.accent} size={20} /></View> : null}
       <View className="flex-1 pr-3">
-        <View className="flex-row flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <Text className={`text-[15px] font-semibold ${destructive ? 'text-danger' : 'text-copy'}`}>{label}</Text>
-          {statusLabel ? <Text className={`text-[12px] font-semibold ${tone === 'accent' ? 'text-accent' : tone === 'danger' ? 'text-danger' : 'text-muted'}`}>{statusLabel}</Text> : null}
+        <View className="flex-row flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+          <Text className="text-item font-semibold text-copy">{label}</Text>
+          {statusLabel ? <Text className={`text-caption font-semibold ${TONE_TEXT[tone]}`}>{statusLabel}</Text> : null}
         </View>
-        <Text className="mt-0.5 text-[13px] leading-[18px] text-muted">{detail}</Text>
+        {detail ? <Text className="mt-0.5 text-support text-muted">{detail}</Text> : null}
       </View>
-      {value && !destructive ? <StatusPill label={value} tone={tone} /> : null}
-      {onPress && !destructive ? <ChevronRight color={colors.muted} size={17} style={{ marginLeft: 8 }} /> : null}
+      {value ? <StatusPill label={value} tone={tone} /> : null}
+      {onPress ? <ChevronRight color={colors.muted} size={18} style={{ marginLeft: 8 }} /> : null}
     </>
   );
 
-  if (!onPress) return <View className="flex-row items-center py-3.5">{content}</View>;
+  if (!onPress) return <View className="min-h-14 flex-row items-center py-3">{content}</View>;
 
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled: Boolean(disabled) }}
-      className={`flex-row items-center py-3.5 ${disabled ? 'opacity-40' : 'active:opacity-60'}`}
+      className={`min-h-14 flex-row items-center py-3 ${disabled ? 'opacity-40' : 'active:opacity-60'}`}
       disabled={disabled}
       onPress={onPress}>
       {content}

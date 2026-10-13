@@ -50,6 +50,8 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private val instagramStateMachine = InstagramGuardStateMachine()
   private val instagramDebugTrace = if (BuildConfig.DEBUG) InstagramDebugTrace() else null
   private val navigationHandler by lazy { Handler(Looper.getMainLooper()) }
+  private val instagramDeadlineHandler by lazy { Handler(Looper.getMainLooper()) }
+  private val instagramReelsDeadlineCheck = Runnable { checkInstagramReelsDeadline() }
   private lateinit var instagramOverlay: InstagramBlockerOverlay
   private var instagramBlockReason: InstagramBlockReason? = null
   private var instagramNavigationSuppressedUntilMs = 0L
@@ -199,6 +201,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
             resetInstagramStatsDedupe(instagramBlockReason)
             instagramBlockReason = null
             dailyTally.recordContinue(System.currentTimeMillis())
+            scheduleInstagramReelsDeadline()
           }
           continued
         } else false
@@ -697,7 +700,8 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     }
   }
 
-  private fun handleInstagramEvent(event: AccessibilityEvent) {
+  /** [event] is null when [checkInstagramReelsDeadline] re-reads the live tree without a new event. */
+  private fun handleInstagramEvent(event: AccessibilityEvent?) {
     val root = rootInActiveWindow ?: return
     // While our accessibility overlay is attached, Android can still deliver queued Instagram
     // events even though rootInActiveWindow points at the overlay (or another transient window).
@@ -763,7 +767,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     }
 
     val reelPagerVisible = hasReelPager(nodes)
-    val dmThreadClicked = isDmThreadClick(event, nodes)
+    val dmThreadClicked = event != null && isDmThreadClick(event, nodes)
     val guardInput = InstagramGuardInput(
       surface = detection.surface,
       nowMs = nowMs,
@@ -771,7 +775,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       dmThreadClicked = dmThreadClicked,
       dmThreadVisible = isDmThreadVisible(nodes),
       reelPagerVisible = reelPagerVisible,
-      reelPagerScrolled = isReelPagerScroll(event, nodes, reelPagerVisible),
+      reelPagerScrolled = event != null && isReelPagerScroll(event, nodes, reelPagerVisible),
     )
     val action = instagramStateMachine.next(guardInput, preferences.instagramSettings())
     instagramDebugTrace?.record(
@@ -800,10 +804,10 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
             InstagramBlockerDebugInfo(
               surface = detection.surface,
               reason = action.reason,
-              event = AccessibilityEvent.eventTypeToString(event.eventType),
-              eventPackage = event.packageName?.toString().orEmpty().ifEmpty { "none" },
+              event = event?.let { AccessibilityEvent.eventTypeToString(it.eventType) } ?: "deadline",
+              eventPackage = event?.packageName?.toString().orEmpty().ifEmpty { "none" },
               rootPackage = root.packageName?.toString().orEmpty().ifEmpty { "none" },
-              source = event.source?.viewIdResourceName?.substringAfterLast('/').orEmpty().ifEmpty { "none" },
+              source = event?.source?.viewIdResourceName?.substringAfterLast('/').orEmpty().ifEmpty { "none" },
               limits = "home=${preferences.instagramHomeMinutes}m reels=${preferences.instagramReelsMinutes}m wait=${preferences.instagramWaitSeconds}s",
               dmThreadVisible = guardInput.dmThreadVisible,
               dmThreadClicked = guardInput.dmThreadClicked,
@@ -876,6 +880,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     }
     navigationHandler.removeCallbacksAndMessages(null)
     usageHandler.removeCallbacksAndMessages(null)
+    instagramDeadlineHandler.removeCallbacksAndMessages(null)
     if (::intentOverlay.isInitialized) intentOverlay.hide()
     clearInstagramEnforcement(preserveHomeSession = hasActiveProtection())
     clearStatsDedupeState()
@@ -889,7 +894,33 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private val isScreenInteractive: Boolean
     get() = getSystemService(PowerManager::class.java)?.isInteractive == true
 
+  /**
+   * An untouched Reel emits no accessibility events, so the window granted by Continue would
+   * otherwise end only at the next swipe. Recheck the live tree when the window ends.
+   */
+  private fun scheduleInstagramReelsDeadline() {
+    instagramDeadlineHandler.removeCallbacks(instagramReelsDeadlineCheck)
+    val remainingMs = instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) ?: return
+    instagramDeadlineHandler.postDelayed(instagramReelsDeadlineCheck, remainingMs)
+  }
+
+  /**
+   * Acts only while the policy still holds the ended window. Leaving Reels, the app, or the
+   * screen clears that window, so a stale callback cannot block another surface. The normal
+   * handler then requires a live Instagram root and a visible Reels pager.
+   */
+  private fun checkInstagramReelsDeadline() {
+    val remainingMs = instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) ?: return
+    // Handler delays use uptime and the policy uses elapsed time; separate rounding can run this 1 ms early.
+    if (remainingMs > 0L) {
+      instagramDeadlineHandler.postDelayed(instagramReelsDeadlineCheck, remainingMs)
+      return
+    }
+    if (canRunEnforcementAction()) handleInstagramEvent(null)
+  }
+
   private fun clearInstagramEnforcement(preserveHomeSession: Boolean = false) {
+    instagramDeadlineHandler.removeCallbacks(instagramReelsDeadlineCheck)
     if (preserveHomeSession) {
       instagramStateMachine.onAppBackground(SystemClock.elapsedRealtime(), preferences.instagramSettings())
     } else {
@@ -1095,7 +1126,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     return true
   }
 
-  /** Reads text only from exact address-bar nodes; arbitrary browser page text is never copied. */
+  /** Reads text and descriptions only from exact address-bar nodes; page text is never copied. */
   private fun handleBrowserEvent(browserPackage: String) {
     if (!::adultSiteStore.isInitialized || !::adultSiteOverlay.isInitialized) return
     if (!canRunEnforcementAction()) return
@@ -1135,7 +1166,9 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       if (!node.isVisibleToUser) continue
       val viewId = node.viewIdResourceName.orEmpty()
       if (BrowserUrlDetector.isAddressBar(browserPackage, viewId)) {
-        result.add(BrowserNodeSignal(viewId, node.text?.toString().orEmpty(), true))
+        result.add(
+          BrowserNodeSignal(viewId, node.text?.toString().orEmpty(), true, node.contentDescription?.toString().orEmpty()),
+        )
       }
       if (depth >= MAX_BROWSER_DEPTH) continue
       for (index in 0 until node.childCount) node.getChild(index)?.let { pending.add(Pending(it, depth + 1)) }

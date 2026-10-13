@@ -4,7 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useReducedMotion } from 'react-native-reanimated';
 import { getInstalledApps, type InstalledApp } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
-import { metrics } from '@/theme/metrics';
+import { Plus } from 'lucide-react-native';
+import { SheetHeader } from './screen';
 
 type AppPickerProps = {
   visible: boolean;
@@ -35,28 +36,27 @@ export function AppPicker({ visible, configuredPackages, onClose, onSelect }: Ap
       <View className="flex-1 justify-end bg-black/50">
         <Pressable accessibilityRole="button" accessibilityLabel="Close app picker" onPress={onClose} className="absolute inset-0" />
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ height: '80%' }}>
-          <SafeAreaView edges={['bottom']} className="flex-1 rounded-t-3xl border-t border-line2 bg-panel px-5 pt-3">
-            <View className="mb-3 flex-row items-center justify-between">
-              <Text accessibilityRole="header" className="text-[20px] font-semibold text-copy">Add app</Text>
-              <Pressable accessibilityRole="button" accessibilityLabel="Close app picker" onPress={onClose} style={{ minHeight: metrics.touchTarget, minWidth: metrics.touchTarget }} className="items-center justify-center"><Text className="text-[28px] text-muted">×</Text></Pressable>
+          <SafeAreaView edges={['bottom']} className="flex-1 rounded-t-3xl border-t border-line2 bg-panel pt-3">
+            <SheetHeader title="Add app" closeLabel="Close app picker" onClose={onClose} />
+            <View className="flex-1 px-5">
+              <TextInput accessibilityLabel="Search apps" placeholder="Search apps" placeholderTextColor={colors.faint} value={query} onChangeText={setQuery} autoCorrect={false} autoCapitalize="none" className="mb-2 min-h-[48px] rounded-2xl border border-line2 bg-night px-4 py-3 text-item text-copy" />
+              {error ? <Pressable accessibilityRole="button" onPress={() => { void loadApps(); }} className="min-h-[48px] min-w-[48px] justify-center"><Text className="text-support font-medium text-danger">{error}</Text></Pressable> : null}
+              <FlatList
+                data={visible ? filtered : []}
+                keyExtractor={(app) => app.packageName}
+                keyboardShouldPersistTaps="handled"
+                initialNumToRender={12}
+                maxToRenderPerBatch={12}
+                windowSize={5}
+                getItemLayout={(_, index) => ({ length: 64, offset: 64 * index, index })}
+                renderItem={({ item }) => (
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Add ${item.label}`} onPress={() => { setQuery(''); onSelect(item); }} style={{ height: 64 }} className="flex-row items-center justify-between border-b border-line active:opacity-60">
+                    <Text numberOfLines={1} className="flex-1 pr-3 text-item font-medium text-copy">{item.label}</Text><Plus color={colors.accent} size={20} />
+                  </Pressable>
+                )}
+                ListEmptyComponent={<Text className="py-5 text-support text-muted">{apps === null ? error ? '' : 'Loading apps…' : 'No apps match.'}</Text>}
+              />
             </View>
-            <TextInput accessibilityLabel="Search apps" placeholder="Search apps" placeholderTextColor={colors.faint} value={query} onChangeText={setQuery} autoCorrect={false} autoCapitalize="none" className="mb-2 rounded-2xl border border-line bg-night px-4 py-3.5 text-[15px] text-copy" />
-            {error ? <Pressable accessibilityRole="button" onPress={() => { void loadApps(); }} className="py-3"><Text className="text-[13px] text-danger">{error}</Text></Pressable> : null}
-            <FlatList
-              data={visible ? filtered : []}
-              keyExtractor={(app) => app.packageName}
-              keyboardShouldPersistTaps="handled"
-              initialNumToRender={12}
-              maxToRenderPerBatch={12}
-              windowSize={5}
-              getItemLayout={(_, index) => ({ length: 64, offset: 64 * index, index })}
-              renderItem={({ item }) => (
-                <Pressable accessibilityRole="button" accessibilityLabel={`Add ${item.label}`} onPress={() => { setQuery(''); onSelect(item); }} style={{ height: 64 }} className="flex-row items-center justify-between border-b border-line">
-                  <Text numberOfLines={1} className="flex-1 pr-3 text-[15px] font-medium text-copy">{item.label}</Text><Text className="text-[22px] text-accent">＋</Text>
-                </Pressable>
-              )}
-              ListEmptyComponent={<Text className="py-5 text-[13px] text-muted">{apps === null ? error ? '' : 'Loading apps…' : 'No apps match.'}</Text>}
-            />
           </SafeAreaView>
         </KeyboardAvoidingView>
       </View>

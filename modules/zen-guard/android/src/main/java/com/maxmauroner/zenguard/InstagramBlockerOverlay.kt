@@ -756,7 +756,14 @@ internal class InstagramBlockerOverlay(
           service.getString(R.string.zen_guard_stat_home_availability),
         )
         stateView?.text = service.getString(R.string.zen_guard_state_closed)
-        descriptionView?.text = service.getString(R.string.zen_guard_instagram_home_unavailable_detail)
+        val detail = if (home.storageState == HomeFeedStorageState.AVAILABLE &&
+          home.lockoutState == HomeFeedLockoutState.UNKNOWN
+        ) {
+          R.string.zen_guard_instagram_home_unknown_break_detail
+        } else {
+          R.string.zen_guard_instagram_home_unavailable_detail
+        }
+        descriptionView?.text = service.getString(detail)
       }
       remainingMs != null && remainingMs > 0L -> {
         homeStat?.update(formatDuration(remainingMs), service.getString(R.string.zen_guard_stat_home_available_in))

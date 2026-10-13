@@ -19,6 +19,7 @@
   <string name="zen_guard_instagram_explore_blocked">Explore can\nwait.</string>
   <string name="zen_guard_instagram_home_detail">Your Home visit is complete. Home opens again when the break ends. Messages are still available.</string>
   <string name="zen_guard_instagram_home_unavailable_detail">Home availability could not be verified. Leave Instagram and return after Zen Mode reconnects.</string>
+  <string name="zen_guard_instagram_home_unknown_break_detail">Zen Mode could not verify when the previous Home break ends. Keep Zen Mode connected and return after the full break.</string>
   <string name="zen_guard_instagram_home_ready_detail">Home is available again. Leave this screen and return to Home to start another visit.</string>
   <string name="zen_guard_instagram_reels_detail">Wait here, or leave Instagram. Continue unlocks when the pause ends.</string>
   <string name="zen_guard_instagram_reels_entry_detail">Reels are closed here. Return to Messages to choose what comes next.</string>

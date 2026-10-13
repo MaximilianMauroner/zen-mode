@@ -789,7 +789,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
         // The state machine re-emits the same blocker on every event while it
         // stays up. Count the stop only when the block appears, not per event.
         val isNewBlock = instagramBlockReason == null
-        val wasShowing = instagramOverlay.isShowing
         instagramBlockReason = action.reason
         val wallNow = System.currentTimeMillis()
         if (isNewBlock) dailyTally.recordStop(wallNow)
@@ -818,8 +817,8 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
           } else {
             null
           },
+          onAttached = { recordInstagramBlockStats(action.reason, EnforcementStatsOutcome.SUCCESS) },
         )
-        recordInstagramBlockStats(action.reason, wasShowing, instagramOverlay.isShowing, EnforcementStatsOutcome.SUCCESS)
       }
       InstagramGuardAction.None -> {
         if (instagramBlockReason != null) {
@@ -979,13 +978,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   internal fun recordXVideoStats(callbackKey: String, outcome: EnforcementStatsOutcome): Boolean =
     recordStatsAction(EnforcementReason.X_VIDEOS, outcome, callbackKey)
 
-  internal fun recordInstagramBlockStats(
-    reason: InstagramBlockReason,
-    wasShowing: Boolean,
-    overlayAttached: Boolean,
-    outcome: EnforcementStatsOutcome,
-  ): Boolean {
-    if (wasShowing || !overlayAttached) return false
+  internal fun recordInstagramBlockStats(reason: InstagramBlockReason, outcome: EnforcementStatsOutcome): Boolean {
     val statsReason = when (reason) {
       InstagramBlockReason.REELS_ENTRY,
       InstagramBlockReason.REELS_SWIPE,
@@ -997,15 +990,8 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     return recordStatsAction(statsReason, outcome, reason.name)
   }
 
-  internal fun recordBlockedSiteStats(
-    browserPackage: String,
-    previousPackage: String?,
-    overlayAttached: Boolean,
-    outcome: EnforcementStatsOutcome,
-  ): Boolean {
-    if (previousPackage == browserPackage || !overlayAttached) return false
-    return recordStatsAction(EnforcementReason.BLOCKED_SITE, outcome, browserPackage)
-  }
+  internal fun recordBlockedSiteStats(browserPackage: String, outcome: EnforcementStatsOutcome): Boolean =
+    recordStatsAction(EnforcementReason.BLOCKED_SITE, outcome, browserPackage)
 
   internal fun recordAppLimitStats(packageName: String, outcome: EnforcementStatsOutcome): Boolean =
     recordStatsAction(EnforcementReason.APP_LIMIT, outcome, packageName)
@@ -1121,17 +1107,11 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     val detection = BrowserUrlDetector.detect(browserPackage, browserAddressBars(root, browserPackage)) ?: return
     adultSiteStore.recordBrowserSignal(detection.browserMask)
     if (AdultSitePolicy.isBlocked(detection.host, adultSiteStore.customHosts())) {
-      val previousPackage = adultSiteOverlay.shownPackage()
       adultSiteOverlay.show(
         browserPackage = browserPackage,
         onBack = { leaveBlockedSiteBack() },
         onHome = { leaveBlockedSiteHome() },
-      )
-      recordBlockedSiteStats(
-        browserPackage = browserPackage,
-        previousPackage = previousPackage,
-        overlayAttached = adultSiteOverlay.shownPackage() == browserPackage,
-        outcome = EnforcementStatsOutcome.SUCCESS,
+        onAttached = { recordBlockedSiteStats(browserPackage, EnforcementStatsOutcome.SUCCESS) },
       )
     } else if (adultSiteOverlay.shownPackage() == browserPackage) {
       adultSiteOverlay.hide()
@@ -1180,7 +1160,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   }
 
   private fun leaveBlockedSiteHome() {
-    adultSiteOverlay.hide()
+    clearAdultSiteEnforcement()
     if (canRunEnforcementAction()) performGlobalAction(GLOBAL_ACTION_HOME)
   }
 

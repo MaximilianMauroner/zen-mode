@@ -183,7 +183,7 @@ class InstagramBlockerOverlayTest {
   )
 
   private fun show(action: InstagramGuardAction.ShowBlocker) {
-    overlay.show(action, reelsMinutes = 1, debugInfo = null)
+    overlay.show(action, reelsMinutes = 1, debugInfo = null, onAttached = {})
   }
 
   private fun idle(duration: Duration) {

@@ -1,4 +1,5 @@
 import { Card } from '@/components/ui/card';
+import { ChoiceCard } from '@/components/ui/choice';
 import { PrimaryButton, SecondaryButton } from '@/components/ui/button';
 import { ErrorNote, IconTile, Screen, ScreenTitle } from '@/components/ui/screen';
 import { acceptSetupConsent, confirmAndroidAccess, hasCompletedSetup, markSetupComplete } from '@/features/protection/setup';
@@ -118,58 +119,63 @@ export default function SetupScreen() {
       />
 
       <Card>
-        <Text accessibilityRole="header" className="text-[15px] font-semibold text-copy">How would you like to start?</Text>
+        <Text accessibilityRole="header" className="text-item font-semibold text-copy">How would you like to start?</Text>
         <View accessibilityRole="radiogroup" accessibilityLabel="Starting rules" className="mt-3 gap-2">
-          <Pressable accessibilityRole="radio" accessibilityState={{ checked: choice === 'defaults', disabled: selectionDisabled }} disabled={selectionDisabled} onPress={() => setChoice('defaults')} className={`min-h-12 rounded-xl border p-3 ${choice === 'defaults' ? 'border-accent bg-panel2' : 'border-line bg-panel'}`}>
-            <Text className="text-[15px] font-semibold text-copy">Use healthy defaults</Text>
-            <Text className="mt-1 text-[13px] leading-[19px] text-muted">Start with the rules listed below. You can adjust them later.</Text>
-          </Pressable>
-          <Pressable accessibilityRole="radio" accessibilityState={{ checked: choice === 'customize', disabled: selectionDisabled }} disabled={selectionDisabled} onPress={() => setChoice('customize')} className={`min-h-12 rounded-xl border p-3 ${choice === 'customize' ? 'border-accent bg-panel2' : 'border-line bg-panel'}`}>
-            <Text className="text-[15px] font-semibold text-copy">Customize</Text>
-            <Text className="mt-1 text-[13px] leading-[19px] text-muted">Open Feeds and Sites after access. Protection stays paused while you choose rules.</Text>
-          </Pressable>
+          <ChoiceCard title="Use healthy defaults" detail="Start with the rules listed below. You can adjust them later." selected={choice === 'defaults'} disabled={selectionDisabled} onPress={() => setChoice('defaults')} />
+          <ChoiceCard title="Customize" detail="Open Feeds and Sites after access. Protection stays paused while you choose rules." selected={choice === 'customize'} disabled={selectionDisabled} onPress={() => setChoice('customize')} />
         </View>
-        {choice === 'defaults' ? <View className="mt-3">{RECOMMENDED_DEFAULTS_SUMMARY.map((line) => <Text key={line} className="mt-1 text-[13px] leading-[19px] text-muted">{'· '}{line}</Text>)}</View> : null}
+        {choice === 'defaults' ? (
+          <View className="mt-3 gap-1.5">
+            {RECOMMENDED_DEFAULTS_SUMMARY.map((line) => (
+              <View key={line} className="flex-row gap-2">
+                <Check color={colors.accent} size={15} style={{ marginTop: 2 }} />
+                <Text className="flex-1 text-support text-muted">{line}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
       </Card>
 
-      <Card className="border-dangerLine">
+      <Card>
         <View className="flex-row items-center">
-          <Eye color={colors.danger} size={18} />
-          <Text className="ml-2.5 text-[15px] font-semibold text-copy">Accessibility access</Text>
+          <Eye color={colors.accent} size={18} />
+          <Text accessibilityRole="header" className="ml-2.5 text-item font-semibold text-copy">Accessibility access</Text>
         </View>
-        <Text className="mt-3.5 text-[14px] leading-[21px] text-muted">
+        <Text className="mt-3 text-body text-muted">
           Zen Mode uses Android accessibility to recognize guarded YouTube, Instagram, and X feeds, read addresses in supported browser bars when site blocking is on, and identify the foreground app for app limits. This access is needed to apply your rules.
         </Text>
-        <Text className="mt-2.5 text-[14px] leading-[21px] text-muted">
+        <Text className="mt-2.5 text-body text-muted">
           Screen contents and browser addresses stay on this device. Zen Mode does not record what you type, take screenshots, or send this data anywhere.
         </Text>
-        <Pressable accessibilityRole="button" accessibilityState={{ expanded: showDetails, disabled: busy }} disabled={busy} onPress={() => setShowDetails((value) => !value)} className="mt-3 min-h-11 justify-center">
-          <Text className="text-[13px] font-semibold text-accent">{showDetails ? 'Hide access details' : 'More about this access'}</Text>
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded: showDetails, disabled: busy }} disabled={busy} onPress={() => setShowDetails((value) => !value)} className="mt-1 min-h-[48px] justify-center self-start">
+          <Text className="text-support font-semibold text-accent">{showDetails ? 'Hide access details' : 'More about this access'}</Text>
         </Pressable>
-        {showDetails ? <Text className="text-[13px] leading-[19px] text-muted">When you add an app limit or timed visit, Zen Mode lists launchable apps on this device so you can choose one. It stores guard settings and local usage and detection summaries, not visited addresses, screen text, or the installed-app inventory. It does not inspect browser page content.</Text> : null}
+        {showDetails ? <Text className="mb-1 text-support text-muted">When you add an app limit or timed visit, Zen Mode lists launchable apps on this device so you can choose one. It stores guard settings and local usage and detection summaries, not visited addresses, screen text, or the installed-app inventory. It does not inspect browser page content.</Text> : null}
         <Pressable
           accessibilityRole="checkbox"
           accessibilityState={{ checked: consented, disabled: selectionDisabled }}
-          className={`mt-4 flex-row items-center ${selectionDisabled ? 'opacity-40' : 'active:opacity-70'}`}
+          className={`mt-3 min-h-[48px] flex-row items-center rounded-2xl border px-3.5 ${consented ? 'border-accent bg-accentBg' : 'border-line2 bg-panel2'} ${selectionDisabled ? 'opacity-40' : 'active:opacity-70'}`}
           disabled={selectionDisabled}
           onPress={() => setConsented((value) => !value)}>
-          <View className={`h-6 w-6 items-center justify-center rounded-lg border ${consented ? 'border-accent bg-accent' : 'border-line2 bg-panel2'}`}>
-            {consented ? <Check color={colors.onAccent} size={15} strokeWidth={3} /> : null}
+          <View className={`h-5 w-5 items-center justify-center rounded-md border-2 ${consented ? 'border-accent bg-accent' : 'border-muted'}`}>
+            {consented ? <Check color={colors.onAccent} size={14} strokeWidth={3} /> : null}
           </View>
-          <Text className="ml-3 flex-1 text-[14px] font-medium leading-[20px] text-copy">I understand, and I agree to this use.</Text>
+          <Text className="ml-3 flex-1 py-3 text-body font-medium text-copy">I understand, and I agree to this use.</Text>
         </Pressable>
       </Card>
 
       <ErrorNote message={error} />
-      {accessRequested && Platform.OS === 'android' ? <Text className="text-[13px] leading-[19px] text-muted">Setup is pending until Zen Mode confirms Android accessibility access. If you did not grant it, open Settings and try again.</Text> : null}
-      <SecondaryButton title="Privacy" disabled={busy} onPress={() => router.navigate('/privacy')} />
-      <PrimaryButton
-        title={setupReadState === 'loading' ? 'Checking…' : saving ? 'Checking access…' : setupReadState === 'error' ? 'Try again' : accessRequested ? 'Check Android access again' : 'Continue to Android access'}
-        disabled={busy}
-        onPress={setupReadState === 'error' ? retrySetupCheck : accessRequested ? () => { void checkAccess(); } : openAccess}
-      />
-      {accessRequested && Platform.OS === 'android' ? <SecondaryButton title="Open Android settings" disabled={busy} onPress={() => { void openAccessibilitySettings().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Could not open Android settings.')); }} /> : null}
-      <Text className="text-center text-[12px] leading-[18px] text-faint">
+      {accessRequested && Platform.OS === 'android' ? <Text className="text-support text-muted">Setup is pending until Zen Mode confirms Android accessibility access. If you did not grant it, open Settings and try again.</Text> : null}
+      <View className="gap-3">
+        <PrimaryButton
+          title={setupReadState === 'loading' ? 'Checking…' : saving ? 'Checking access…' : setupReadState === 'error' ? 'Try again' : accessRequested ? 'Check Android access again' : 'Continue to Android access'}
+          disabled={busy}
+          onPress={setupReadState === 'error' ? retrySetupCheck : accessRequested ? () => { void checkAccess(); } : openAccess}
+        />
+        {accessRequested && Platform.OS === 'android' ? <SecondaryButton title="Open Android settings" disabled={busy} onPress={() => { void openAccessibilitySettings().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Could not open Android settings.')); }} /> : null}
+        <SecondaryButton title="Privacy" disabled={busy} onPress={() => router.navigate('/privacy')} />
+      </View>
+      <Text className="text-center text-caption text-faint">
         Nothing here stops you turning the service off in Android Settings, or uninstalling the app outright.
       </Text>
     </Screen>

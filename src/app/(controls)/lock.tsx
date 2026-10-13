@@ -1,5 +1,6 @@
 import { DangerButton, PrimaryButton, SecondaryButton } from '@/components/ui/button';
 import { Card, CardHeader, SectionLabel } from '@/components/ui/card';
+import { ChipGroup } from '@/components/ui/choice';
 import { TopTabs } from 'expo-router/js-top-tabs';
 import { ErrorNote, Screen } from '@/components/ui/screen';
 import {
@@ -15,7 +16,7 @@ import { colors } from '@/theme/colors';
 import { Lock } from 'lucide-react-native';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 type ReadState = 'loading' | 'ready' | 'error';
 
@@ -107,18 +108,18 @@ export default function LockScreen() {
     <Screen edges={[]}>
       <TopTabs.Screen options={{ swipeEnabled: !busy }} />
 
-      <Text accessibilityRole="header" className="text-[18px] font-semibold text-copy">{currentLock === null ? readState === 'loading' ? 'Reading lock…' : 'Lock unavailable' : currentLock.kind === 'pending' ? 'Unlock requested' : currentLock.kind === 'locked' ? 'Settings locked' : 'Settings unlocked'}</Text>
+      <Text accessibilityRole="header" className="text-title font-semibold text-copy">{currentLock === null ? readState === 'loading' ? 'Reading lock…' : 'Lock unavailable' : currentLock.kind === 'pending' ? 'Unlock requested' : currentLock.kind === 'locked' ? 'Settings locked' : 'Settings unlocked'}</Text>
 
       {currentLock !== null && currentLock.kind !== 'open' ? (
         <Card emphasis={currentLock.kind === 'locked'}>
           <CardHeader
-            label={currentLock.kind === 'pending' ? 'OPENS IN' : 'HOLDS FOR'}
+            label={currentLock.kind === 'pending' ? 'Opens in' : 'Holds for'}
             icon={<Lock color={colors.accent} size={15} />}
           />
-          <Text className="mt-3 text-[40px] font-bold leading-[46px] tracking-tight text-accent" style={{ fontVariant: ['tabular-nums'] }}>
+          <Text className="mt-2 text-metric font-semibold tracking-tight text-accent" style={{ fontVariant: ['tabular-nums'] }}>
             {formatRemaining(currentLock.endsAt, now)}
           </Text>
-          <Text className="mt-1 text-[13px] leading-[19px] text-muted">
+          <Text className="mt-1 text-support text-muted">
             {currentLock.kind === 'pending'
               ? 'Changed your mind? Keep it locked and nothing happens.'
               : 'Tightening works right now. Loosening needs the wait.'}
@@ -130,21 +131,15 @@ export default function LockScreen() {
       ) : null}
 
       <View>
-        <SectionLabel className="mb-2.5">{currentLock !== null && currentLock.kind !== 'open' ? 'EXTEND' : 'LOCK FOR'}</SectionLabel>
+        <SectionLabel className="mb-2">{currentLock !== null && currentLock.kind !== 'open' ? 'Extend' : 'Lock for'}</SectionLabel>
         <Card>
-          <View className="flex-row flex-wrap gap-2">
-            {LOCK_DAY_OPTIONS.map((days) => (
-              <Pressable
-                key={days}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: selectedDays === days, disabled: controlsDisabled }}
-                className={`min-h-11 min-w-[56px] items-center rounded-xl border px-3 py-2 ${selectedDays === days ? 'border-accent bg-accent' : 'border-line bg-panel2'} ${controlsDisabled ? 'opacity-40' : 'active:opacity-70'}`}
-                disabled={controlsDisabled}
-                onPress={() => setSelectedDays(days)}>
-                <Text className={`text-[14px] font-bold ${selectedDays === days ? 'text-onAccent' : 'text-muted'}`}>{days}d</Text>
-              </Pressable>
-            ))}
-          </View>
+          <ChipGroup
+            label="Lock length"
+            options={LOCK_DAY_OPTIONS.map((days) => ({ value: days, label: `${days}d` }))}
+            selected={selectedDays}
+            disabled={controlsDisabled}
+            onSelect={setSelectedDays}
+          />
           {currentLock !== null && currentLock.kind !== 'open' ? (
             <SecondaryButton
               className="mt-4"
@@ -167,7 +162,7 @@ export default function LockScreen() {
         <DangerButton title={busy ? 'Working…' : 'Ask to unlock'} disabled={controlsDisabled} onPress={askToUnlock} />
       ) : null}
 
-      <Text className="text-[12px] leading-[18px] text-muted">{currentLock?.kind === 'locked' || currentLock?.kind === 'pending' ? 'Unlocking takes at least 24 hours and cannot end before the lock expires.' : 'You can tighten limits while locked.'}</Text>
+      <Text className="text-caption text-muted">{currentLock?.kind === 'locked' || currentLock?.kind === 'pending' ? 'Unlocking takes at least 24 hours and cannot end before the lock expires.' : 'You can tighten limits while locked.'}</Text>
       <ErrorNote message={error} />
     </Screen>
   );

@@ -247,8 +247,8 @@ test('sites action appears only when an installed or unknown supported browser n
   assert.equal(getOverviewAction(onlySites({ browserSignalMask: 1 }), false), null);
   assert.equal(getOverviewAction(onlySites({ browserAvailability: undefined, browserSignalMask: 0 }), false), 'check-sites');
   assert.equal(getOverviewAction(onlySites({ browserAvailability: { chrome: 'absent', samsungInternet: 'absent', opera: 'absent', firefox: 'absent' } }), false), null);
-  assert.equal(getAdultSitePresentation(onlySites({ browserAvailability: { chrome: 'absent', samsungInternet: 'absent', opera: 'absent', firefox: 'absent' } })).statusLabel, 'NO BROWSER');
-  assert.equal(getAdultSitePresentation(onlySites({ browserAvailability: { chrome: 'disabled', samsungInternet: 'absent', opera: 'absent', firefox: 'absent' } })).statusLabel, 'ENABLE');
+  assert.equal(getAdultSitePresentation(onlySites({ browserAvailability: { chrome: 'absent', samsungInternet: 'absent', opera: 'absent', firefox: 'absent' } })).statusLabel, 'No browser');
+  assert.equal(getAdultSitePresentation(onlySites({ browserAvailability: { chrome: 'disabled', samsungInternet: 'absent', opera: 'absent', firefox: 'absent' } })).statusLabel, 'Enable');
   assert.match(adultSiteDrawerSource, /getBrowserReadiness\(status\) === 'none-installed' \|\| getBrowserReadiness\(status\) === 'disabled'/);
   assert.match(adultSiteDrawerSource, /getBrowserReadiness\(status\) === 'disabled' \? <Text[^>]*>Enable one of the supported browsers/);
 });

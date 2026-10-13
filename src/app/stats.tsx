@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Platform, RefreshControl, Text, View } from 'react-native';
+import { AppState, Platform, RefreshControl, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 
 import { Card, Row, RowGroup } from '@/components/ui/card';
@@ -29,6 +29,10 @@ export default function StatsScreen() {
 
   useFocusEffect(useCallback(() => {
     void load();
+    const listener = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void load();
+    });
+    return () => listener.remove();
   }, [load]));
 
   const screenState = getStatsScreenState(Platform.OS, stats, loading);

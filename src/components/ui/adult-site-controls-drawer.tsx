@@ -109,7 +109,12 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
       onRequestClose={() => { if (gate.session) gate.finish(false); else close(); }}
       onShow={() => { setInput(''); setLockBlocked(false); void load(); }}
       statusBarTranslucent>
-      <KeyboardAvoidingView className="flex-1 justify-end bg-black/50" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* The embedded gate owns Android keyboard avoidance while it is open. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        enabled={Platform.OS !== 'android' || !gate.session}
+        style={{ flex: 1 }}
+        className="justify-end bg-black/50">
         <Pressable accessibilityRole="button" accessibilityLabel="Close site controls" onPress={close} disabled={busy} className="absolute inset-0" />
         <SafeAreaView edges={['bottom']} style={{ maxHeight: '88%' }} className="rounded-t-3xl border-t border-line2 bg-panel pt-3">
           <SheetHeader title="Sites" closeLabel="Close site controls" disabled={busy} onClose={close} />

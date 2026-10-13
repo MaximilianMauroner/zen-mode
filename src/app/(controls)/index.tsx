@@ -99,7 +99,8 @@ export default function FeedsScreen() {
           <PrimaryButton title={busy ? 'Working…' : nextAction.title} disabled={busy || loading} onPress={() => runAction(nextAction.run)} />
         </View>
       ) : null}
-      <ErrorNote message={error || readError} />
+      <ErrorNote message={readError} />
+      <ErrorNote message={error} />
 
       <RowGroup>
         <Row icon={Play} label="YouTube" detail={`Home: ${getFeedPresentation(status, 'youtubeHome', loading).statusLabel} · Shorts: ${getFeedPresentation(status, 'shorts', loading).statusLabel}`} onPress={() => setDrawer('youtube')} disabled={!editable} />

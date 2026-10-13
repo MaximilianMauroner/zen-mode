@@ -615,7 +615,8 @@ internal class InstagramBlockerOverlay(
       timerLabel?.text = service.getString(R.string.zen_guard_pause_label) + " " +
         service.getString(R.string.zen_guard_pause_done)
       button.isEnabled = true
-      button.text = service.getString(R.string.zen_guard_continue_doomscrolling, button.tag as Int)
+      val minutes = button.tag as Int
+      button.text = service.resources.getQuantityString(R.plurals.zen_guard_continue_doomscrolling, minutes, minutes)
       // Continue becomes real but stays the quiet button. Leave keeps accent.
       button.setTextColor(copy)
       button.background = roundedBackground(panel2, line2, dp(16).toFloat())
@@ -755,7 +756,14 @@ internal class InstagramBlockerOverlay(
           service.getString(R.string.zen_guard_stat_home_availability),
         )
         stateView?.text = service.getString(R.string.zen_guard_state_closed)
-        descriptionView?.text = service.getString(R.string.zen_guard_instagram_home_unavailable_detail)
+        val detail = if (home.storageState == HomeFeedStorageState.AVAILABLE &&
+          home.lockoutState == HomeFeedLockoutState.UNKNOWN
+        ) {
+          R.string.zen_guard_instagram_home_unknown_break_detail
+        } else {
+          R.string.zen_guard_instagram_home_unavailable_detail
+        }
+        descriptionView?.text = service.getString(detail)
       }
       remainingMs != null && remainingMs > 0L -> {
         homeStat?.update(formatDuration(remainingMs), service.getString(R.string.zen_guard_stat_home_available_in))

@@ -27,9 +27,9 @@ internal fun millisUntilLocalMidnight(nowMs: Long): Long {
   calendar.set(Calendar.SECOND, 0)
   calendar.set(Calendar.MILLISECOND, 0)
   calendar.add(Calendar.DAY_OF_YEAR, 1)
-  return (calendar.timeInMillis - nowMs).coerceIn(0L, MS_PER_DAY)
+  return (calendar.timeInMillis - nowMs).coerceAtLeast(0L)
 }
 
 /** How much of the local day has already passed, as a 0..1 ratio. */
 internal fun localDayElapsedRatio(nowMs: Long): Float =
-  1f - millisUntilLocalMidnight(nowMs).toFloat() / MS_PER_DAY
+  (1f - millisUntilLocalMidnight(nowMs).toFloat() / MS_PER_DAY).coerceIn(0f, 1f)

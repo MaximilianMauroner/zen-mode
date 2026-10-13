@@ -68,6 +68,13 @@ internal class RollingLimitStore(context: Context) {
     return usedMs(packageName, nowWallMs) >= rule.allowanceMinutes * 60_000L
   }
 
+  fun availableAgainAt(packageName: String, nowWallMs: Long): Long? {
+    val rule = rules()[packageName] ?: return null
+    return RollingWindow.availableAgainAt(
+      readEvents(packageName), rule.allowanceMinutes * 60_000L, rule.windowMinutes * 60_000L, nowWallMs,
+    )
+  }
+
   private fun isValidRule(allowanceMinutes: Int, windowMinutes: Int): Boolean =
     allowanceMinutes in 1..MAX_ALLOWANCE_MINUTES &&
       windowMinutes in MIN_WINDOW_MINUTES..MAX_WINDOW_MINUTES &&

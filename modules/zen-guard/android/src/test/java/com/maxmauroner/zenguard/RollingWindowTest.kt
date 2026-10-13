@@ -2,6 +2,7 @@ package com.maxmauroner.zenguard
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class RollingWindowTest {
@@ -35,6 +36,22 @@ class RollingWindowTest {
 
     assertEquals(300_000L, RollingWindow.usedMs(events, 3_600_000L, 10_100_000L))
     assertEquals(0L, RollingWindow.usedMs(events, 3_600_000L, 13_700_000L))
+  }
+
+  @Test
+  fun `access returns before the full window refills and equality remains blocked`() {
+    val events = listOf(RollingEvent(2_000L, 30L), RollingEvent(1_000L, 20L), RollingEvent(3_000L, 50L))
+    // Expiring the oldest 20 leaves exactly the 80 allowance, so access needs the next expiry.
+    assertEquals(12_000L, RollingWindow.availableAgainAt(events, 80L, 10_000L, 4_000L))
+    assertTrue(RollingWindow.usedMs(events, 10_000L, 11_999L) >= 80L)
+    assertTrue(RollingWindow.usedMs(events, 10_000L, 12_000L) < 80L)
+    assertNull(RollingWindow.availableAgainAt(events, 80L, 10_000L, 12_000L))
+  }
+
+  @Test
+  fun `exhausted hourly allowance regains access at oldest necessary slice expiry`() {
+    val events = listOf(RollingEvent(1_000_000L, 150_000L), RollingEvent(1_300_000L, 150_000L))
+    assertEquals(4_600_000L, RollingWindow.availableAgainAt(events, 300_000L, 3_600_000L, 1_300_000L))
   }
 
   @Test

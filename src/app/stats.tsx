@@ -3,7 +3,7 @@ import { Platform, RefreshControl, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 
 import { Card, Row, RowGroup } from '@/components/ui/card';
-import { ErrorNote, Screen, ScreenHeader, ScreenTitle } from '@/components/ui/screen';
+import { ErrorNote, Screen, ScreenHeader } from '@/components/ui/screen';
 import { getEnforcementStats, type EnforcementStats } from '@/features/protection/native';
 import { getStatsScreenState } from '@/features/protection/stats-screen-model';
 import { colors } from '@/theme/colors';
@@ -36,18 +36,18 @@ export default function StatsScreen() {
 
   return (
     <Screen refreshControl={screenState.available ? <RefreshControl refreshing={loading} onRefresh={() => void load()} tintColor={colors.accent} /> : undefined}>
-      <ScreenHeader label="STATISTICS" onBack={() => router.back()} backDisabled={loading} />
-      <ScreenTitle title="Interventions" description="Local totals show when a protection rule actually stopped or covered something. Detector observations are not counted." />
+      <ScreenHeader title="Statistics" onBack={() => router.back()} backDisabled={loading} />
+      <Text className="-mt-1 text-body text-muted">Local totals show when a protection rule actually stopped or covered something. Detector observations are not counted.</Text>
 
       <Card emphasis>
-        <Text className="text-[12px] font-bold tracking-[0.16em] text-accent">ALL TIME</Text>
-        <Text className="mt-2 text-[44px] font-semibold leading-[50px] text-copy">{screenModel?.total ?? '—'}</Text>
-        <Text className="mt-1 text-[15px] text-muted">total interventions</Text>
+        <Text className="text-support font-semibold text-accent">All time</Text>
+        <Text className="mt-1 text-metric font-semibold tracking-tight text-copy" style={{ fontVariant: ['tabular-nums'] }}>{screenModel?.total ?? '—'}</Text>
+        <Text className="text-item text-muted">total interventions</Text>
       </Card>
 
       <ErrorNote message={error} />
       <View className="gap-3">
-        <Text accessibilityRole="header" className="text-[18px] font-semibold text-copy">By protection</Text>
+        <Text accessibilityRole="header" className="text-title font-semibold text-copy">By protection</Text>
         {screenModel ? (
           <RowGroup>
             {screenModel.rows.map(({ key, label, detail, value }) => (
@@ -56,11 +56,11 @@ export default function StatsScreen() {
             {screenModel.other ? <Row {...screenModel.other} /> : null}
           </RowGroup>
         ) : (
-          <Card><Text className="text-[14px] text-muted">{screenState.message}</Text></Card>
+          <Card><Text className="text-body text-muted">{screenState.message}</Text></Card>
         )}
       </View>
 
-      <Text className="text-[12px] leading-[18px] text-faint">Statistics stay on this device and contain only aggregate counts, fixed categories, and the latest event time. Clearing Zen Mode app data resets them.</Text>
+      <Text className="text-caption text-faint">Statistics stay on this device and contain only aggregate counts, fixed categories, and the latest event time. Clearing Zen Mode app data resets them.</Text>
     </Screen>
   );
 }

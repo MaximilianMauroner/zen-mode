@@ -1,5 +1,6 @@
 import { DangerButton, PrimaryButton, SecondaryButton } from '@/components/ui/button';
-import { Card, SectionLabel } from '@/components/ui/card';
+import { Card, RowGroup, SectionLabel } from '@/components/ui/card';
+import { ChipGroup, ChoiceCard } from '@/components/ui/choice';
 import { ErrorNote, Screen, ScreenHeader } from '@/components/ui/screen';
 import { AppPicker } from '@/components/ui/app-picker';
 import { useWeakeningGate, WeakeningGateDialog } from '@/components/ui/weakening-gate';
@@ -27,6 +28,8 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Platform, Pressable, Text, View } from 'react-native';
+import { ChevronRight } from 'lucide-react-native';
+import { colors } from '@/theme/colors';
 import { getAppRuleChangeAction, getConfiguredAppPresentation } from '@/features/protection/app-rule-presentation';
 import { getAppLimitsPlatformState } from '@/features/protection/app-limits-state';
 
@@ -57,7 +60,7 @@ type GuardedEntry = {
   availabilityDetail: string | null;
 };
 
-const MODE_LABEL: Record<RuleMode, string> = { daily: 'DAILY', visit: 'VISIT', rolling: 'ALLOW' };
+const MODE_LABEL: Record<RuleMode, string> = { daily: 'Daily', visit: 'Visit', rolling: 'Rolling' };
 const WINDOW_LABEL: Record<number, string> = { 30: '30 min', 60: 'hour', 180: '3 hours', 480: '8 hours', 1440: 'day' };
 
 /**
@@ -319,13 +322,13 @@ export default function AppLimitsScreen() {
     <Screen edges={[]}>
       <WeakeningGateDialog gate={gate} />
       <TopTabs.Screen options={{ swipeEnabled: !busy }} />
-      {selected ? <ScreenHeader label={selected.label} onBack={closeEditor} backDisabled={busy} /> : null}
+      {selected ? <ScreenHeader title={selected.label} onBack={closeEditor} backDisabled={busy} /> : null}
 
       {selected ? (
         <>
 
           <View>
-            <SectionLabel className="mb-2.5">RULE</SectionLabel>
+            <SectionLabel className="mb-2">Rule</SectionLabel>
             <Card>
               <ModeRow selected={mode} disabled={controlsDisabled} onSelect={setMode} />
             </Card>
@@ -333,54 +336,49 @@ export default function AppLimitsScreen() {
 
           {mode === 'daily' ? (
             <View>
-              <SectionLabel className="mb-2.5">DAILY BUDGET</SectionLabel>
+              <SectionLabel className="mb-2">Daily budget</SectionLabel>
               <Card>
-                <Text className="mb-3 text-[13px] leading-[19px] text-muted">When it runs out, Zen Mode sends you home until midnight.</Text>
+                <Text className="mb-3 text-support text-muted">When it runs out, Zen Mode sends you home until midnight.</Text>
                 <MinuteRow selected={minutes} disabled={controlsDisabled} onSelect={setMinutes} />
               </Card>
             </View>
           ) : mode === 'visit' ? (
             <View>
-              <SectionLabel className="mb-2.5">TIMED VISIT</SectionLabel>
+              <SectionLabel className="mb-2">Timed visit</SectionLabel>
               <Card>
-                <Text className="mb-3 text-[13px] leading-[19px] text-muted">
+                <Text className="mb-3 text-support text-muted">
                   Opening the app asks first. Confirming starts one visit of this length, then the app rests.
                 </Text>
-                <SectionLabel className="mb-2">VISIT LENGTH</SectionLabel>
+                <SectionLabel className="mb-2">Visit length</SectionLabel>
                 <MinuteRow options={SESSION_OPTIONS} selected={session} disabled={controlsDisabled} onSelect={setSession} />
-                <SectionLabel className="mb-2 mt-4">DOWNTIME</SectionLabel>
+                <SectionLabel className="mb-2 mt-4">Downtime</SectionLabel>
                 <CooldownRow selected={cooldown} disabled={controlsDisabled} onSelect={setCooldown} />
               </Card>
             </View>
           ) : (
             <View>
-              <SectionLabel className="mb-2.5">ROLLING ALLOWANCE</SectionLabel>
+              <SectionLabel className="mb-2">Rolling allowance</SectionLabel>
               <Card>
-                <Text className="mb-3 text-[13px] leading-[19px] text-muted">
+                <Text className="mb-3 text-support text-muted">
                   Use counts on its own inside the window. When it runs out, the app closes until old use ages out.
                 </Text>
-                <View className="mb-4 flex-row flex-wrap gap-2">
-                  {ROLLING_PREFILLS.map((prefill) => {
-                    const active = allowance === prefill.allowance && window === prefill.window;
-                    return (
-                      <Pressable
-                        key={prefill.label}
-                        accessibilityRole="radio"
-                        accessibilityState={{ selected: active, disabled: busy }}
-                        className={`items-center rounded-xl border px-3 py-2 ${active ? 'border-accent bg-accent' : 'border-line bg-panel2'} ${busy ? 'opacity-40' : 'active:opacity-70'}`}
-                        disabled={controlsDisabled}
-                        onPress={() => {
-                          setAllowance(prefill.allowance);
-                          setWindow(prefill.window);
-                        }}>
-                        <Text className={`text-[14px] font-bold ${active ? 'text-onAccent' : 'text-muted'}`}>{prefill.label}</Text>
-                      </Pressable>
-                    );
-                  })}
+                <View className="mb-4">
+                  <ChipGroup
+                    label="Common allowances"
+                    options={ROLLING_PREFILLS.map((prefill) => ({ value: prefill.label, label: prefill.label }))}
+                    selected={ROLLING_PREFILLS.find((prefill) => prefill.allowance === allowance && prefill.window === window)?.label}
+                    disabled={controlsDisabled}
+                    onSelect={(label) => {
+                      const prefill = ROLLING_PREFILLS.find((option) => option.label === label);
+                      if (!prefill) return;
+                      setAllowance(prefill.allowance);
+                      setWindow(prefill.window);
+                    }}
+                  />
                 </View>
-                <SectionLabel className="mb-2">ALLOWANCE</SectionLabel>
+                <SectionLabel className="mb-2">Allowance</SectionLabel>
                 <MinuteRow options={ALLOWANCE_OPTIONS} selected={allowance} disabled={controlsDisabled} onSelect={setAllowance} />
-                <SectionLabel className="mb-2 mt-4">EVERY</SectionLabel>
+                <SectionLabel className="mb-2 mt-4">Every</SectionLabel>
                 <WindowRow selected={window} disabled={controlsDisabled} onSelect={setWindow} />
               </Card>
             </View>
@@ -398,24 +396,28 @@ export default function AppLimitsScreen() {
           <View>
             {readState === 'android-required' ? (
               <Card>
-                <Text className="text-[13px] leading-[19px] text-muted">App limits require the native Android app. This web preview cannot read or enforce app rules.</Text>
+                <Text className="text-support text-muted">App limits require the native Android app. This web preview cannot read or enforce app rules.</Text>
               </Card>
+            ) : readState === 'error' ? (
+              <View className="gap-3">
+                <ErrorNote message="The app rules could not be loaded." />
+                <SecondaryButton title="Try again" disabled={busy} onPress={() => void refresh()} />
+              </View>
             ) : currentLimits === null || currentIntents === null || currentRolling === null ? (
               <Card>
-                <Text className="text-[13px] leading-[19px] text-muted">
-                  {readState === 'loading' ? 'Reading your app rules.' : 'The app rules could not be read.'}
-                </Text>
+                <Text className="text-support text-muted">Reading your app rules.</Text>
               </Card>
             ) : guarded.length === 0 ? (
               <Card>
-                <Text className="text-[13px] leading-[19px] text-muted">No app limits yet.</Text>
+                <Text className="text-item font-semibold text-copy">No app limits yet.</Text>
+                <Text className="mt-1 text-support text-muted">Add an app to give it a daily budget, a timed visit, or a rolling allowance.</Text>
               </Card>
             ) : (
-              <View className="gap-2.5">
+              <RowGroup>
                 {guarded.map((entry) => (
-                  <GuardedCard key={entry.packageName} entry={entry} disabled={controlsDisabled} onEdit={() => selectApp({ packageName: entry.packageName, label: entry.label })} />
+                  <GuardedRow key={entry.packageName} entry={entry} disabled={controlsDisabled} onEdit={() => selectApp({ packageName: entry.packageName, label: entry.label })} />
                 ))}
-              </View>
+              </RowGroup>
             )}
           </View>
 
@@ -424,24 +426,23 @@ export default function AppLimitsScreen() {
       )}
 
       <AppPicker visible={pickerOpen} configuredPackages={new Set(guardedByPackage.keys())} onClose={() => setPickerOpen(false)} onSelect={(app) => { setPickerOpen(false); selectApp(app); }} />
-      <ErrorNote message={readState === 'error' ? 'The app rules could not be loaded.' : ''} />
       <ErrorNote message={error} />
       {lockBlocked ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
     </Screen>
   );
 }
 
-/** One guarded app with its rule summary. Editing lives behind the button. */
-function GuardedCard({ entry, disabled, onEdit }: { entry: GuardedEntry; disabled: boolean; onEdit: () => void }) {
+/** One guarded app with its rule summary. Editing lives behind the row. */
+function GuardedRow({ entry, disabled, onEdit }: { entry: GuardedEntry; disabled: boolean; onEdit: () => void }) {
   const summaries: string[] = [];
-  let pill = 'RULE';
+  let pill = 'Rule';
   let spentTone: 'accent' | 'danger' = 'accent';
   if (entry.limit) {
     const used = Math.floor(entry.limit.usedMs / 60_000);
     summaries.push(`${used} of ${entry.limit.minutes} minutes today`);
     pill = MODE_LABEL.daily;
     if (entry.limit.usedMs >= entry.limit.minutes * 60_000) {
-      pill = 'SPENT';
+      pill = 'Spent';
       spentTone = 'danger';
     }
   }
@@ -456,40 +457,26 @@ function GuardedCard({ entry, disabled, onEdit }: { entry: GuardedEntry; disable
     summaries.push(`${used} of ${entry.rolling.allowanceMinutes}m per ${WINDOW_LABEL[entry.rolling.windowMinutes] ?? `${entry.rolling.windowMinutes}m`}`);
     pill = MODE_LABEL.rolling;
     if (entry.rolling.usedMs >= entry.rolling.allowanceMinutes * 60_000) {
-      pill = 'SPENT';
+      pill = 'Spent';
       spentTone = 'danger';
     }
   }
 
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`Edit ${entry.label}`} disabled={disabled} onPress={onEdit} className="flex-row items-center justify-between gap-3 rounded-2xl border border-line bg-panel px-4 py-4 active:opacity-60">
+    <Pressable accessibilityRole="button" accessibilityLabel={`Edit ${entry.label}`} accessibilityState={{ disabled }} disabled={disabled} onPress={onEdit} className={`min-h-14 flex-row items-center gap-3 py-3 ${disabled ? 'opacity-40' : 'active:opacity-60'}`}>
       <View className="flex-1">
-        <Text className="text-[15px] font-semibold text-copy">{entry.label}</Text>
-        {entry.availability !== 'installed' && entry.availabilityDetail ? <Text className="mt-1 text-[12px] leading-[17px] text-muted">{entry.availabilityDetail}</Text> : null}
-        {summaries.map((summary) => <Text key={summary} className="mt-1 text-[12px] text-muted">{summary}</Text>)}
+        <Text className="text-item font-semibold text-copy">{entry.label}</Text>
+        {entry.availability !== 'installed' && entry.availabilityDetail ? <Text className="mt-0.5 text-support text-muted">{entry.availabilityDetail}</Text> : null}
+        {summaries.map((summary) => <Text key={summary} className="mt-0.5 text-support text-muted">{summary}</Text>)}
       </View>
       <StatusPill label={pill} tone={spentTone} />
-      <Text className="text-[22px] text-muted">›</Text>
+      <ChevronRight color={colors.muted} size={18} />
     </Pressable>
   );
 }
 
-function OptionRow({ options, selected, disabled, onSelect, format }: { options: number[]; selected: number; disabled: boolean; onSelect: (value: number) => void; format?: (value: number) => string }) {
-  return (
-    <View className="flex-row flex-wrap gap-2">
-      {options.map((value) => (
-        <Pressable
-          key={value}
-          accessibilityRole="radio"
-          accessibilityState={{ selected: selected === value, disabled }}
-          className={`min-w-[56px] items-center rounded-xl border px-3 py-2 ${selected === value ? 'border-accent bg-accent' : 'border-line bg-panel2'} ${disabled ? 'opacity-40' : 'active:opacity-70'}`}
-          disabled={disabled}
-          onPress={() => onSelect(value)}>
-          <Text className={`text-[14px] font-bold ${selected === value ? 'text-onAccent' : 'text-muted'}`}>{format ? format(value) : `${value}m`}</Text>
-        </Pressable>
-      ))}
-    </View>
-  );
+function OptionRow({ options, selected, disabled, onSelect, format = (value) => `${value}m` }: { options: number[]; selected: number; disabled: boolean; onSelect: (value: number) => void; format?: (value: number) => string }) {
+  return <ChipGroup options={options.map((value) => ({ value, label: format(value) }))} selected={selected} disabled={disabled} onSelect={onSelect} />;
 }
 
 function MinuteRow({ options = MINUTE_OPTIONS, selected, disabled, onSelect }: { options?: number[]; selected: number; disabled: boolean; onSelect: (value: number) => void }) {
@@ -511,21 +498,9 @@ function ModeRow({ selected, disabled, onSelect }: { selected: RuleMode; disable
     { mode: 'rolling', title: 'Rolling', detail: 'Refills over time' },
   ];
   return (
-    <View className="gap-2">
+    <View accessibilityRole="radiogroup" accessibilityLabel="Rule type" className="gap-2">
       {modes.map(({ mode, title, detail }) => (
-        <Pressable
-          key={mode}
-          accessibilityRole="radio"
-          accessibilityState={{ selected: selected === mode, disabled }}
-          className={`flex-row items-center justify-between rounded-xl border px-4 py-3 ${selected === mode ? 'border-accent bg-accent' : 'border-line bg-panel2'} ${disabled ? 'opacity-40' : 'active:opacity-70'}`}
-          disabled={disabled}
-          onPress={() => onSelect(mode)}>
-          <View>
-            <Text className={`text-[15px] font-semibold ${selected === mode ? 'text-onAccent' : 'text-copy'}`}>{title}</Text>
-            <Text className={`mt-0.5 text-[13px] ${selected === mode ? 'text-onAccent' : 'text-muted'}`}>{detail}</Text>
-          </View>
-          <StatusPill label={MODE_LABEL[mode]} tone={selected === mode ? 'neutral' : 'accent'} />
-        </Pressable>
+        <ChoiceCard key={mode} title={title} detail={detail} selected={selected === mode} disabled={disabled} onPress={() => onSelect(mode)} />
       ))}
     </View>
   );

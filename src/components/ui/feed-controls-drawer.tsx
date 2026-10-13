@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useReducedMotion } from 'react-native-reanimated';
 import { PrimaryButton, SecondaryButton } from './button';
-import { ErrorNote } from './screen';
+import { ChipGroup } from './choice';
+import { ErrorNote, SheetHeader } from './screen';
 import { useSharedGuardStatus } from '@/features/protection/guard-status-context';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { getHomeFeedTimeLabel } from '@/features/protection/home-feed-time';
@@ -91,70 +92,60 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
     <Modal visible={feed !== null} transparent animationType={reduceMotion ? 'none' : 'slide'} onRequestClose={() => { if (gate.session) gate.finish(false); else close(); }} onShow={() => { setError(''); void refresh(); }} statusBarTranslucent>
       <View className="flex-1 justify-end bg-black/50">
         <Pressable accessibilityRole="button" accessibilityLabel="Close feed controls" onPress={close} disabled={busy} className="absolute inset-0" />
-        <SafeAreaView edges={['bottom']} style={{ maxHeight: '88%' }} className="rounded-t-3xl border-t border-line2 bg-panel px-5 pt-3">
-          <View className="mb-3 flex-row items-center justify-between">
-            <Text accessibilityRole="header" className="text-[20px] font-semibold text-copy">{TITLES[feed ?? 'youtube']}</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel="Close feed controls" disabled={busy} onPress={close} className="min-h-11 min-w-11 items-center justify-center"><Text className="text-[28px] text-muted">×</Text></Pressable>
-          </View>
-          <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
-            {isX ? <View className="mb-5 gap-3">
-              <View className="flex-row items-center justify-between"><Text className="text-[15px] font-semibold text-copy">Home feed</Text><Text className="text-[12px] text-muted">{homeTime ?? getFeedPresentation(status, 'xHome').statusLabel}</Text></View>
-              <RuleChoice label="X Home rule" limitedLabel="Take breaks" allowedLabel="No breaks" enabled={status?.xHomeEnabled === true} disabled={disabled} onChange={(value) => change({ xHomeEnabled: value })} />
-              <Text className="text-[13px] text-muted">Break after</Text>
-              <PresetRow label="X Home break interval" values={HOME_MINUTES} selected={status?.xHomeMinutes} suffix="m" disabled={disabled || !status?.xHomeEnabled} onSelect={(value) => change({ xHomeMinutes: value })} />
-            </View> : null}
-            {!isX && !isInstagram ? <View className="mb-5 gap-3">
-              <View className="flex-row items-center justify-between"><Text className="text-[15px] font-semibold text-copy">Home feed</Text><Text className="text-[12px] text-muted">{getFeedPresentation(status, 'youtubeHome').statusLabel}</Text></View>
-              <RuleChoice label="YouTube Home rule" limitedLabel="Block Home" allowedLabel="Allow Home" enabled={status?.youtubeHomeEnabled === true} disabled={disabled} onChange={(value) => change({ youtubeHomeEnabled: value })} />
-              <Text className="text-[13px] text-muted">Search, Subscriptions, library/history, channels, notifications, and opened videos stay available. Home blocking waits for a device-verified signal.</Text>
-            </View> : null}
-            {isInstagram ? <View className="gap-5">
-              <View className="gap-3">
-                <Text accessibilityRole="header" className="text-[15px] font-semibold text-copy">Reels</Text>
-                <Text className="text-[13px] text-muted">{getFeedPresentation(status, 'reels').statusLabel}</Text>
-                <Text className="text-[13px] text-muted">Pause before Reels</Text>
+        <SafeAreaView edges={['bottom']} style={{ maxHeight: '88%' }} className="rounded-t-3xl border-t border-line2 bg-panel pt-3">
+          <SheetHeader title={TITLES[feed ?? 'youtube']} closeLabel="Close feed controls" disabled={busy} onClose={close} />
+          <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20 }}>
+            {isX ? <>
+              <Section title="Home feed" status={homeTime ?? getFeedPresentation(status, 'xHome').statusLabel} first>
+                <RuleChoice label="X Home rule" limitedLabel="Take breaks" allowedLabel="No breaks" enabled={status?.xHomeEnabled === true} disabled={disabled} onChange={(value) => change({ xHomeEnabled: value })} />
+                <Text className="text-support text-muted">Break after</Text>
+                <PresetRow label="X Home break interval" values={HOME_MINUTES} selected={status?.xHomeMinutes} suffix="m" disabled={disabled || !status?.xHomeEnabled} onSelect={(value) => change({ xHomeMinutes: value })} />
+              </Section>
+              <ScrollingSection isX status={status} statusLabel={result.statusLabel} disabled={disabled} change={change} />
+            </> : isInstagram ? <>
+              <Section title="Reels" status={getFeedPresentation(status, 'reels').statusLabel} first>
+                <Text className="text-support text-muted">Pause before Reels</Text>
                 <PresetRow label="Pause before Reels" values={[15, 30, 60, 120, 300]} selected={status?.instagramWaitSeconds} suffix="s" disabled={disabled} onSelect={(value) => change({ instagramWaitSeconds: value })} />
-                <Text className="text-[13px] text-muted">Viewing window</Text>
+                <Text className="text-support text-muted">Viewing window</Text>
                 <PresetRow label="Reels viewing window" values={[1, 5, 10, 15]} selected={status?.instagramReelsMinutes} suffix="m" disabled={disabled} onSelect={(value) => change({ instagramReelsMinutes: value })} />
-              </View>
-              <View className="gap-3 border-t border-line pt-4">
-                <Text accessibilityRole="header" className="text-[15px] font-semibold text-copy">Home feed</Text>
-                <Text className="text-[13px] text-muted">{homeTime ?? getFeedPresentation(status, 'home').statusLabel} · Break after</Text>
+              </Section>
+              <Section title="Home feed" status={homeTime ?? getFeedPresentation(status, 'home').statusLabel}>
+                <Text className="text-support text-muted">Break after</Text>
                 <PresetRow label="Instagram Home break interval" values={HOME_MINUTES} selected={status?.instagramHomeMinutes} suffix="m" disabled={disabled} onSelect={(value) => change({ instagramHomeMinutes: value })} />
-              </View>
-              <View className="gap-3 border-t border-line pt-4">
-                <Text accessibilityRole="header" className="text-[15px] font-semibold text-copy">Explore</Text>
-                <Text className="text-[13px] text-muted">{getFeedPresentation(status, 'explore').statusLabel}</Text>
+              </Section>
+              <Section title="Explore" status={getFeedPresentation(status, 'explore').statusLabel}>
                 <RuleChoice label="Explore rule" limitedLabel="Block Explore" allowedLabel="Allow Explore" enabled={status?.instagramExploreBlocked === true} disabled={disabled} onChange={(value) => change({ instagramExploreBlocked: value })} />
-              </View>
-            </View> : <View className="gap-3 border-t border-line pt-4">
-              <View className="flex-row items-center justify-between"><Text className="text-[15px] font-semibold text-copy">{isX ? 'Video scrolling' : 'Shorts scrolling'}</Text><Text className="text-[12px] text-muted">{result.statusLabel}</Text></View>
-              <RuleChoice label={isX ? 'X video rule' : 'YouTube Shorts rule'} limitedLabel="Limit to one" allowedLabel="Allow scrolling" enabled={(isX ? status?.xVideosEnabled : status?.shortsEnabled) === true} disabled={disabled} onChange={(value) => change(isX ? { xVideosEnabled: value } : { shortsEnabled: value })} />
-              <Text className="text-[13px] text-muted">{(isX ? status?.xVideosEnabled : status?.shortsEnabled) ? `Watch one ${isX ? 'video' : 'Short'} per visit. Scrolling to another is blocked.` : 'Scrolling has no feed limit.'}</Text>
-            </View>}
-            {targetPresentation.showObservationGuidance ? <View className="mt-5 gap-2 border-t border-line pt-4">
-              {isInstagram ? <Text className="text-[13px] text-muted">{detected ? '✓ Messages and Reels detected' : 'Open Direct Messages, then one Reel from a message. Return here when done.'}</Text> : isX ? <>
-                {status?.xHomeEnabled ? <Text className="text-[13px] text-muted">{xGuidance.initialAwaiting.includes('home') ? '○ Open the Home feed' : '✓ Home feed detected'}</Text> : null}
-                {status?.xVideosEnabled ? <Text className="text-[13px] text-muted">{xGuidance.initialAwaiting.includes('videos') ? '○ Open one video' : '✓ Video viewer detected'}</Text> : null}
+              </Section>
+            </> : <>
+              <Section title="Home feed" status={getFeedPresentation(status, 'youtubeHome').statusLabel} first>
+                <RuleChoice label="YouTube Home rule" limitedLabel="Block Home" allowedLabel="Allow Home" enabled={status?.youtubeHomeEnabled === true} disabled={disabled} onChange={(value) => change({ youtubeHomeEnabled: value })} />
+                <Text className="text-support text-muted">Search, Subscriptions, library/history, channels, notifications, and opened videos stay available. Home blocking waits for a device-verified signal.</Text>
+              </Section>
+              <ScrollingSection isX={false} status={status} statusLabel={result.statusLabel} disabled={disabled} change={change} />
+            </>}
+            {targetPresentation.showObservationGuidance ? <View className="mt-5 gap-2 border-t border-line pt-5">
+              {isInstagram ? <Text className="text-support text-muted">{detected ? '✓ Messages and Reels detected' : 'Open Direct Messages, then one Reel from a message. Return here when done.'}</Text> : isX ? <>
+                {status?.xHomeEnabled ? <Text className="text-support text-muted">{xGuidance.initialAwaiting.includes('home') ? '○ Open the Home feed' : '✓ Home feed detected'}</Text> : null}
+                {status?.xVideosEnabled ? <Text className="text-support text-muted">{xGuidance.initialAwaiting.includes('videos') ? '○ Open one video' : '✓ Video viewer detected'}</Text> : null}
               </> : <>
-                {status?.youtubeHomeEnabled ? <Text className="text-[13px] text-muted">{status.youtubeHomeObserved ? '✓ Home feed detected' : status.youtubeHomeDetectionSupported ? '○ Open the Home feed once' : '○ Home detection awaits physical-device validation'}</Text> : null}
-                {status?.shortsEnabled ? <Text className="text-[13px] text-muted">{status.lastDetectionAt > 0 ? '✓ Shorts detected' : '○ Open one Short, then return here. Zen Mode checks this YouTube screen before limiting scrolling; unknown layouts stay unblocked.'}</Text> : null}
+                {status?.youtubeHomeEnabled ? <Text className="text-support text-muted">{status.youtubeHomeObserved ? '✓ Home feed detected' : status.youtubeHomeDetectionSupported ? '○ Open the Home feed once' : '○ Home detection awaits physical-device validation'}</Text> : null}
+                {status?.shortsEnabled ? <Text className="text-support text-muted">{status.lastDetectionAt > 0 ? '✓ Shorts detected' : '○ Open one Short, then return here. Zen Mode checks this YouTube screen before limiting scrolling; unknown layouts stay unblocked.'}</Text> : null}
               </>}
-              {canStart ? <PrimaryButton title="Start protection" disabled={disabled} onPress={() => run(async () => { if (isInstagram) await setInstagramObservationMode(false); else if (isX) await setXObservationMode(false); else await setObservationMode(false); })} /> : detected ? <Text className="text-[13px] text-muted">Turn on protection and Android access in Settings.</Text> : null}
+              {canStart ? <PrimaryButton title="Start protection" disabled={disabled} onPress={() => run(async () => { if (isInstagram) await setInstagramObservationMode(false); else if (isX) await setXObservationMode(false); else await setObservationMode(false); })} /> : detected ? <Text className="text-support text-muted">Turn on protection and Android access in Settings.</Text> : null}
             </View> : null}
-            {targetPresentation.showPostSetupGuidance ? <View className="mt-5 gap-2 border-t border-line pt-4">
+            {targetPresentation.showPostSetupGuidance ? <View className="mt-5 gap-2 border-t border-line pt-5">
               {xGuidance.postSetupAwaiting.map((feed) => (
-                <Text key={feed} className="text-[13px] text-muted">
+                <Text key={feed} className="text-support text-muted">
                   {feed === 'home' ? '○ Open the Home feed once to start breaks' : '○ Open one video once to start the video limit'}
                 </Text>
               ))}
-              <Text className="text-[12px] text-faint">Other X rules keep running in the meantime.</Text>
+              <Text className="text-caption text-faint">Other X rules keep running in the meantime.</Text>
             </View> : null}
-            {targetPresentation.recovery ? <Text className="mt-5 text-[13px] leading-[19px] text-muted">{targetPresentation.recovery}</Text> : null}
+            {targetPresentation.recovery ? <Text className="mt-5 text-support text-muted">{targetPresentation.recovery}</Text> : null}
             {targetPresentation.showOpener ? (
               <SecondaryButton className="mt-5" title={isInstagram ? 'Open Instagram to check' : isX ? 'Open X to check' : 'Open YouTube to check'} disabled={disabled} onPress={() => run(async () => { if (isInstagram) await openInstagram(); else if (isX) await openX(); else await openYouTube(); })} />
             ) : null}
-            <ErrorNote message={error || readError} />
+            {error || readError ? <View className="mt-5"><ErrorNote message={error || readError} /></View> : null}
           </ScrollView>
         </SafeAreaView>
         <WeakeningGateDialog gate={gate} embedded />
@@ -163,14 +154,35 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
   );
 }
 
+type ChangeRule = (next: Partial<Pick<ZenGuardStatus, 'xVideosEnabled' | 'shortsEnabled'>>) => void;
+
+/** One rule area inside the drawer: a heading with its live state, then its controls. */
+function Section({ title, status, first = false, children }: { title: string; status: string; first?: boolean; children: ReactNode }) {
+  return (
+    <View className={`gap-3 ${first ? '' : 'mt-5 border-t border-line pt-5'}`}>
+      <View className="flex-row items-baseline justify-between gap-3">
+        <Text accessibilityRole="header" className="text-item font-semibold text-copy">{title}</Text>
+        <Text className="flex-shrink text-right text-caption font-semibold text-muted">{status}</Text>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function ScrollingSection({ isX, status, statusLabel, disabled, change }: { isX: boolean; status: ZenGuardStatus | null; statusLabel: string; disabled: boolean; change: ChangeRule }) {
+  const limited = (isX ? status?.xVideosEnabled : status?.shortsEnabled) === true;
+  return (
+    <Section title={isX ? 'Video scrolling' : 'Shorts scrolling'} status={statusLabel}>
+      <RuleChoice label={isX ? 'X video rule' : 'YouTube Shorts rule'} limitedLabel="Limit to one" allowedLabel="Allow scrolling" enabled={limited} disabled={disabled} onChange={(value) => change(isX ? { xVideosEnabled: value } : { shortsEnabled: value })} />
+      <Text className="text-support text-muted">{limited ? `Watch one ${isX ? 'video' : 'Short'} per visit. Scrolling to another is blocked.` : 'Scrolling has no feed limit.'}</Text>
+    </Section>
+  );
+}
+
 function RuleChoice({ label, limitedLabel, allowedLabel, enabled, disabled, onChange }: { label: string; limitedLabel: string; allowedLabel: string; enabled: boolean; disabled: boolean; onChange: (enabled: boolean) => void }) {
-  return <View accessibilityRole="radiogroup" accessibilityLabel={label} className="flex-row gap-2">
-    {[true, false].map((value) => <Pressable key={String(value)} accessibilityRole="radio" accessibilityState={{ checked: enabled === value, disabled }} disabled={disabled} onPress={() => onChange(value)} className={`min-h-12 flex-1 items-center justify-center rounded-xl border px-2 ${enabled === value ? 'border-accent bg-accent' : 'border-line2 bg-panel2'} ${disabled ? 'opacity-50' : 'active:opacity-70'}`}><Text className={`text-[14px] font-semibold ${enabled === value ? 'text-onAccent' : 'text-copy'}`}>{value ? limitedLabel : allowedLabel}</Text></Pressable>)}
-  </View>;
+  return <ChipGroup label={label} options={[{ value: true, label: limitedLabel }, { value: false, label: allowedLabel }]} selected={enabled} disabled={disabled} fill onSelect={onChange} />;
 }
 
 function PresetRow({ label, values, selected, suffix, disabled, onSelect }: { label: string; values: readonly number[]; selected?: number; suffix: string; disabled: boolean; onSelect: (value: number) => void }) {
-  return <View accessibilityRole="radiogroup" accessibilityLabel={label} className="flex-row flex-wrap gap-1.5">
-    {values.map((value) => <Pressable key={value} accessibilityRole="radio" accessibilityState={{ checked: selected === value, disabled }} disabled={disabled} onPress={() => onSelect(value)} className={`min-h-11 min-w-[52px] flex-1 items-center justify-center rounded-xl border px-2 ${selected === value ? 'border-accent bg-accent' : 'border-line2 bg-panel2'} ${disabled ? 'opacity-40' : 'active:opacity-70'}`}><Text className={`text-[13px] font-semibold ${selected === value ? 'text-onAccent' : 'text-copy'}`}>{value}{suffix}</Text></Pressable>)}
-  </View>;
+  return <ChipGroup label={label} options={values.map((value) => ({ value, label: `${value}${suffix}` }))} selected={selected} disabled={disabled} fill onSelect={onSelect} />;
 }

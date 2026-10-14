@@ -1,6 +1,7 @@
 package com.maxmauroner.zenguard
 
 import android.content.Context
+import android.content.Intent
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
@@ -274,6 +275,69 @@ class AppRuleTimerServiceTest {
     }
   }
 
+  @Test fun `daily Chrome expiry keeps the card until screen-on site checks without an app event`() {
+    blockExampleSite()
+    val daily = AppLimitStore(context).apply {
+      setLimit(CHROME, 1)
+      addUsage(CHROME, 60_000L, wallNow())
+    }
+    openApp(CHROME)
+    showOverlayWindow(browserRoot(CHROME))
+    turnScreenOff()
+
+    advance(Duration.ofSeconds(22))
+
+    assertEquals(CHROME, overlay().requestedPackage())
+    assertTrue(overlay().isShowing())
+    assertTrue(hasPendingAppRuleRefresh())
+    assertFalse(daily.isOverBudget(CHROME, wallNow()))
+    assertEquals(0L, daily.usageToday(wallNow())[CHROME] ?: 0L)
+    assertEquals(0L, count(EnforcementReason.BLOCKED_SITE))
+    val sites = controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay")
+    assertFalse(sites.isShowing)
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+
+    shadowOf(context.getSystemService(PowerManager::class.java)).setIsInteractive(true)
+    advance(Duration.ofMillis(1_020))
+
+    assertNull(overlay().requestedPackage())
+    assertFalse(hasPendingAppRuleRefresh())
+    assertEquals(CHROME, sites.shownPackage())
+    assertTrue(sites.isShowing)
+    assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
+  }
+
+  @Test fun `rolling Firefox expiry keeps the card and accounting paused until event-free screen-on`() {
+    blockExampleSite()
+    openExpiringBudget(FIREFOX)
+    showOverlayWindow(browserRoot(FIREFOX))
+    turnScreenOff()
+    val rolling = RollingLimitStore(context)
+    val offDuration = Duration.ofSeconds(22)
+    val usageAfterBudgetExpiry = rolling.usedMs(FIREFOX, wallNow() + offDuration.toMillis())
+
+    advance(offDuration)
+
+    assertEquals(FIREFOX, overlay().requestedPackage())
+    assertTrue(overlay().isShowing())
+    assertTrue(hasPendingAppRuleRefresh())
+    assertFalse(rolling.isOver(FIREFOX, wallNow()))
+    assertEquals(usageAfterBudgetExpiry, rolling.usedMs(FIREFOX, wallNow()))
+    assertEquals(0L, count(EnforcementReason.BLOCKED_SITE))
+    val sites = controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay")
+    assertFalse(sites.isShowing)
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+
+    shadowOf(context.getSystemService(PowerManager::class.java)).setIsInteractive(true)
+    advance(Duration.ofMillis(1_020))
+
+    assertNull(overlay().requestedPackage())
+    assertFalse(hasPendingAppRuleRefresh())
+    assertEquals(FIREFOX, sites.shownPackage())
+    assertTrue(sites.isShowing)
+    assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
+  }
+
   @Test fun `Start checks the blocked site beneath the app question without a new event`() {
     blockExampleSite()
     IntentAppStore(context).setIntent(CHROME, 1, 1)
@@ -287,6 +351,63 @@ class AppRuleTimerServiceTest {
     assertEquals(CHROME, controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay").shownPackage())
     assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
     assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(CHROME, SystemClock.elapsedRealtime()))
+  }
+
+  @Test fun `a queued Start while screen-off keeps the question and does not grant a visit`() {
+    blockExampleSite()
+    IntentAppStore(context).setIntent(CHROME, 1, 1)
+    openApp(CHROME)
+    showOverlayWindow(browserRoot(CHROME))
+    val start = views().filterIsInstance<Button>().single { it.text == "Start 1 min" }
+    turnScreenOff()
+
+    start.performClick()
+    advance(Duration.ofMillis(1_020))
+
+    assertEquals(CHROME, overlay().requestedPackage())
+    assertEquals(AppRuleOverlayMode.ASK, overlay().mode)
+    assertTrue(hasPendingAppRuleRefresh())
+    assertFalse(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(CHROME, SystemClock.elapsedRealtime()))
+    assertEquals(0L, count(EnforcementReason.BLOCKED_SITE))
+    assertFalse(controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay").isShowing)
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+
+    shadowOf(context.getSystemService(PowerManager::class.java)).setIsInteractive(true)
+    views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
+    advance(Duration.ofMillis(20))
+
+    assertNull(overlay().requestedPackage())
+    assertEquals(CHROME, controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay").shownPackage())
+    assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(CHROME, SystemClock.elapsedRealtime()))
+  }
+
+  @Test fun `a stale Start after card dismissal cannot grant or bill while screen-off`() {
+    val rolling = RollingLimitStore(context).apply { setRule(APP, 2, 15) }
+    IntentAppStore(context).setIntent(APP, 1, 1)
+    openApp(APP)
+    showOverlayWindow(APP)
+    val start = views().filterIsInstance<Button>().single { it.text == "Start 1 min" }
+    views().filterIsInstance<Button>().single { it.text == "Not now" }.performClick()
+    assertNull(overlay().requestedPackage())
+    showAppWindows(APP)
+    val usageBeforeQueuedStart = rolling.usedMs(APP, wallNow())
+    turnScreenOff()
+
+    start.performClick()
+    advance(Duration.ofSeconds(16))
+
+    assertNull(overlay().requestedPackage())
+    assertFalse(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
+    assertEquals(usageBeforeQueuedStart, rolling.usedMs(APP, wallNow()))
+    assertFalse(hasPendingAppRuleRefresh())
+    assertEquals(listOf(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME), shadowOf(controller.get()).globalActionsPerformed)
+
+    shadowOf(context.getSystemService(PowerManager::class.java)).setIsInteractive(true)
+    openApp(APP)
+    showOverlayWindow(APP)
+    views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
+    assertNull(overlay().requestedPackage())
+    assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
   }
 
   @Test fun `a polled switch applies the foreground browser rule without a new event`() {
@@ -359,7 +480,15 @@ class AppRuleTimerServiceTest {
     assertInstagramBudgetHandoff("explore_grid", InstagramBlockReason.EXPLORE)
   }
 
-  @Test fun `an active timed visit resumes through the Explore guard after its budget clears`() {
+  @Test fun `screen-off budget expiry guards Reels on wake without an Instagram event`() {
+    assertScreenOffInstagramBudgetHandoff("clips_viewer_view_pager", InstagramBlockReason.REELS_ENTRY)
+  }
+
+  @Test fun `screen-off budget expiry guards Explore on wake without an Instagram event`() {
+    assertScreenOffInstagramBudgetHandoff("explore_grid", InstagramBlockReason.EXPLORE)
+  }
+
+  @Test fun `an active timed visit waits for screen-on Explore checks after its budget clears`() {
     ZenGuardPreferences(context).instagramObservationMode = false
     IntentAppStore(context).setIntent(INSTAGRAM, 1, 1)
     openApp(INSTAGRAM)
@@ -370,8 +499,23 @@ class AppRuleTimerServiceTest {
     windowEvent(INSTAGRAM)
     advance(Duration.ofMillis(20))
     showOverlayWindow(instagramRoot("explore_grid"))
+    turnScreenOff()
+    val rolling = RollingLimitStore(context)
+    val offDuration = Duration.ofSeconds(6)
+    val usageAfterBudgetExpiry = rolling.usedMs(INSTAGRAM, wallNow() + offDuration.toMillis())
 
-    advance(Duration.ofSeconds(6))
+    advance(offDuration)
+
+    assertEquals(INSTAGRAM, overlay().requestedPackage())
+    assertTrue(hasPendingAppRuleRefresh())
+    assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(INSTAGRAM, SystemClock.elapsedRealtime()))
+    assertNull(instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertFalse(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+    assertEquals(usageAfterBudgetExpiry, rolling.usedMs(INSTAGRAM, wallNow()))
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+
+    shadowOf(context.getSystemService(PowerManager::class.java)).setIsInteractive(true)
+    advance(Duration.ofMillis(1_020))
 
     assertNull(overlay().requestedPackage())
     assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(INSTAGRAM, SystemClock.elapsedRealtime()))
@@ -514,6 +658,42 @@ class AppRuleTimerServiceTest {
     val handler = controller.get().javaClass.getDeclaredMethod("getAppRuleHandler").apply { isAccessible = true }.invoke(controller.get()) as android.os.Handler
     val callback = controller.get().privateField<Runnable>("appRuleRefresh")
     assertFalse(handler.hasCallbacks(callback))
+  }
+
+  @Test fun `Settings while screen-off clears a card and rejects its queued Start`() {
+    IntentAppStore(context).setIntent(APP, 1, 1)
+    openApp(APP)
+    showOverlayWindow(APP)
+    val start = views().filterIsInstance<Button>().single { it.text == "Start 1 min" }
+    turnScreenOff()
+    controller.get().javaClass.getDeclaredField("appRuleSafety").apply { isAccessible = true }
+      .set(controller.get(), AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings")))
+    showOverlayWindow("com.android.settings")
+
+    start.performClick()
+    advance(Duration.ofSeconds(1))
+
+    assertNull(overlay().requestedPackage())
+    assertFalse(hasPendingAppRuleRefresh())
+    assertFalse(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+  }
+
+  @Test fun `global pause while screen-off clears a card and rejects its queued Start`() {
+    IntentAppStore(context).setIntent(APP, 1, 1)
+    openApp(APP)
+    showOverlayWindow(APP)
+    val start = views().filterIsInstance<Button>().single { it.text == "Start 1 min" }
+    turnScreenOff()
+    ZenGuardPreferences(context).protectionEnabled = false
+
+    start.performClick()
+    advance(Duration.ofSeconds(1))
+
+    assertNull(overlay().requestedPackage())
+    assertFalse(hasPendingAppRuleRefresh())
+    assertFalse(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
   }
 
   @Test fun `an early timed deadline still blocks at the actual grant expiry`() {
@@ -796,6 +976,46 @@ class AppRuleTimerServiceTest {
     assertNull(overlay().requestedPackage())
     assertEquals(reason, instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
     assertTrue(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+  }
+
+  private fun assertScreenOffInstagramBudgetHandoff(id: String, reason: InstagramBlockReason) {
+    ZenGuardPreferences(context).instagramObservationMode = false
+    openExpiringBudget(INSTAGRAM)
+    showOverlayWindow(instagramRoot(id))
+    turnScreenOff()
+    val rolling = RollingLimitStore(context)
+    val offDuration = Duration.ofSeconds(22)
+    val usageAfterBudgetExpiry = rolling.usedMs(INSTAGRAM, wallNow() + offDuration.toMillis())
+
+    advance(offDuration)
+
+    assertEquals(INSTAGRAM, overlay().requestedPackage())
+    assertTrue(overlay().isShowing())
+    assertTrue(hasPendingAppRuleRefresh())
+    assertNull(instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertFalse(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+    assertEquals(usageAfterBudgetExpiry, rolling.usedMs(INSTAGRAM, wallNow()))
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+
+    shadowOf(context.getSystemService(PowerManager::class.java)).setIsInteractive(true)
+    advance(Duration.ofMillis(1_020))
+
+    assertNull(overlay().requestedPackage())
+    assertFalse(hasPendingAppRuleRefresh())
+    assertEquals(reason, instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertTrue(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+  }
+
+  private fun turnScreenOff() {
+    shadowOf(context.getSystemService(PowerManager::class.java)).setIsInteractive(false)
+    context.sendBroadcast(Intent(Intent.ACTION_SCREEN_OFF))
+    shadowOf(Looper.getMainLooper()).idle()
+  }
+
+  private fun hasPendingAppRuleRefresh(): Boolean {
+    val handler = controller.get().javaClass.getDeclaredMethod("getAppRuleHandler").apply { isAccessible = true }
+      .invoke(controller.get()) as android.os.Handler
+    return handler.hasCallbacks(controller.get().privateField<Runnable>("appRuleRefresh"))
   }
 
   /** The fixture exposes real page metadata and records the native Home-tab action. */

@@ -403,16 +403,16 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
 
   /** Apply content rules to the verified app beneath the card before exposing it again. */
   private fun releaseAppRuleOverlay(packageName: String): Boolean {
+    if (!canRunEnforcementAction()) return false
+    // Keep the retry while off and reject queued Start callbacks even after card dismissal.
+    if (!isScreenInteractive) return false
     if (appRuleOverlay.requestedPackage() == null) return true
     val root = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }?.root
       ?.takeIf { it.packageName?.toString() == packageName } ?: return false
-    if (!canRunEnforcementAction()) return false
-    if (isScreenInteractive) {
-      when {
-        BrowserUrlDetector.supports(packageName) -> handleBrowserEvent(packageName, root)
-        packageName == INSTAGRAM_PACKAGE -> handleInstagramEvent(null, root)
-        packageName == YOUTUBE_PACKAGE -> handleYouTubeEvent(null, root)
-      }
+    when {
+      BrowserUrlDetector.supports(packageName) -> handleBrowserEvent(packageName, root)
+      packageName == INSTAGRAM_PACKAGE -> handleInstagramEvent(null, root)
+      packageName == YOUTUBE_PACKAGE -> handleYouTubeEvent(null, root)
     }
     closeAppRuleOverlay()
     return true

@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityEvent
@@ -45,6 +46,7 @@ class AppRuleTimerServiceTest {
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
     context = RuntimeEnvironment.getApplication()
     HomeFeedStatusFailureRegistry.clearForTests()
+    Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 7)
     ZenGuardPreferences(context).apply {
       acceptCurrentConsent()
       protectionEnabled = true
@@ -168,6 +170,107 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofSeconds(20))
     assertNull(overlay().requestedPackage())
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+  }
+
+  @Test fun `an app card pauses and persists Instagram Home until a fresh Home observation`() {
+    ZenGuardPreferences(context).apply {
+      instagramObservationMode = false
+      instagramHomeMinutes = 1
+    }
+    observeInstagramHome()
+    advance(Duration.ofSeconds(20))
+    observeInstagramHome()
+    advance(Duration.ofSeconds(10))
+    IntentAppStore(context).setIntent(INSTAGRAM, 1, 1)
+    openApp(INSTAGRAM)
+    showOverlayWindow(INSTAGRAM)
+
+    val policy = controller.get().privateField<InstagramGuardStateMachine>("instagramStateMachine")
+    val paused = policy.homeRuntimeState(SystemClock.elapsedRealtime())
+    assertEquals(HomeFeedUsageState.PAUSED, paused.usageState)
+    assertTrue(paused.usedMs in 30_000L..30_100L)
+    assertEquals(paused.usedMs, HomeFeedStatusStore(context).instagram().usedMs)
+
+    advance(Duration.ofSeconds(40))
+    assertEquals(paused.usedMs, policy.homeRuntimeState(SystemClock.elapsedRealtime()).usedMs)
+    assertEquals(paused.usedMs, HomeFeedStatusStore(context).instagram().usedMs)
+    views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
+    observeInstagramHome()
+    val resumed = policy.homeRuntimeState(SystemClock.elapsedRealtime())
+    assertEquals(paused.usedMs, resumed.usedMs)
+    assertEquals(HomeFeedUsageState.ACTIVE, resumed.usageState)
+    assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+
+    advance(Duration.ofSeconds(2))
+    observeInstagramHome()
+    assertEquals(paused.usedMs + 2_000L, HomeFeedStatusStore(context).instagram().usedMs)
+  }
+
+  @Test fun `an app card preserves an active Instagram Home rest`() {
+    ZenGuardPreferences(context).apply {
+      instagramObservationMode = false
+      instagramHomeMinutes = 1
+    }
+    observeInstagramHome()
+    advance(Duration.ofSeconds(61))
+    observeInstagramHome()
+    val policy = controller.get().privateField<InstagramGuardStateMachine>("instagramStateMachine")
+    val resting = policy.homeRuntimeState(SystemClock.elapsedRealtime())
+    assertEquals(HomeFeedLockoutState.ACTIVE, resting.lockoutState)
+
+    IntentAppStore(context).setIntent(INSTAGRAM, 1, 1)
+    openApp(INSTAGRAM)
+    showOverlayWindow(INSTAGRAM)
+    val stored = HomeFeedStatusStore(context).instagram()
+    assertEquals(resting.blockedUntilElapsedMs, stored.blockedUntilElapsedMs)
+    assertEquals(HomeFeedLockoutState.ACTIVE, stored.lockoutState)
+    advance(Duration.ofSeconds(10))
+    views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
+    observeInstagramHome()
+    assertEquals(InstagramBlockReason.HOME_LIMIT, policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertEquals(resting.blockedUntilElapsedMs, policy.homeRuntimeState(SystemClock.elapsedRealtime()).blockedUntilElapsedMs)
+  }
+
+  @Test fun `a polled app switch immediately enforces the new daily and rolling budgets`() {
+    AppLimitStore(context).apply { setLimit(OTHER_APP, 1); addUsage(OTHER_APP, 60_000L, wallNow()) }
+    RollingLimitStore(context).apply { setRule(OTHER_APP, 1, 15); addUsage(OTHER_APP, 60_000L, wallNow()) }
+
+    switchUnderCard(OTHER_APP)
+
+    assertEquals(AppRuleOverlayMode.LIMIT, overlay().mode)
+    assertEquals(1L, count(EnforcementReason.APP_LIMIT))
+    assertEquals(0L, count(EnforcementReason.ROLLING_LIMIT))
+  }
+
+  @Test fun `a polled app switch immediately enforces the new rolling allowance`() {
+    RollingLimitStore(context).apply { setRule(OTHER_APP, 1, 15); addUsage(OTHER_APP, 60_000L, wallNow()) }
+
+    switchUnderCard(OTHER_APP)
+
+    assertEquals(AppRuleOverlayMode.LIMIT, overlay().mode)
+    assertEquals(1L, count(EnforcementReason.ROLLING_LIMIT))
+  }
+
+  @Test fun `a polled app switch asks before starting a new timed visit`() {
+    IntentAppStore(context).setIntent(OTHER_APP, 2, 1)
+
+    switchUnderCard(OTHER_APP)
+
+    assertEquals(AppRuleOverlayMode.ASK, overlay().mode)
+    assertTrue(texts().contains("Start 2 min"))
+    assertFalse(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(OTHER_APP, SystemClock.elapsedRealtime()))
+    assertEquals(2L, count(EnforcementReason.TIMED_VISIT))
+  }
+
+  @Test fun `a polled app switch respects the new app downtime`() {
+    IntentAppStore(context).apply { setIntent(OTHER_APP, 1, 1); recordSessionEnd(OTHER_APP, wallNow()) }
+
+    switchUnderCard(OTHER_APP)
+
+    assertEquals(AppRuleOverlayMode.COOLDOWN, overlay().mode)
+    assertTrue(texts().toString(), texts().any { it.startsWith("Available again in 0:") })
+    assertFalse(texts().any { it.startsWith("Start ") })
+    assertEquals(2L, count(EnforcementReason.TIMED_VISIT))
   }
 
   @Test fun `Android Settings is available beneath a card before its event arrives`() {
@@ -409,6 +512,29 @@ class AppRuleTimerServiceTest {
     showAppWindows(APP)
   }
 
+  private fun switchUnderCard(packageName: String) {
+    IntentAppStore(context).setIntent(APP, 1, 1)
+    openApp(APP)
+    showOverlayWindow(APP)
+    // No window event: only the card's refresh can identify and enforce this switch.
+    showOverlayWindow(packageName)
+    advance(Duration.ofSeconds(1))
+    assertEquals(packageName, overlay().requestedPackage())
+    assertTrue(overlay().isShowing())
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+  }
+
+  private fun observeInstagramHome() {
+    val root = node(INSTAGRAM).apply { viewIdResourceName = "$INSTAGRAM:id/feed_recycler_view" }
+    shadowOf(controller.get()).apply {
+      setRootInActiveWindow(root)
+      setWindows(listOf(window(AccessibilityWindowInfo.TYPE_APPLICATION, root)))
+    }
+    controller.get().onAccessibilityEvent(AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED).apply {
+      packageName = INSTAGRAM
+    })
+  }
+
   private fun wallNow() = controller.get().appRuleWallClock()
 
   private fun openApp(packageName: String) {
@@ -466,5 +592,9 @@ class AppRuleTimerServiceTest {
   @Suppress("UNCHECKED_CAST")
   private fun <T> Any.privateField(name: String): T = javaClass.getDeclaredField(name).apply { isAccessible = true }.get(this) as T
 
-  private companion object { const val APP = "app.one" }
+  private companion object {
+    const val APP = "app.one"
+    const val OTHER_APP = "app.two"
+    const val INSTAGRAM = "com.instagram.android"
+  }
 }

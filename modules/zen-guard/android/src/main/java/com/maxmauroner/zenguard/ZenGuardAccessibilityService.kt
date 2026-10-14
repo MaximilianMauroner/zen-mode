@@ -382,6 +382,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
 
   private fun pauseAppRuleUsage() {
     usageTracker.onForeground(null, SystemClock.elapsedRealtime())?.let(::bankUsage)
+    clearInstagramEnforcement(preserveHomeSession = true)
   }
 
   private fun prepareAppRuleOverlay(packageName: String, mode: AppRuleOverlayMode) {
@@ -414,7 +415,8 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     if (foreground != blockedPackage) {
       closeAppRuleOverlay()
       currentForegroundPackage = foreground
-      usageTracker.onForeground(foreground, SystemClock.elapsedRealtime())
+      usageTracker.onForeground(foreground, SystemClock.elapsedRealtime())?.let(::bankUsage)
+      if (!enforceAppLimits(foreground)) handleIntentForeground(foreground)
       return
     }
     if (enforceAppLimits(blockedPackage)) return

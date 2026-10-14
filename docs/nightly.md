@@ -1,7 +1,8 @@
 # GitHub-hosted Android nightlies
 
 `.github/workflows/nightly.yml` builds Zen Mode on an `ubuntu-24.04` GitHub-hosted
-runner at midnight Europe/Vienna. The schedule uses GitHub's IANA timezone field,
+runner on Monday, Wednesday, and Friday at midnight Europe/Vienna. The schedule
+uses GitHub's IANA timezone field,
 so daylight saving time does not change the local start time. Scheduled runs can
 be delayed by GitHub. Manual `workflow_dispatch` uses the same gates. Only `main`
 can run. Each phase has a bounded timeout and one workflow concurrency group
@@ -112,6 +113,23 @@ checks actual free disk space and total memory. If needed it removes only unused
 preinstalled .NET/Haskell/CodeQL toolchains before checking the 15 GiB disk and
 8 GiB RAM minimums. Resource preflight repeats after source checks and before each EAS build so
 dependency install and export cannot consume the required build space unnoticed.
+
+Download caches use exact keys scoped to Ubuntu 24.04, runner architecture, and
+the relevant tool script or dependency lock/configuration files. There are no
+prefix restore keys. GitHub's branch scope prevents PR caches from being restored
+on `main`; this workflow also refuses any ref other than `main`. Cache misses
+run the same setup, checks, and builds. No check is skipped on a cache hit.
+
+The credential-free `checks` job saves only SDK platform 36, build-tools 36.0.0,
+and npm's `_cacache` package content. `build` restores those paths; `upload`
+restores only the SDK paths. The build job separately caches only Gradle's
+downloaded dependency files and wrapper distributions. It excludes Gradle build
+and configuration caches, properties, daemon logs, EAS workspaces, release
+artifacts, credentials, and signing files. Bundletool is downloaded and checksum
+verified on each runner. Caches hold no ledger state or release identity.
+GitHub evicts caches after seven days without access and can evict them sooner
+under repository storage pressure. Verified release artifacts retain their
+separate 30-day retention.
 
 ## Entry points and recovery
 

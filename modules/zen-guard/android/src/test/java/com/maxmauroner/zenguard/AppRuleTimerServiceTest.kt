@@ -29,17 +29,38 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ServiceController
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.Implementation
+import org.robolectric.annotation.Implements
 import org.robolectric.annotation.LooperMode
+import org.robolectric.annotation.RealObject
+import org.robolectric.shadows.ShadowAccessibilityNodeInfo
 
 /** Exercise the actual service with its own overlay above the guarded app. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], shadows = [AppRuleTimerServiceTest.AppWindowNodeShadow::class])
 @LooperMode(LooperMode.Mode.PAUSED)
 class AppRuleTimerServiceTest {
   private lateinit var context: Context
   private lateinit var controller: ServiceController<ZenGuardAccessibilityService>
   private lateinit var originalZone: TimeZone
   private var destroyed = false
+
+  /** Window roots are cloned, so view-ID queries must work on the cloned shadow tree too. */
+  @Implements(AccessibilityNodeInfo::class)
+  class AppWindowNodeShadow : ShadowAccessibilityNodeInfo() {
+    @RealObject private lateinit var node: AccessibilityNodeInfo
+
+    @Implementation
+    protected fun findAccessibilityNodeInfosByViewId(viewId: String): MutableList<AccessibilityNodeInfo> {
+      val matches = mutableListOf<AccessibilityNodeInfo>()
+      fun visit(current: AccessibilityNodeInfo) {
+        if (current.viewIdResourceName == viewId) matches.add(current)
+        for (index in 0 until current.childCount) current.getChild(index)?.let(::visit)
+      }
+      visit(node)
+      return matches
+    }
+  }
 
   @Before fun setUp() {
     originalZone = TimeZone.getDefault()
@@ -225,10 +246,208 @@ class AppRuleTimerServiceTest {
     assertEquals(resting.blockedUntilElapsedMs, stored.blockedUntilElapsedMs)
     assertEquals(HomeFeedLockoutState.ACTIVE, stored.lockoutState)
     advance(Duration.ofSeconds(10))
+    showOverlayWindow(instagramRoot("feed_recycler_view"))
     views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
-    observeInstagramHome()
+    advance(Duration.ofMillis(20))
     assertEquals(InstagramBlockReason.HOME_LIMIT, policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
     assertEquals(resting.blockedUntilElapsedMs, policy.homeRuntimeState(SystemClock.elapsedRealtime()).blockedUntilElapsedMs)
+    assertTrue(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+  }
+
+  @Test fun `idle budget release applies suppressed Chrome and Firefox site rules`() {
+    blockExampleSite()
+    for (browser in listOf(CHROME, FIREFOX)) {
+      val stopsBefore = count(EnforcementReason.BLOCKED_SITE)
+      openExpiringBudget(browser)
+      showOverlayWindow(browserRoot(browser))
+      contentEvent(browser)
+      assertEquals(stopsBefore, count(EnforcementReason.BLOCKED_SITE))
+
+      advance(Duration.ofSeconds(6))
+
+      assertNull(overlay().requestedPackage())
+      val sites = controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay")
+      assertEquals(browser, sites.shownPackage())
+      assertTrue(sites.isShowing)
+      assertEquals(stopsBefore + 1L, count(EnforcementReason.BLOCKED_SITE))
+      sites.hide()
+    }
+  }
+
+  @Test fun `Start checks the blocked site beneath the app question without a new event`() {
+    blockExampleSite()
+    IntentAppStore(context).setIntent(CHROME, 1, 1)
+    openApp(CHROME)
+    showOverlayWindow(browserRoot(CHROME))
+
+    views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
+    advance(Duration.ofMillis(20))
+
+    assertNull(overlay().requestedPackage())
+    assertEquals(CHROME, controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay").shownPackage())
+    assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
+    assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(CHROME, SystemClock.elapsedRealtime()))
+  }
+
+  @Test fun `a polled switch applies the foreground browser rule without a new event`() {
+    blockExampleSite()
+    IntentAppStore(context).setIntent(APP, 1, 1)
+    openApp(APP)
+    showOverlayWindow(browserRoot(CHROME))
+
+    advance(Duration.ofMillis(1_020))
+
+    assertNull(overlay().requestedPackage())
+    assertEquals(CHROME, controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay").shownPackage())
+    assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
+  }
+
+  @Test fun `a polled switch retries release after the actual app window returns without an event`() {
+    blockExampleSite()
+    IntentAppStore(context).setIntent(APP, 1, 1)
+    openApp(APP)
+    shadowOf(controller.get()).apply {
+      setRootInActiveWindow(browserRoot(CHROME))
+      setWindows(emptyList())
+    }
+    advance(Duration.ofMillis(1_020))
+    assertEquals(APP, overlay().requestedPackage())
+    assertEquals(0L, count(EnforcementReason.BLOCKED_SITE))
+
+    showOverlayWindow(browserRoot(CHROME))
+    advance(Duration.ofMillis(1_020))
+
+    assertNull(overlay().requestedPackage())
+    assertEquals(CHROME, controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay").shownPackage())
+    assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
+  }
+
+  @Test fun `a keyboard window event hands off to the actual Explore app beneath the card`() {
+    ZenGuardPreferences(context).instagramObservationMode = false
+    IntentAppStore(context).setIntent(APP, 1, 1)
+    openApp(APP)
+    showOverlayWindow(instagramRoot("explore_grid"))
+
+    // The event belongs to the keyboard, not to Instagram or a fabricated app gesture.
+    windowEvent("com.google.android.inputmethod.latin")
+    advance(Duration.ofMillis(20))
+
+    assertNull(overlay().requestedPackage())
+    assertEquals(InstagramBlockReason.EXPLORE, instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertTrue(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+  }
+
+  @Test fun `app downtime and the next question keep priority over a blocked site`() {
+    blockExampleSite()
+    IntentAppStore(context).apply { setIntent(CHROME, 1, 1); recordSessionEnd(CHROME, wallNow()) }
+    openExpiringBudget(CHROME)
+    showOverlayWindow(browserRoot(CHROME))
+
+    advance(Duration.ofSeconds(6))
+    assertEquals(AppRuleOverlayMode.COOLDOWN, overlay().mode)
+    assertEquals(0L, count(EnforcementReason.BLOCKED_SITE))
+    advance(Duration.ofSeconds(60))
+    assertEquals(AppRuleOverlayMode.ASK, overlay().mode)
+    assertEquals(0L, count(EnforcementReason.BLOCKED_SITE))
+  }
+
+  @Test fun `idle budget release guards direct Reels from the actual Instagram window`() {
+    assertInstagramBudgetHandoff("clips_viewer_view_pager", InstagramBlockReason.REELS_ENTRY)
+  }
+
+  @Test fun `idle budget release guards Explore from the actual Instagram window`() {
+    assertInstagramBudgetHandoff("explore_grid", InstagramBlockReason.EXPLORE)
+  }
+
+  @Test fun `an active timed visit resumes through the Explore guard after its budget clears`() {
+    ZenGuardPreferences(context).instagramObservationMode = false
+    IntentAppStore(context).setIntent(INSTAGRAM, 1, 1)
+    openApp(INSTAGRAM)
+    showOverlayWindow(INSTAGRAM)
+    views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
+    showAppWindows(INSTAGRAM)
+    addExpiringBudget(INSTAGRAM)
+    windowEvent(INSTAGRAM)
+    advance(Duration.ofMillis(20))
+    showOverlayWindow(instagramRoot("explore_grid"))
+
+    advance(Duration.ofSeconds(6))
+
+    assertNull(overlay().requestedPackage())
+    assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(INSTAGRAM, SystemClock.elapsedRealtime()))
+    assertEquals(InstagramBlockReason.EXPLORE, instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertTrue(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+  }
+
+  @Test fun `handoff leaves observation and unknown Instagram surfaces unblocked`() {
+    openExpiringBudget(INSTAGRAM)
+    showOverlayWindow(instagramRoot("explore_grid"))
+    ZenGuardPreferences(context).instagramObservationMode = true
+    advance(Duration.ofSeconds(6))
+    assertNull(overlay().requestedPackage())
+    assertNull(instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
+
+    ZenGuardPreferences(context).instagramObservationMode = false
+    openExpiringBudget(INSTAGRAM)
+    showOverlayWindow(instagramRoot("unrecognized_surface"))
+    advance(Duration.ofSeconds(6))
+    assertNull(overlay().requestedPackage())
+    assertNull(instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertFalse(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+  }
+
+  @Test fun `a background blocked browser is not the root used for a polled switch handoff`() {
+    blockExampleSite()
+    IntentAppStore(context).setIntent(APP, 1, 1)
+    openApp(APP)
+    val card = node(context.packageName)
+    shadowOf(controller.get()).apply {
+      setRootInActiveWindow(card)
+      setWindows(listOf(
+        window(AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY, card),
+        window(AccessibilityWindowInfo.TYPE_APPLICATION, node(OTHER_APP)),
+        window(AccessibilityWindowInfo.TYPE_APPLICATION, browserRoot(CHROME)),
+      ))
+    }
+
+    advance(Duration.ofMillis(1_020))
+
+    assertNull(overlay().requestedPackage())
+    assertEquals(0L, count(EnforcementReason.BLOCKED_SITE))
+    assertFalse(controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay").isShowing)
+  }
+
+  @Test fun `idle handoff exits a Short only when the actual collection row proves an advance`() {
+    ZenGuardPreferences(context).apply { observationMode = false; shortsEnabled = true }
+    val first = youtubeRoot(0)
+    showContentAppWindow(first.first)
+    contentEvent(YOUTUBE)
+    openExpiringBudget(YOUTUBE)
+    val advanced = youtubeRoot(1)
+    showOverlayWindow(advanced.first)
+    contentEvent(YOUTUBE)
+
+    advance(Duration.ofSeconds(6))
+
+    assertNull(overlay().requestedPackage())
+    assertTrue(shadowOf(advanced.second).performedActions.contains(AccessibilityNodeInfo.ACTION_CLICK))
+    assertEquals(1, controller.get().privateField<EnforcementStateMachine>("stateMachine").pendingExitPageIndex())
+  }
+
+  @Test fun `idle handoff cannot invent a Shorts advance when collection metadata is absent`() {
+    ZenGuardPreferences(context).apply { observationMode = false; shortsEnabled = true }
+    showContentAppWindow(youtubeRoot(0).first)
+    contentEvent(YOUTUBE)
+    openExpiringBudget(YOUTUBE)
+    val unknownPage = youtubeRoot(null)
+    showOverlayWindow(unknownPage.first)
+
+    advance(Duration.ofSeconds(6))
+
+    assertNull(overlay().requestedPackage())
+    assertTrue(shadowOf(unknownPage.second).performedActions.isEmpty())
+    assertNull(controller.get().privateField<EnforcementStateMachine>("stateMachine").pendingExitPageIndex())
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
   }
 
   @Test fun `a polled app switch immediately enforces the new daily and rolling budgets`() {
@@ -535,6 +754,82 @@ class AppRuleTimerServiceTest {
     })
   }
 
+  private fun instagramPolicy(): InstagramGuardStateMachine = controller.get().privateField("instagramStateMachine")
+
+  private fun blockExampleSite() {
+    AdultSiteRuleStore(context).apply { enabled = true; add("example.com") }
+  }
+
+  private fun addExpiringBudget(packageName: String) {
+    RollingLimitStore(context).apply {
+      setRule(packageName, 1, 15)
+      addUsage(packageName, 60_000L, wallNow() - 900_000L + 5_000L)
+    }
+  }
+
+  private fun openExpiringBudget(packageName: String) {
+    addExpiringBudget(packageName)
+    openApp(packageName)
+  }
+
+  private fun browserRoot(browser: String): AccessibilityNodeInfo = node(browser).apply {
+    if (browser == FIREFOX) {
+      viewIdResourceName = "ADDRESSBAR_URL_BOX"
+      contentDescription = " example.com. Search or enter address"
+    } else {
+      viewIdResourceName = "$CHROME:id/url_bar"
+      text = "example.com"
+    }
+  }
+
+  private fun instagramRoot(id: String): AccessibilityNodeInfo = node(INSTAGRAM).apply {
+    viewIdResourceName = "$INSTAGRAM:id/$id"
+  }
+
+  private fun assertInstagramBudgetHandoff(id: String, reason: InstagramBlockReason) {
+    ZenGuardPreferences(context).instagramObservationMode = false
+    openExpiringBudget(INSTAGRAM)
+    showOverlayWindow(instagramRoot(id))
+    contentEvent(INSTAGRAM)
+    assertNull(instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
+    advance(Duration.ofSeconds(6))
+    assertNull(overlay().requestedPackage())
+    assertEquals(reason, instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertTrue(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+  }
+
+  /** The fixture exposes real page metadata and records the native Home-tab action. */
+  private fun youtubeRoot(rowIndex: Int?): Pair<AccessibilityNodeInfo, AccessibilityNodeInfo> {
+    val page = node(YOUTUBE).apply {
+      viewIdResourceName = "$YOUTUBE:id/reel_player_page_container"
+      if (rowIndex != null) collectionItemInfo = AccessibilityNodeInfo.CollectionItemInfo.obtain(rowIndex, 1, 0, 1, false)
+    }
+    val home = node(YOUTUBE).apply { isClickable = true }
+    // Robolectric clones share an existing action log; initialize it before cloning the window.
+    assertTrue(shadowOf(home).performedActions.isEmpty())
+    shadowOf(home).setOnPerformActionListener { action, _ -> action == AccessibilityNodeInfo.ACTION_CLICK }
+    val item = node(YOUTUBE).also { shadowOf(it).addChild(home) }
+    val tabs = node(YOUTUBE).apply { viewIdResourceName = "$YOUTUBE:id/pivot_bar" }
+    shadowOf(tabs).addChild(item)
+    val root = node(YOUTUBE)
+    shadowOf(root).addChild(page)
+    shadowOf(root).addChild(tabs)
+    return root to home
+  }
+
+  private fun contentEvent(packageName: String) {
+    controller.get().onAccessibilityEvent(AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED).apply {
+      this.packageName = packageName
+    })
+  }
+
+  private fun showContentAppWindow(root: AccessibilityNodeInfo) {
+    shadowOf(controller.get()).apply {
+      setRootInActiveWindow(root)
+      setWindows(listOf(window(AccessibilityWindowInfo.TYPE_APPLICATION, root)))
+    }
+  }
+
   private fun wallNow() = controller.get().appRuleWallClock()
 
   private fun openApp(packageName: String) {
@@ -559,10 +854,14 @@ class AppRuleTimerServiceTest {
   }
 
   private fun showOverlayWindow(packageName: String) {
+    showOverlayWindow(node(packageName))
+  }
+
+  private fun showOverlayWindow(appRoot: AccessibilityNodeInfo) {
     val node = node(context.packageName)
     shadowOf(controller.get()).apply {
       setRootInActiveWindow(node)
-      setWindows(listOf(window(AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY, node), window(AccessibilityWindowInfo.TYPE_APPLICATION, node(packageName))))
+      setWindows(listOf(window(AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY, node), window(AccessibilityWindowInfo.TYPE_APPLICATION, appRoot)))
     }
   }
 
@@ -596,5 +895,8 @@ class AppRuleTimerServiceTest {
     const val APP = "app.one"
     const val OTHER_APP = "app.two"
     const val INSTAGRAM = "com.instagram.android"
+    const val CHROME = "com.android.chrome"
+    const val FIREFOX = "org.mozilla.firefox"
+    const val YOUTUBE = "com.google.android.youtube"
   }
 }

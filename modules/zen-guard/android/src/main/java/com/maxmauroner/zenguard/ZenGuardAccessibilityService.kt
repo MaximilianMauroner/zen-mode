@@ -82,6 +82,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       val nowMs = SystemClock.elapsedRealtime()
       xStateMachine.pause(nowMs, xSettings())
       if (xHomeUsageState != HomeFeedUsageState.UNKNOWN) xHomeUsageState = HomeFeedUsageState.PAUSED
+      instagramDeadlineHandler.removeCallbacks(instagramReelsDeadlineCheck)
       instagramStateMachine.onAppBackground(nowMs, preferences.instagramSettings())
       publishXHomeStatus()
       publishInstagramHomeStatus()
@@ -877,7 +878,10 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
           } else {
             null
           },
-          onAttached = { recordInstagramBlockStats(action.reason, EnforcementStatsOutcome.SUCCESS) },
+          onAttached = {
+            instagramDeadlineHandler.removeCallbacks(instagramReelsDeadlineCheck)
+            recordInstagramBlockStats(action.reason, EnforcementStatsOutcome.SUCCESS)
+          },
         )
       }
       InstagramGuardAction.None -> {
@@ -964,17 +968,26 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
 
   /**
    * Acts only while the policy still holds the ended window. Leaving Reels, the app, or the
-   * screen clears that window, so a stale callback cannot block another surface. The normal
-   * handler then requires a live Instagram root and a visible Reels pager.
+   * screen clears that window, so a stale callback cannot block another surface. Retry transient
+   * trees until a blocker attaches or the policy clears the window. The normal handler still
+   * requires a live Instagram root and a visible Reels pager.
    */
   private fun checkInstagramReelsDeadline() {
     val remainingMs = instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) ?: return
+    if (!canRunEnforcementAction() || preferences.instagramObservationMode || !isScreenInteractive ||
+      instagramOverlay.isShowing
+    ) return
     // Handler delays use uptime and the policy uses elapsed time; separate rounding can run this 1 ms early.
     if (remainingMs > 0L) {
       instagramDeadlineHandler.postDelayed(instagramReelsDeadlineCheck, remainingMs)
       return
     }
-    if (canRunEnforcementAction()) handleInstagramEvent(null)
+    handleInstagramEvent(null)
+    if (!instagramOverlay.isShowing &&
+      instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) == 0L
+    ) {
+      instagramDeadlineHandler.postDelayed(instagramReelsDeadlineCheck, INSTAGRAM_REELS_DEADLINE_RETRY_MS)
+    }
   }
 
   private fun clearInstagramEnforcement(preserveHomeSession: Boolean = false) {
@@ -1431,6 +1444,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     private const val MAIN_LAUNCH_ATTEMPT = 3
     private const val MAX_NAVIGATION_ATTEMPTS = 12
     private const val USAGE_TICK_MS = 15_000L
+    private const val INSTAGRAM_REELS_DEADLINE_RETRY_MS = 1_000L
     private const val BROWSER_RECHECK_MS = 350L
     private const val MAX_BROWSER_NODES = 180
     private const val MAX_BROWSER_DEPTH = 18

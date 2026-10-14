@@ -105,12 +105,14 @@ class InstagramBlockerOverlayTest {
     assertTrue(overlay.isShowing)
   }
 
-  @Test fun `unknown lockout and failed storage do not invent Home availability`() {
+  @Test fun `unknown lockout and failed storage give distinct recovery guidance without a countdown`() {
     val unknownStates = listOf(
-      HomeFeedRuntimeState(0L, null, lockoutState = HomeFeedLockoutState.UNKNOWN),
-      HomeFeedRuntimeState(0L, null, storageState = HomeFeedStorageState.UNAVAILABLE),
+      HomeFeedRuntimeState(0L, null, lockoutState = HomeFeedLockoutState.UNKNOWN) to
+        R.string.zen_guard_instagram_home_unknown_break_detail,
+      HomeFeedRuntimeState(0L, null, storageState = HomeFeedStorageState.UNAVAILABLE) to
+        R.string.zen_guard_instagram_home_unavailable_detail,
     )
-    unknownStates.forEach { state ->
+    unknownStates.forEach { (state, detail) ->
       policy.restore(state, SystemClock.elapsedRealtime())
       show(homeEvent() as InstagramGuardAction.ShowBlocker)
       idle(Duration.ofMinutes(1))
@@ -119,7 +121,9 @@ class InstagramBlockerOverlayTest {
       assertTrue(texts().contains("CLOSED"))
       assertFalse(texts().contains("Home available again in"))
       assertFalse(texts().contains("Now"))
-      assertTrue(texts().contains(controller.get().getString(R.string.zen_guard_instagram_home_unavailable_detail)))
+      assertTrue(texts().contains(controller.get().getString(detail)))
+      val otherDetail = unknownStates.single { it.second != detail }.second
+      assertFalse(texts().contains(controller.get().getString(otherDetail)))
       overlay.hide()
     }
   }

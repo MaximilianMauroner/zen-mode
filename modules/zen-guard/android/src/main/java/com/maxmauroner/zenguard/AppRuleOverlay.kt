@@ -14,28 +14,30 @@ import android.widget.ScrollView
 import android.widget.TextView
 import kotlin.math.roundToInt
 
-/**
- * The intent question shown when an intent-gated app opens: confirming starts
- * one timed visit of the app's fixed length. Leaving goes home without
- * starting a visit.
- *
- * While the app's downtime runs, the same overlay instead shows when it opens
- * again, with nothing to start.
- *
- * Full-screen accessibility overlay, like the Instagram blocker, so it needs
- * no extra permission beyond the accessibility service itself.
- */
-internal class IntentOverlay(
+internal enum class AppRuleOverlayMode { ASK, COOLDOWN, LIMIT }
+
+/** One whole-app boundary for daily budgets, rolling allowances, and timed visits. */
+internal class AppRuleOverlay(
   private val service: AccessibilityService,
 ) {
   private val windowManager = service.getSystemService(WindowManager::class.java)
   private var root: View? = null
   private var shownFor: String? = null
-  private var isCooldown = false
+  var mode: AppRuleOverlayMode? = null
+    private set
+  private var titleView: TextView? = null
+  private var descriptionView: TextView? = null
+  private var stateView: TextView? = null
+  private var availabilityView: TextView? = null
 
   fun isShowing(): Boolean = root?.isAttachedToWindow == true
-  fun shownPackage(): String? = shownFor.takeIf { isShowing() }
-  fun isCooldown(): Boolean = isShowing() && isCooldown
+  fun requestedPackage(): String? = shownFor
+
+  fun updateCountdown(remainingMs: Long) {
+    val clock = formatAvailabilityCountdown(remainingMs)
+    stateView?.text = clock
+    availabilityView?.text = service.getString(R.string.zen_guard_available_again_in, clock)
+  }
 
   fun showAsk(
     packageName: String,
@@ -43,15 +45,17 @@ internal class IntentOverlay(
     sessionMinutes: Int,
     onStart: () -> Unit,
     onLeave: () -> Unit,
+    onAttached: () -> Unit,
   ) {
     show(
       packageName = packageName,
-      cooldown = false,
+      mode = AppRuleOverlayMode.ASK,
       appLabel = appLabel,
       cooldownRemainingMs = 0L,
       sessionMinutes = sessionMinutes,
       onStart = onStart,
       onLeave = onLeave,
+      onAttached = onAttached,
     )
   }
 
@@ -60,30 +64,58 @@ internal class IntentOverlay(
     appLabel: String,
     cooldownRemainingMs: Long,
     onLeave: () -> Unit,
+    onAttached: () -> Unit,
   ) {
     show(
       packageName = packageName,
-      cooldown = true,
+      mode = AppRuleOverlayMode.COOLDOWN,
       appLabel = appLabel,
       cooldownRemainingMs = cooldownRemainingMs,
       sessionMinutes = 0,
       onStart = {},
       onLeave = onLeave,
+      onAttached = onAttached,
+    )
+  }
+
+  fun showLimit(
+    packageName: String,
+    title: String,
+    detail: String,
+    remainingMs: Long,
+    onLeave: () -> Unit,
+    onAttached: () -> Unit,
+  ) {
+    show(
+      packageName, AppRuleOverlayMode.LIMIT, "", remainingMs, 0, {}, onLeave, onAttached, title, detail,
     )
   }
 
   private fun show(
     packageName: String,
-    cooldown: Boolean,
+    mode: AppRuleOverlayMode,
     appLabel: String,
     cooldownRemainingMs: Long,
     sessionMinutes: Int,
     onStart: () -> Unit,
     onLeave: () -> Unit,
+    onAttached: () -> Unit,
+    limitTitle: String = "",
+    limitDetail: String = "",
   ) {
+    if (shownFor == packageName && this.mode == mode) {
+      if (mode != AppRuleOverlayMode.ASK) updateCountdown(cooldownRemainingMs)
+      if (mode == AppRuleOverlayMode.LIMIT) {
+        titleView?.text = titleText(limitTitle, service.getColor(R.color.zen_accent))
+        descriptionView?.text = limitDetail
+      }
+      return
+    }
     hide()
     shownFor = packageName
-    isCooldown = cooldown
+    this.mode = mode
+    val cooldown = mode != AppRuleOverlayMode.ASK
+    val isLimit = mode == AppRuleOverlayMode.LIMIT
 
     val accent = service.getColor(R.color.zen_accent)
     val copy = service.getColor(R.color.zen_copy)
@@ -119,14 +151,14 @@ internal class IntentOverlay(
       background = roundedBackground(accent, accent, dp(3).toFloat())
     }
     tagContainer.addView(dot, fixedSize(dp(6)))
-    val topLabel = styledText("  " + service.getString(R.string.zen_guard_intent_eyebrow), 11f, muted, bold = true).apply {
+    val topLabel = styledText("  " + service.getString(if (isLimit) R.string.zen_guard_app_limits_eyebrow else R.string.zen_guard_intent_eyebrow), 11f, muted, bold = true).apply {
       letterSpacing = 0.12f
     }
     tagContainer.addView(topLabel, wrapContent())
     top.addView(tagContainer, weightedWrap(weight = 1f))
 
     val state = styledText(
-      if (cooldown) formatCooldown(cooldownRemainingMs) else service.getString(R.string.zen_guard_intent_state_ask, sessionMinutes),
+      if (cooldown) formatAvailabilityCountdown(cooldownRemainingMs) else service.getString(R.string.zen_guard_intent_state_ask, sessionMinutes),
       11f,
       if (cooldown) muted else accent,
       bold = true,
@@ -136,6 +168,7 @@ internal class IntentOverlay(
       setPadding(dp(12), dp(5), dp(12), dp(5))
       background = roundedBackground(panel2, line2, dp(20).toFloat())
     }
+    if (cooldown) stateView = state
     top.addView(state, wrapContent())
     container.addView(top, matchWrap())
 
@@ -168,7 +201,7 @@ internal class IntentOverlay(
     centerBody.addView(markWrapper, matchWrap(topMargin = dp(12)))
 
     val eyebrow = styledText(
-      if (cooldown) service.getString(R.string.zen_guard_intent_eyebrow_cooldown) else service.getString(R.string.zen_guard_intent_eyebrow),
+      if (isLimit) service.getString(R.string.zen_guard_app_limits_eyebrow) else if (cooldown) service.getString(R.string.zen_guard_intent_eyebrow_cooldown) else service.getString(R.string.zen_guard_intent_eyebrow),
       11f,
       accent,
       bold = true,
@@ -179,16 +212,17 @@ internal class IntentOverlay(
     centerBody.addView(eyebrow, matchWrap(topMargin = dp(12)))
 
     val title = styledTitle(
-      if (cooldown) service.getString(R.string.zen_guard_intent_cooldown_title) else service.getString(R.string.zen_guard_intent_title, sessionMinutes),
+      if (isLimit) limitTitle else if (cooldown) service.getString(R.string.zen_guard_intent_cooldown_title) else service.resources.getQuantityString(R.plurals.zen_guard_intent_title, sessionMinutes, sessionMinutes),
       copy,
       accent,
     ).apply {
       gravity = Gravity.CENTER_HORIZONTAL
     }
+    titleView = title
     centerBody.addView(title, matchWrap(topMargin = dp(8)))
 
     val description = styledText(
-      if (cooldown) service.getString(R.string.zen_guard_intent_cooldown_detail, appLabel) else service.getString(R.string.zen_guard_intent_detail, appLabel, sessionMinutes),
+      if (isLimit) limitDetail else if (cooldown) service.getString(R.string.zen_guard_intent_cooldown_detail, appLabel) else service.resources.getQuantityString(R.plurals.zen_guard_intent_detail, sessionMinutes, appLabel, sessionMinutes),
       15f,
       muted,
     ).apply {
@@ -196,7 +230,15 @@ internal class IntentOverlay(
       gravity = Gravity.CENTER_HORIZONTAL
       textAlignment = View.TEXT_ALIGNMENT_CENTER
     }
+    descriptionView = description
     centerBody.addView(description, matchWrap(topMargin = dp(10)))
+
+    if (cooldown) {
+      availabilityView = styledText("", 20f, copy, bold = true).apply {
+        gravity = Gravity.CENTER_HORIZONTAL
+      }.also { centerBody.addView(it, matchWrap(topMargin = dp(18))) }
+      updateCountdown(cooldownRemainingMs)
+    }
 
     val actions = LinearLayout(service).apply {
       orientation = LinearLayout.VERTICAL
@@ -237,6 +279,7 @@ internal class IntentOverlay(
       PixelFormat.TRANSLUCENT,
     )
     root = container
+    container.doOnFirstAttach { if (root === container) onAttached() }
     try {
       windowManager.addView(container, params)
     } catch (_: RuntimeException) {
@@ -248,24 +291,17 @@ internal class IntentOverlay(
     val existingRoot = root
     root = null
     shownFor = null
-    isCooldown = false
+    mode = null
+    titleView = null
+    descriptionView = null
+    stateView = null
+    availabilityView = null
     existingRoot?.let {
       try {
         windowManager.removeView(it)
       } catch (_: IllegalArgumentException) {
         // The view was already detached.
       }
-    }
-  }
-
-  private fun formatCooldown(remainingMs: Long): String {
-    val totalMinutes = (remainingMs / 60_000L).coerceAtLeast(1L)
-    val hours = (totalMinutes / 60).toInt()
-    val minutes = (totalMinutes % 60).toInt()
-    return if (hours > 0) {
-      service.getString(R.string.zen_guard_stat_hours_minutes, hours, minutes)
-    } else {
-      service.getString(R.string.zen_guard_stat_minutes, minutes)
     }
   }
 
@@ -278,16 +314,19 @@ internal class IntentOverlay(
   }
 
   private fun styledTitle(value: String, copy: Int, accent: Int): TextView {
-    val normalized = value.replace("\\n", "\n")
-    val spannable = android.text.SpannableString(normalized).apply {
-      val accentStart = normalized.lastIndexOf('\n').takeIf { it >= 0 }?.plus(1) ?: 0
-      setSpan(android.text.style.ForegroundColorSpan(accent), accentStart, normalized.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-    }
-    return styledText(spannable, 28f, copy, bold = true).apply {
+    return styledText(titleText(value, accent), 28f, copy, bold = true).apply {
       setLineSpacing(0f, 1.12f)
       letterSpacing = -0.02f
       gravity = Gravity.CENTER_HORIZONTAL
       textAlignment = View.TEXT_ALIGNMENT_CENTER
+    }
+  }
+
+  private fun titleText(value: String, accent: Int): CharSequence {
+    val normalized = value.replace("\\n", "\n")
+    return android.text.SpannableString(normalized).apply {
+      val accentStart = normalized.lastIndexOf('\n').takeIf { it >= 0 }?.plus(1) ?: 0
+      setSpan(android.text.style.ForegroundColorSpan(accent), accentStart, normalized.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
   }
 

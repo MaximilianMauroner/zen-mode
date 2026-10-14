@@ -18,6 +18,19 @@ internal object RollingWindow {
     return events.filter { it.atWallMs > cutoff }.sumOf { it.durationMs }
   }
 
+  /** First slice expiry that leaves usage strictly below the allowance, or null if available. */
+  fun availableAgainAt(events: List<RollingEvent>, allowanceMs: Long, windowMs: Long, nowWallMs: Long): Long? {
+    if (allowanceMs <= 0L || windowMs <= 0L) return null
+    val active = events.filter { it.atWallMs > nowWallMs - windowMs }.sortedBy { it.atWallMs }
+    var used = active.sumOf { it.durationMs }
+    if (used < allowanceMs) return null
+    for (event in active) {
+      used -= event.durationMs
+      if (used < allowanceMs) return event.atWallMs + windowMs
+    }
+    return null
+  }
+
   /** Drops slices older than [maxWindowMs] and keeps at most [cap] entries. */
   fun pruned(events: List<RollingEvent>, maxWindowMs: Long, nowWallMs: Long, cap: Int): List<RollingEvent> {
     val cutoff = nowWallMs - maxWindowMs

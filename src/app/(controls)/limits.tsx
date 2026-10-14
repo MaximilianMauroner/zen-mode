@@ -344,7 +344,7 @@ export default function AppLimitsScreen() {
             <View>
               <SectionLabel className="mb-2">Daily budget</SectionLabel>
               <Card>
-                <Text className="mb-3 text-support text-muted">When it runs out, Zen Mode sends you home until midnight.</Text>
+                <Text className="mb-3 text-support text-muted">When it runs out, a blocking card shows the countdown until access returns at local midnight.</Text>
                 <MinuteRow selected={minutes} disabled={controlsDisabled} onSelect={setMinutes} />
               </Card>
             </View>
@@ -366,7 +366,7 @@ export default function AppLimitsScreen() {
               <SectionLabel className="mb-2">Rolling allowance</SectionLabel>
               <Card>
                 <Text className="mb-3 text-support text-muted">
-                  Use counts on its own inside the window. When it runs out, the app closes until old use ages out.
+                  Use counts inside the rolling window. At the limit, a blocking card shows when access returns as old use leaves the window.
                 </Text>
                 <View className="mb-4">
                   <ChipGroup

@@ -103,6 +103,7 @@ class OverlayAttachmentTest {
     pressSiteHome()
     visitSite(BLOCKED_HOST)
     runLayoutPass()
+    assertTrue(siteViews().singleOrNull()?.isAttachedToWindow == true)
     assertEquals(2L, count(EnforcementReason.BLOCKED_SITE))
   }
 

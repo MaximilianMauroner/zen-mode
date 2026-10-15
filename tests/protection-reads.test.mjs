@@ -123,3 +123,78 @@ test('a detached owner starts no read and calls no listener', async () => {
   await owner.refresh();
   assert.equal(reads.started, 1, 'no read after teardown');
 });
+
+test('a refresh during a read waits for a newer read, so fresh data confirms a write', async () => {
+  const { reads, owner } = ownedRead();
+  void owner.refresh();
+  let confirmed = false;
+  const afterWrite = owner.refresh().then(() => {
+    confirmed = true;
+  });
+
+  reads.pending[0].resolve(ready({ protectionEnabled: true }));
+  await settled();
+  assert.equal(confirmed, false, 'a read that started before the request does not confirm it');
+  assert.equal(reads.started, 2, 'a newer read starts after the older one');
+
+  reads.pending[1].resolve(ready({ protectionEnabled: false }));
+  await afterWrite;
+  assert.deepEqual(owner.getSnapshot(), { kind: 'ready', value: { protectionEnabled: false }, refreshing: false });
+});
+
+test('overlapping requests share one follow-up read, and a request during it queues one more', async () => {
+  const { reads, owner } = ownedRead();
+  void owner.refresh();
+  const waiting = [owner.refresh(), owner.refresh(), owner.refresh()];
+  reads.pending[0].resolve(ready(1));
+  await settled();
+  assert.equal(reads.started, 2, 'one in-flight read and one follow-up');
+
+  const later = owner.refresh();
+  reads.pending[1].resolve(ready(2));
+  await Promise.all(waiting);
+  assert.equal(reads.started, 3, 'the request made during the follow-up gets its own read');
+  reads.pending[2].resolve(ready(3));
+  await later;
+  assert.equal(reads.started, 3);
+});
+
+test('teardown releases a queued follow-up without reading', async () => {
+  const { reads, owner, release } = ownedRead();
+  void owner.refresh();
+  const queued = owner.refresh();
+  release();
+  await queued;
+  reads.pending[0].resolve(ready(1));
+  await settled();
+  assert.equal(reads.started, 1, 'no read after teardown');
+});
+
+test('a StrictMode remount keeps one set of triggers and reads again after the first read', async () => {
+  const reads = nativeReads();
+  const background = triggers();
+  const owner = createProtectionRead({ read: reads.read, failure: 'Could not read.', whileWatched: background.whileWatched });
+  const seen = [];
+  const listener = () => seen.push(owner.getSnapshot());
+
+  let unsubscribe = owner.subscribe(listener);
+  let blur = owner.watch();
+  unsubscribe();
+  blur();
+  unsubscribe = owner.subscribe(listener);
+  blur = owner.watch();
+  assert.equal(background.active, 1, 'one live set of triggers');
+
+  reads.pending[0].resolve(ready('mounted'));
+  await settled();
+  assert.equal(reads.started, 2, 'the remount focus gets its own read');
+  reads.pending[1].resolve(ready('remounted'));
+  await settled();
+  assert.deepEqual(seen.at(-1), { kind: 'ready', value: 'remounted', refreshing: false });
+
+  blur();
+  unsubscribe();
+  background.fire();
+  assert.equal(background.active, 0);
+  assert.equal(reads.started, 2);
+});

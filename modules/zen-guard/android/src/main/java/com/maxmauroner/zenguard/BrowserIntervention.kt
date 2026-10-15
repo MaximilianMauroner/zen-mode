@@ -23,9 +23,7 @@ internal class BrowserIntervention(
   private val recordAttachment: () -> Unit,
   private val recheck: (String) -> Unit,
 ) {
-  private class Session(val browserPackage: String) {
-    var counted = false
-  }
+  private class Session(val browserPackage: String)
 
   private val renderer = Renderer(service)
   private val handler = Handler(Looper.getMainLooper())
@@ -55,12 +53,11 @@ internal class BrowserIntervention(
   }
 
   private fun attached(session: Session) {
-    if (active !== session || session.counted) return
+    if (active !== session) return
     if (!canEnforce() || !isEnabled()) {
       end()
       return
     }
-    session.counted = true
     recordAttachment()
   }
 
@@ -73,12 +70,12 @@ internal class BrowserIntervention(
     service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
     handler.removeCallbacksAndMessages(null)
     handler.postDelayed({
-      if (active === session && renderer.isShowing && canEnforce() && isEnabled()) {
+      if (active === session && renderer.isShowing) {
         recheck(session.browserPackage)
       } else if (active === session) {
         end()
       }
-    }, 350L)
+    }, BACK_RECHECK_DELAY_MS)
   }
 
   private fun home(session: Session) {
@@ -175,7 +172,7 @@ internal class BrowserIntervention(
       container.addView(actions, matchWrap())
 
       root = container
-      container.doOnFirstAttach { if (root === container) onAttached() }
+      container.doOnFirstAttach(onAttached)
       try {
         windowManager.addView(container, WindowManager.LayoutParams(
           -1, -1, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
@@ -241,5 +238,9 @@ internal class BrowserIntervention(
     }
     private fun dp(value: Int) = (value * service.resources.displayMetrics.density).roundToInt()
     private fun matchWrap(topMargin: Int = 0) = LinearLayout.LayoutParams(-1, -2).apply { this.topMargin = topMargin }
+  }
+
+  private companion object {
+    const val BACK_RECHECK_DELAY_MS = 350L
   }
 }

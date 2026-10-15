@@ -32,6 +32,7 @@ Run the checks that cover the change:
 
 ```bash
 npm test
+npm run test:nightly
 npx tsc --noEmit
 npm run lint
 npx expo export --platform web

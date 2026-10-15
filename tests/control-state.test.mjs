@@ -7,7 +7,6 @@ import { createProtectionRead } from '../src/features/protection/protection-read
 const READ_FAILURE = 'Zen Mode could not read the guard. Try again.';
 const LOCKED = 'Settings are locked. Ask to unlock in the Lock tab.';
 
-/** A guard status owner whose native reads succeed or fail in order. */
 function guardStatus(...outcomes) {
   const owner = createProtectionRead({
     read: async () => {

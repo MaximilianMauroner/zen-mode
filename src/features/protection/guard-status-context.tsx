@@ -6,7 +6,6 @@ import { onResume, useProtectionRead } from './use-protection-read';
 
 const GuardStatusContext = createContext<ProtectionRead<ZenGuardStatus> | null>(null);
 
-/** Settings, the control tabs, and their header share one native status read. */
 export function GuardStatusProvider({ children }: { children: ReactNode }) {
   const [owner] = useState(() => createProtectionRead<ZenGuardStatus>({
     read: async () => ({ kind: 'ready', value: await getZenGuardStatus() }),

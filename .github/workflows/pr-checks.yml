@@ -78,4 +78,4 @@ jobs:
       - name: Install Android SDK 36
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" "platforms;android-36" "build-tools;36.0.0"'
       - name: Compile and run native tests
-        run: npm run test:native -- --no-daemon --no-parallel --max-workers=2
+        run: npm run test:native -- --no-daemon --no-parallel --max-workers=2 --info

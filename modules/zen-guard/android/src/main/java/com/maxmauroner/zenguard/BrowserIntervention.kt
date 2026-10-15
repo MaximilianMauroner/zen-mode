@@ -80,7 +80,7 @@ internal class BrowserIntervention(
 
   private fun home(session: Session) {
     if (active !== session) return
-    end()
+    renderer.hide()
     if (canEnforce()) service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
   }
 

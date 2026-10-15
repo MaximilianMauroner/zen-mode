@@ -77,7 +77,6 @@ class InstagramBlockerOverlayAudioTest {
       action = InstagramGuardAction.ShowBlocker(InstagramBlockReason.REELS_ENTRY, continueAvailableAt = null),
       reelsMinutes = 5,
       debugInfo = null,
-      onAttached = {},
     )
     shadowOf(Looper.getMainLooper()).idle()
     assertTrue(overlay.isShowing)

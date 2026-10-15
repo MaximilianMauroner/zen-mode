@@ -13,7 +13,7 @@ export function onResume(refresh: () => void) {
 }
 
 export function useProtectionRead<T>(owner: ProtectionRead<T>) {
-  return { read: useSyncExternalStore(owner.subscribe, owner.getSnapshot), refresh: owner.refresh };
+  return { read: useSyncExternalStore(owner.subscribe, owner.getSnapshot, owner.getSnapshot), refresh: owner.refresh };
 }
 
 /** A dataset that one screen owns. It reads on focus, and on resume while the screen is focused. */

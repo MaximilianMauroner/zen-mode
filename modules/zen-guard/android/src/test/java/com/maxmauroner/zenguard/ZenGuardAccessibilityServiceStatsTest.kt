@@ -40,7 +40,7 @@ class ZenGuardAccessibilityServiceStatsTest {
   }
 
   @Test
-  fun `production path hooks cover YouTube X Instagram browser and app limits`() {
+  fun `production path hooks cover YouTube X Instagram and app limits`() {
     val fixture = fixture()
     val service = fixture.service
 
@@ -67,20 +67,18 @@ class ZenGuardAccessibilityServiceStatsTest {
     assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, EnforcementStatsOutcome.SUCCESS))
     assertTrue(service.recordXVideoStats("video-callback-1", EnforcementStatsOutcome.SUCCESS))
     assertFalse(service.recordXVideoStats("video-callback-1", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordBlockedSiteStats("com.android.chrome", EnforcementStatsOutcome.SUCCESS))
     assertTrue(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.SUCCESS))
     assertFalse(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.SUCCESS))
     assertTrue(service.recordAppLimitStats("app.two", EnforcementStatsOutcome.SUCCESS))
 
     val snapshot = fixture.store.snapshot()
-    assertEquals(10L, snapshot.total)
+    assertEquals(9L, snapshot.total)
     assertEquals(2L, snapshot.counts[EnforcementReason.YOUTUBE_SHORTS.key])
     assertEquals(1L, snapshot.counts[EnforcementReason.X_HOME.key])
     assertEquals(1L, snapshot.counts[EnforcementReason.INSTAGRAM_REELS.key])
     assertEquals(1L, snapshot.counts[EnforcementReason.INSTAGRAM_HOME.key])
     assertEquals(1L, snapshot.counts[EnforcementReason.INSTAGRAM_EXPLORE.key])
     assertEquals(1L, snapshot.counts[EnforcementReason.X_VIDEOS.key])
-    assertEquals(1L, snapshot.counts[EnforcementReason.BLOCKED_SITE.key])
     assertEquals(2L, snapshot.counts[EnforcementReason.APP_LIMIT.key])
   }
 

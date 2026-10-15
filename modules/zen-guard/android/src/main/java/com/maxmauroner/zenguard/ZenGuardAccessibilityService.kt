@@ -69,9 +69,8 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private val appRuleRefresh = Runnable { refreshAppRuleOverlay() }
   private val intentDeadlineCheck = Runnable { enforceIntentSession() }
   private lateinit var adultSiteStore: AdultSiteRuleStore
-  private lateinit var adultSiteOverlay: AdultSiteBlockerOverlay
+  private var browserIntervention: BrowserIntervention? = null
   private lateinit var homeFeedStatusStore: HomeFeedStatusStore
-  private val browserHandler by lazy { Handler(Looper.getMainLooper()) }
   private val usageTracker = AppUsageTracker()
   private val usageHandler by lazy { Handler(Looper.getMainLooper()) }
   private var currentForegroundPackage: String? = null
@@ -120,7 +119,14 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     appRuleSafety = AppRuleSafety.resolve(this)
     appRuleOverlay = AppRuleOverlay(this)
     adultSiteStore = AdultSiteRuleStore(this)
-    adultSiteOverlay = AdultSiteBlockerOverlay(this)
+    browserIntervention?.end()
+    browserIntervention = BrowserIntervention(
+      service = this,
+      canEnforce = ::canRunEnforcementAction,
+      isEnabled = { adultSiteStore.enabled },
+      recordAttachment = { recordEnforcement(EnforcementReason.BLOCKED_SITE) },
+      recheck = { handleBrowserEvent(it) },
+    )
     youtubeShortsResultOverlay = YouTubeShortsResultOverlay(this)
     homeFeedStatusStore = HomeFeedStatusStore(this)
     val nowElapsedMs = SystemClock.elapsedRealtime()
@@ -254,7 +260,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       }
       if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
         windows.none { BrowserUrlDetector.supports(it.root?.packageName?.toString()) }
-      ) clearAdultSiteEnforcement()
+      ) browserIntervention?.end()
       return
     }
     if (BrowserUrlDetector.supports(eventPackage)) {
@@ -263,7 +269,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
         event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) &&
       windows.none { BrowserUrlDetector.supports(it.root?.packageName?.toString()) }
     ) {
-      clearAdultSiteEnforcement()
+      browserIntervention?.end()
     }
     if (eventPackage != X_PACKAGE && event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
       windows.none { it.root?.packageName?.toString() == X_PACKAGE }) clearXEnforcement(preserveHomeLockout = true)
@@ -934,7 +940,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
 
   override fun onInterrupt() {
     closeAppRuleOverlay()
-    clearAdultSiteEnforcement()
+    browserIntervention?.end()
     clearXEnforcement(preserveHomeLockout = true)
     resetYouTubeEnforcement()
     clearStatsDedupeState()
@@ -953,8 +959,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
 
   override fun onDestroy() {
     appRuleHandler.removeCallbacksAndMessages(null)
-    browserHandler.removeCallbacksAndMessages(null)
-    clearAdultSiteEnforcement()
+    browserIntervention?.end()
     resetYouTubeEnforcement()
     xHandler.removeCallbacksAndMessages(null)
     if (::preferences.isInitialized && hasActiveProtection()) {
@@ -1117,9 +1122,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     return recordStatsAction(statsReason, outcome, reason.name)
   }
 
-  internal fun recordBlockedSiteStats(browserPackage: String, outcome: EnforcementStatsOutcome): Boolean =
-    recordStatsAction(EnforcementReason.BLOCKED_SITE, outcome, browserPackage)
-
   internal fun recordAppLimitStats(packageName: String, outcome: EnforcementStatsOutcome): Boolean =
     recordStatsAction(EnforcementReason.APP_LIMIT, outcome, packageName)
 
@@ -1165,7 +1167,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
 
   /** Clear every in-memory action path without inspecting another app's screen. */
   private fun clearInactiveProtection() {
-    clearAdultSiteEnforcement()
+    browserIntervention?.end()
     resetYouTubeEnforcement()
     clearStatsDedupeState()
     clearXEnforcement()
@@ -1184,8 +1186,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
    * delayed navigation, and tracked app-rule state without changing the in-app settings lock.
    */
   private fun enterSystemSettings() {
-    browserHandler.removeCallbacksAndMessages(null)
-    clearAdultSiteEnforcement()
+    browserIntervention?.end()
     resetYouTubeEnforcement()
     clearStatsDedupeState()
     clearXEnforcement(preserveHomeLockout = true)
@@ -1223,27 +1224,20 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
 
   /** Reads text and descriptions only from exact address-bar nodes; page text is never copied. */
   private fun handleBrowserEvent(browserPackage: String, observedRoot: AccessibilityNodeInfo? = null) {
-    if (!::adultSiteStore.isInitialized || !::adultSiteOverlay.isInitialized) return
+    val intervention = browserIntervention ?: return
     if (!canRunEnforcementAction()) return
     if (!adultSiteStore.enabled) {
-      clearAdultSiteEnforcement()
+      browserIntervention?.end()
       return
     }
     val root = observedRoot ?: browserRoot(browserPackage) ?: return
     if (root.packageName?.toString() != browserPackage) return
     val detection = BrowserUrlDetector.detect(browserPackage, browserAddressBars(root, browserPackage)) ?: return
     adultSiteStore.recordBrowserSignal(detection.browserMask)
-    if (AdultSitePolicy.isBlocked(detection.host, adultSiteStore.customHosts())) {
-      adultSiteOverlay.show(
-        browserPackage = browserPackage,
-        onBack = { leaveBlockedSiteBack() },
-        onHome = { leaveBlockedSiteHome() },
-        onAttached = { recordBlockedSiteStats(browserPackage, EnforcementStatsOutcome.SUCCESS) },
-      )
-    } else if (adultSiteOverlay.shownPackage() == browserPackage) {
-      adultSiteOverlay.hide()
-      resetStatsDedupe(EnforcementReason.BLOCKED_SITE)
-    }
+    intervention.observe(
+      browserPackage,
+      blocked = AdultSitePolicy.isBlocked(detection.host, adultSiteStore.customHosts()),
+    )
   }
 
   private fun browserRoot(browserPackage: String): AccessibilityNodeInfo? =
@@ -1270,33 +1264,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       for (index in 0 until node.childCount) node.getChild(index)?.let { pending.add(Pending(it, depth + 1)) }
     }
     return result
-  }
-
-  /** Keep the overlay in place until Back produces a verified non-blocked URL. */
-  private fun leaveBlockedSiteBack() {
-    val browserPackage = adultSiteOverlay.shownPackage() ?: return
-    if (!canRunEnforcementAction() || !adultSiteStore.enabled) {
-      clearAdultSiteEnforcement()
-      return
-    }
-    performGlobalAction(GLOBAL_ACTION_BACK)
-    browserHandler.removeCallbacksAndMessages(null)
-    browserHandler.postDelayed({
-      if (hasActiveProtection() && adultSiteOverlay.shownPackage() == browserPackage) {
-        handleBrowserEvent(browserPackage)
-      }
-    }, BROWSER_RECHECK_MS)
-  }
-
-  private fun leaveBlockedSiteHome() {
-    clearAdultSiteEnforcement()
-    if (canRunEnforcementAction()) performGlobalAction(GLOBAL_ACTION_HOME)
-  }
-
-  private fun clearAdultSiteEnforcement() {
-    browserHandler.removeCallbacksAndMessages(null)
-    if (::adultSiteOverlay.isInitialized) adultSiteOverlay.hide()
-    resetStatsDedupe(EnforcementReason.BLOCKED_SITE)
   }
 
   /**
@@ -1471,7 +1438,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     private const val MAX_NAVIGATION_ATTEMPTS = 12
     private const val USAGE_TICK_MS = 15_000L
     private const val INSTAGRAM_REELS_DEADLINE_RETRY_MS = 1_000L
-    private const val BROWSER_RECHECK_MS = 350L
     private const val MAX_BROWSER_NODES = 180
     private const val MAX_BROWSER_DEPTH = 18
 

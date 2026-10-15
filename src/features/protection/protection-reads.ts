@@ -5,7 +5,10 @@ export type ReadResult<T> = { kind: 'ready'; value: T } | { kind: 'android-requi
 export type ProtectionRead<T> = {
   getSnapshot(): ReadState<T>;
   subscribe(listener: () => void): () => void;
-  /** Resolves after a read that started after this call, so an older read never confirms a write. */
+  /**
+   * While attached, waits for a read started after this call. Detachment releases
+   * queued requests without reading. A detached call resolves without reading.
+   */
   refresh(): Promise<void>;
   /** Refresh now and keep the background triggers while any watcher remains. Returns the release. */
   watch(): () => void;

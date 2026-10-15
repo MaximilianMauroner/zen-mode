@@ -3,7 +3,6 @@ import test from 'node:test';
 
 import { createProtectionRead } from '../src/features/protection/protection-reads.ts';
 
-/** Native reads that stay pending until the test settles them. */
 function nativeReads() {
   const pending = [];
   return {
@@ -15,7 +14,6 @@ function nativeReads() {
   };
 }
 
-/** Background triggers that the test fires by hand. */
 function triggers() {
   const active = new Set();
   let installs = 0;

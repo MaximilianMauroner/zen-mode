@@ -1,7 +1,8 @@
 import { DangerButton, PrimaryButton, SecondaryButton } from '@/components/ui/button';
 import { Card, RowGroup, SectionLabel } from '@/components/ui/card';
 import { ChipGroup, ChoiceCard } from '@/components/ui/choice';
-import { ErrorNote, Screen, ScreenHeader } from '@/components/ui/screen';
+import { GuardNotes } from '@/components/ui/guard-notes';
+import { Screen, ScreenHeader } from '@/components/ui/screen';
 import { AppPicker } from '@/components/ui/app-picker';
 import { useWeakeningGate, WeakeningGateDialog } from '@/components/ui/weakening-gate';
 import { TopTabs } from 'expo-router/js-top-tabs';
@@ -32,7 +33,7 @@ import { ChevronRight } from 'lucide-react-native';
 import { colors } from '@/theme/colors';
 import { getAppRuleChangeAction, getConfiguredAppPresentation } from '@/features/protection/app-rule-presentation';
 import { getAppLimitsPlatformState } from '@/features/protection/app-limits-state';
-import { readValue } from '@/features/protection/control-state';
+import { actionFailure, IDLE_ACTION, readValue, RUNNING_ACTION, type ActionState } from '@/features/protection/control-state';
 import type { ReadResult } from '@/features/protection/protection-reads';
 import { useScreenRead } from '@/features/protection/use-protection-read';
 
@@ -115,9 +116,8 @@ export default function AppLimitsScreen() {
   const [cooldown, setCooldown] = useState(5);
   const [allowance, setAllowance] = useState(5);
   const [window, setWindow] = useState(60);
-  const [error, setError] = useState('');
-  const [lockBlocked, setLockBlocked] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [action, setAction] = useState<ActionState>(IDLE_ACTION);
+  const busy = action.kind === 'running';
   const busyRef = useRef(false);
   const gate = useWeakeningGate();
 
@@ -130,19 +130,15 @@ export default function AppLimitsScreen() {
   const runAction = useCallback((task: () => Promise<void>, fallbackMessage: string) => {
     if (busyRef.current) return;
     busyRef.current = true;
-    setBusy(true);
-    setError('');
-    setLockBlocked(false);
+    setAction(RUNNING_ACTION);
     void (async () => {
       try {
         await task();
+        setAction(IDLE_ACTION);
       } catch (cause) {
-        const message = cause instanceof Error ? cause.message : fallbackMessage;
-        if (message.includes('locked')) setLockBlocked(true);
-        setError(message);
+        setAction(actionFailure(cause, fallbackMessage));
       } finally {
         busyRef.current = false;
-        setBusy(false);
       }
     })();
   }, []);
@@ -174,13 +170,8 @@ export default function AppLimitsScreen() {
 
   // An error or lock refusal belongs to one edit. It must not follow the user
   // into the list or into the next app's editor.
-  const clearFeedback = () => {
-    setError('');
-    setLockBlocked(false);
-  };
-
   const closeEditor = () => {
-    clearFeedback();
+    setAction(IDLE_ACTION);
     setSelected(null);
   };
 
@@ -207,7 +198,7 @@ export default function AppLimitsScreen() {
       setAllowance(5);
       setWindow(60);
     }
-    clearFeedback();
+    setAction(IDLE_ACTION);
     setSelected(app);
   };
 
@@ -215,8 +206,7 @@ export default function AppLimitsScreen() {
   const saveRule = () => {
     if (!selected || controlsDisabled) return;
     if (mode === 'rolling' && allowance > window) {
-      clearFeedback();
-      setError('The allowance must fit inside its window.');
+      setAction({ kind: 'failed', message: 'The allowance must fit inside its window.' });
       return;
     }
     const packageName = selected.packageName;
@@ -278,12 +268,6 @@ export default function AppLimitsScreen() {
       <WeakeningGateDialog gate={gate} />
       <TopTabs.Screen options={{ swipeEnabled: !busy }} />
       {selected ? <ScreenHeader title={selected.label} onBack={closeEditor} backDisabled={busy} /> : null}
-      {read.kind === 'failed' ? (
-        <View className="gap-3">
-          <ErrorNote message={read.message} />
-          <SecondaryButton title="Try again" disabled={busy} onPress={() => void refresh()} />
-        </View>
-      ) : null}
 
       {selected ? (
         <>
@@ -382,8 +366,9 @@ export default function AppLimitsScreen() {
       )}
 
       <AppPicker visible={pickerOpen} configuredPackages={new Set(guardedByPackage.keys())} onClose={() => setPickerOpen(false)} onSelect={(app) => { setPickerOpen(false); selectApp(app); }} />
-      <ErrorNote message={error} />
-      {lockBlocked ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
+      <GuardNotes read={read} action={action} />
+      {action.kind === 'refused' ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
+      {read.kind === 'failed' ? <SecondaryButton title="Try again" disabled={busy} onPress={() => void refresh()} /> : null}
     </Screen>
   );
 }

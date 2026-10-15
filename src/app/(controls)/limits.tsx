@@ -25,13 +25,16 @@ import {
   type IntentApp,
   type RollingLimit,
 } from '@/features/protection/native';
-import { router, useFocusEffect } from 'expo-router';
+import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Platform, Pressable, Text, View } from 'react-native';
+import { Platform, Pressable, Text, View } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import { colors } from '@/theme/colors';
 import { getAppRuleChangeAction, getConfiguredAppPresentation } from '@/features/protection/app-rule-presentation';
 import { getAppLimitsPlatformState } from '@/features/protection/app-limits-state';
+import { readValue } from '@/features/protection/control-state';
+import type { ReadResult } from '@/features/protection/protection-reads';
+import { useScreenRead } from '@/features/protection/use-protection-read';
 
 const MINUTE_OPTIONS = [5, 15, 30, 45, 60, 90, 120];
 /** Fixed visit lengths for the intent question. */
@@ -47,8 +50,14 @@ const ROLLING_PREFILLS = [
   { label: '5m / 3h', allowance: 5, window: 180 },
   { label: '30m / day', allowance: 30, window: 1440 },
 ];
-type ReadState = 'loading' | 'ready' | 'error' | 'android-required';
 type RuleMode = 'daily' | 'visit' | 'rolling';
+
+type AppRules = {
+  limits: AppLimit[];
+  intents: IntentApp[];
+  rolling: RollingLimit[];
+  installedApps: InstalledApp[];
+};
 
 type GuardedEntry = {
   packageName: string;
@@ -86,13 +95,19 @@ async function readStoredRules(packageName: string): Promise<AppRule[]> {
   return stored;
 }
 
+async function readAppRules(): Promise<ReadResult<AppRules>> {
+  if (Platform.OS !== 'android') return { kind: 'android-required' };
+  const nativeStatus = await getZenGuardStatus();
+  if (getAppLimitsPlatformState(nativeStatus) === 'android-required') return { kind: 'android-required' };
+  const [limits, intents, rolling] = await Promise.all([getAppLimits(), getIntentApps(), getRollingLimits()]);
+  const installedApps = await getInstalledApps();
+  return { kind: 'ready', value: { limits, intents, rolling, installedApps } };
+}
+
 export default function AppLimitsScreen() {
-  const [limits, setLimits] = useState<AppLimit[] | null>(null);
-  const [intents, setIntents] = useState<IntentApp[] | null>(null);
-  const [rolling, setRolling] = useState<RollingLimit[] | null>(null);
-  const [installedApps, setInstalledApps] = useState<InstalledApp[] | null>(null);
+  const { read, refresh } = useScreenRead(readAppRules, 'The app rules could not be loaded.');
+  const rules = readValue(read);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [readState, setReadState] = useState<ReadState>('loading');
   const [selected, setSelected] = useState<InstalledApp | null>(null);
   const [mode, setMode] = useState<RuleMode>('daily');
   const [minutes, setMinutes] = useState(15);
@@ -105,69 +120,12 @@ export default function AppLimitsScreen() {
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const gate = useWeakeningGate();
-  const refreshInFlightRef = useRef(false);
-
-  const refresh = useCallback(async () => {
-    if (refreshInFlightRef.current) return;
-    refreshInFlightRef.current = true;
-    setReadState('loading');
-    try {
-      if (Platform.OS !== 'android') {
-        setLimits([]);
-        setIntents([]);
-        setRolling([]);
-        setInstalledApps([]);
-        setReadState('android-required');
-        return;
-      }
-      const nativeStatus = await getZenGuardStatus();
-      if (getAppLimitsPlatformState(nativeStatus) === 'android-required') {
-        setLimits([]);
-        setIntents([]);
-        setRolling([]);
-        setInstalledApps([]);
-        setReadState('android-required');
-        return;
-      }
-      const [nextLimits, nextIntents, nextRolling] = await Promise.all([
-        getAppLimits(),
-        getIntentApps(),
-        getRollingLimits(),
-      ]);
-      const nextInstalledApps = await getInstalledApps();
-      setLimits(nextLimits);
-      setIntents(nextIntents);
-      setRolling(nextRolling);
-      setInstalledApps(nextInstalledApps);
-      setReadState('ready');
-    } catch {
-      setLimits(null);
-      setIntents(null);
-      setRolling(null);
-      setInstalledApps(null);
-      setReadState('error');
-    } finally {
-      refreshInFlightRef.current = false;
-    }
-  }, []);
 
   // Warm inactive tabs after the first frame without delaying the visible screen.
   useEffect(() => {
     const frame = requestAnimationFrame(() => { void refresh(); });
     return () => cancelAnimationFrame(frame);
   }, [refresh]);
-
-  // Returning from a limited app does not refocus this tab, so usage is read
-  // again whenever Android brings Zen Mode back while the tab is selected.
-  useFocusEffect(
-    useCallback(() => {
-      void refresh();
-      const listener = AppState.addEventListener('change', (state) => {
-        if (state === 'active') void refresh();
-      });
-      return () => listener.remove();
-    }, [refresh]),
-  );
 
   const runAction = useCallback((task: () => Promise<void>, fallbackMessage: string) => {
     if (busyRef.current) return;
@@ -189,15 +147,12 @@ export default function AppLimitsScreen() {
     })();
   }, []);
 
-  const controlsDisabled = busy || readState !== 'ready';
-  const currentLimits = limits;
-  const currentIntents = intents;
-  const currentRolling = rolling;
+  const controlsDisabled = busy || read.kind !== 'ready' || read.refreshing;
 
   const guardedByPackage = new Map<string, GuardedEntry>();
   const addGuarded = (packageName: string, storedLabel: string, rule: Pick<GuardedEntry, 'limit' | 'intent' | 'rolling'>) => {
     const existing = guardedByPackage.get(packageName);
-    const evidence = getConfiguredAppPresentation(storedLabel, packageName, installedApps);
+    const evidence = getConfiguredAppPresentation(storedLabel, packageName, rules?.installedApps ?? null);
     guardedByPackage.set(packageName, {
       ...(existing ?? { packageName, label: storedLabel, availability: evidence.availability, availabilityDetail: evidence.detail }),
       label: evidence.availability === 'installed' ? evidence.label : evidence.availability === 'absent' ? evidence.label : existing?.label ?? storedLabel,
@@ -206,13 +161,13 @@ export default function AppLimitsScreen() {
       ...rule,
     });
   };
-  currentLimits?.forEach((limit) =>
+  rules?.limits.forEach((limit) =>
     addGuarded(limit.packageName, limit.label, { limit }),
   );
-  currentIntents?.forEach((intent) =>
+  rules?.intents.forEach((intent) =>
     addGuarded(intent.packageName, intent.label, { intent }),
   );
-  currentRolling?.forEach((rule) =>
+  rules?.rolling.forEach((rule) =>
     addGuarded(rule.packageName, rule.label, { rolling: rule }),
   );
   const guarded = [...guardedByPackage.values()].sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()));
@@ -323,9 +278,9 @@ export default function AppLimitsScreen() {
       <WeakeningGateDialog gate={gate} />
       <TopTabs.Screen options={{ swipeEnabled: !busy }} />
       {selected ? <ScreenHeader title={selected.label} onBack={closeEditor} backDisabled={busy} /> : null}
-      {readState === 'error' ? (
+      {read.kind === 'failed' ? (
         <View className="gap-3">
-          <ErrorNote message="The app rules could not be loaded." />
+          <ErrorNote message={read.message} />
           <SecondaryButton title="Try again" disabled={busy} onPress={() => void refresh()} />
         </View>
       ) : null}
@@ -400,11 +355,11 @@ export default function AppLimitsScreen() {
         <>
 
           <View>
-            {readState === 'android-required' ? (
+            {read.kind === 'android-required' ? (
               <Card>
                 <Text className="text-support text-muted">App limits require the native Android app. This web preview cannot read or enforce app rules.</Text>
               </Card>
-            ) : readState === 'error' ? null : currentLimits === null || currentIntents === null || currentRolling === null ? (
+            ) : read.kind === 'failed' ? null : rules === null ? (
               <Card>
                 <Text className="text-support text-muted">Reading your app rules.</Text>
               </Card>

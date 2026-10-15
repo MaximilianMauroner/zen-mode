@@ -1227,7 +1227,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     val intervention = browserIntervention ?: return
     if (!canRunEnforcementAction()) return
     if (!adultSiteStore.enabled) {
-      browserIntervention?.end()
+      intervention.end()
       return
     }
     val root = observedRoot ?: browserRoot(browserPackage) ?: return

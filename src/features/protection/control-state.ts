@@ -12,3 +12,29 @@ export function readValue<T>(read: ReadState<T>): T | null {
 export function isReading(read: ReadState<unknown>): boolean {
   return read.kind === 'loading' || (read.kind === 'ready' && read.refreshing);
 }
+
+/** Feedback from the current editor's last action. A read never changes it. */
+export type ActionState =
+  | { kind: 'idle' }
+  | { kind: 'running' }
+  | { kind: 'refused'; message: string }
+  | { kind: 'failed'; message: string };
+
+export const IDLE_ACTION: ActionState = { kind: 'idle' };
+export const RUNNING_ACTION: ActionState = { kind: 'running' };
+
+/** A settings-lock refusal can offer the Lock tab. Other failures cannot. */
+export function actionFailure(cause: unknown, fallback: string): ActionState {
+  const message = cause instanceof Error ? cause.message : fallback;
+  return message.includes('locked') ? { kind: 'refused', message } : { kind: 'failed', message };
+}
+
+export type GuardNote = { channel: 'read' | 'action'; message: string };
+
+/** A read failure and an action failure are separate facts, so neither may hide the other. */
+export function getGuardNotes(read: ReadState<unknown>, action: ActionState): GuardNote[] {
+  const notes: GuardNote[] = [];
+  if (read.kind === 'failed' && read.message) notes.push({ channel: 'read', message: read.message });
+  if ((action.kind === 'refused' || action.kind === 'failed') && action.message) notes.push({ channel: 'action', message: action.message });
+  return notes;
+}

@@ -5,30 +5,35 @@ import { router } from 'expo-router';
 
 import { DangerButton, PrimaryButton, SecondaryButton } from '@/components/ui/button';
 import { Row, RowGroup } from '@/components/ui/card';
-import { ErrorNote, Screen, ScreenHeader } from '@/components/ui/screen';
+import { GuardNotes } from '@/components/ui/guard-notes';
+import { Screen, ScreenHeader } from '@/components/ui/screen';
 import { useWeakeningGate, WeakeningGateDialog } from '@/components/ui/weakening-gate';
 import { openFeedbackIssue } from '@/features/feedback/github-issue';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { authorizeWeakening } from '@/features/protection/authorize-weakening';
+import { actionFailure, IDLE_ACTION, isReading, readValue, RUNNING_ACTION, type ActionState } from '@/features/protection/control-state';
+import { useGuardStatusFocus, useSharedGuardStatus } from '@/features/protection/guard-status-context';
 import { getZenGuardStatus, openAccessibilitySettings, openInstagram, openYouTube, openX, setNativeProtectionEnabled } from '@/features/protection/native';
-import { useGuardStatus } from '@/features/protection/use-guard-status';
 import { colors } from '@/theme/colors';
 
 /** System controls stay separate from feed settings and whole-app budgets. */
 export default function SettingsScreen() {
-  const { status, loading, readError, refresh } = useGuardStatus();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const { read, refresh } = useSharedGuardStatus();
+  useGuardStatusFocus();
+  const status = readValue(read);
+  const loading = isReading(read);
+  const [action, setAction] = useState<ActionState>(IDLE_ACTION);
+  const busy = action.kind === 'running';
   const busyRef = useRef(false);
   const gate = useWeakeningGate();
   const runAction = (task: () => Promise<void>) => {
     if (busyRef.current) return;
     busyRef.current = true;
-    setBusy(true);
-    setError('');
-    void task().catch((cause: unknown) => {
-      setError(cause instanceof Error ? cause.message : 'The action could not finish.');
-    }).finally(() => { busyRef.current = false; setBusy(false); });
+    setAction(RUNNING_ACTION);
+    void task().then(
+      () => setAction(IDLE_ACTION),
+      (cause: unknown) => setAction(actionFailure(cause, 'The action could not finish.')),
+    ).finally(() => { busyRef.current = false; });
   };
   const statusKnown = Boolean(status?.available);
   const protectionLabel = !statusKnown ? loading ? 'Checking' : 'Unavailable' : !status?.serviceEnabled ? 'Access needed' : status.protectionEnabled ? 'Running' : 'Paused';
@@ -63,11 +68,10 @@ export default function SettingsScreen() {
       ) : status?.available ? (
         <PrimaryButton title={busy ? 'Working…' : 'Resume protection'} disabled={disabled} onPress={changeProtection} />
       ) : null}
-      <ErrorNote message={readError} />
-      <ErrorNote message={error} />
+      <GuardNotes read={read} action={action} />
       <WeakeningGateDialog gate={gate} />
-      {error ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
-      {readError ? <SecondaryButton title="Try again" disabled={busy || loading} onPress={() => void refresh()} /> : null}
+      {action.kind === 'refused' || action.kind === 'failed' ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
+      {read.kind === 'failed' ? <SecondaryButton title="Try again" disabled={busy || loading} onPress={() => void refresh()} /> : null}
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">Guard details</Text>
         <RowGroup>

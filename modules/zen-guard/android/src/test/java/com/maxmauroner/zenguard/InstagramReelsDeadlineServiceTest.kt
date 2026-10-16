@@ -2,14 +2,17 @@ package com.maxmauroner.zenguard
 
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
+import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import java.time.Duration
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -30,6 +33,7 @@ import org.robolectric.annotation.LooperMode
 class InstagramReelsDeadlineServiceTest {
   private lateinit var context: Context
   private lateinit var controller: ServiceController<ZenGuardAccessibilityService>
+  private var destroyed = false
 
   @Before fun setUp() {
     context = RuntimeEnvironment.getApplication()
@@ -50,7 +54,7 @@ class InstagramReelsDeadlineServiceTest {
   }
 
   @After fun tearDown() {
-    controller.destroy()
+    if (!destroyed) controller.destroy()
     HomeFeedStatusFailureRegistry.clearForTests()
   }
 
@@ -65,6 +69,65 @@ class InstagramReelsDeadlineServiceTest {
       InstagramBlockReason.REELS_WINDOW_EXPIRED,
       policy.debugState(SystemClock.elapsedRealtime()).blockerReason,
     )
+    assertTrue(overlay().isShowing)
+    assertFalse(hasPendingDeadline())
+    assertEquals(0L, policy.reelsWindowRemainingMs(SystemClock.elapsedRealtime()))
+
+    advance(Duration.ofSeconds(5))
+    assertFalse(hasPendingDeadline())
+    assertEquals(1L, expiryCount())
+  }
+
+  @Test fun `expired window retries an absent root then pauses a restored viewer without an event`() {
+    assertRecoveryWithoutEvent { shadowOf(controller.get()).setRootInActiveWindow(null) }
+  }
+
+  @Test fun `expired window retries a foreign root then pauses a restored viewer without an event`() {
+    assertRecoveryWithoutEvent { showRoot("com.android.systemui", "com.android.systemui:id/transient") }
+  }
+
+  @Test fun `expired window retries unknown Instagram then pauses a restored viewer without an event`() {
+    assertRecoveryWithoutEvent { showRoot("com.instagram.android", "com.instagram.android:id/loading") }
+  }
+
+  @Test fun `expired window retries a Reel child without a pager then pauses the restored viewer without an event`() {
+    assertRecoveryWithoutEvent { showRoot("com.instagram.android", "com.instagram.android:id/clips_viewer_metadata") }
+  }
+
+  @Test fun `an observed Messages return clears the expired window and stops retries`() {
+    val policy = grantOneMinuteWindow()
+    shadowOf(controller.get()).setRootInActiveWindow(null)
+    advance(Duration.ofSeconds(61))
+    assertTrue(hasPendingDeadline())
+    showRoot("com.instagram.android", "com.instagram.android:id/direct_thread")
+
+    advance(Duration.ofSeconds(2))
+
+    assertNull(policy.reelsWindowRemainingMs(SystemClock.elapsedRealtime()))
+    assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertFalse(hasPendingDeadline())
+    assertFalse(overlay().isShowing)
+    showRoot("com.instagram.android", "com.instagram.android:id/clips_viewer_view_pager")
+    advance(Duration.ofSeconds(5))
+    assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+  }
+
+  @Test fun `a viewer event that attaches the pause cancels the outstanding retry`() {
+    val policy = grantOneMinuteWindow()
+    shadowOf(controller.get()).setRootInActiveWindow(null)
+    advance(Duration.ofSeconds(61))
+    assertTrue(hasPendingDeadline())
+    showRoot("com.instagram.android", "com.instagram.android:id/clips_viewer_view_pager")
+
+    windowEvent("com.instagram.android")
+    advance(Duration.ofMillis(20))
+
+    assertTrue(overlay().isShowing)
+    assertFalse(hasPendingDeadline())
+    assertEquals(0L, policy.reelsWindowRemainingMs(SystemClock.elapsedRealtime()))
+    advance(Duration.ofSeconds(5))
+    assertEquals(1L, expiryCount())
+    assertFalse(hasPendingDeadline())
   }
 
   @Test fun `deadline check does not block when Instagram is no longer in front`() {
@@ -73,6 +136,42 @@ class InstagramReelsDeadlineServiceTest {
 
     advance(Duration.ofSeconds(61))
     assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertFalse(overlay().isShowing)
+  }
+
+  @Test fun `a confirmed app exit clears an outstanding expired-window retry`() {
+    val policy = grantOneMinuteWindow()
+    shadowOf(controller.get()).setRootInActiveWindow(null)
+    advance(Duration.ofSeconds(61))
+    assertTrue(hasPendingDeadline())
+    showRoot("com.whatsapp", "com.whatsapp:id/conversations_row")
+
+    windowEvent("com.whatsapp")
+
+    assertNull(policy.reelsWindowRemainingMs(SystemClock.elapsedRealtime()))
+    assertFalse(hasPendingDeadline())
+    showRoot("com.instagram.android", "com.instagram.android:id/clips_viewer_view_pager")
+    advance(Duration.ofSeconds(5))
+    assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertFalse(overlay().isShowing)
+  }
+
+  @Test fun `Settings cancels an outstanding retry before its accessibility event arrives`() {
+    val policy = grantOneMinuteWindow()
+    shadowOf(controller.get()).setRootInActiveWindow(null)
+    advance(Duration.ofSeconds(61))
+    assertTrue(hasPendingDeadline())
+    controller.get().javaClass.getDeclaredField("appRuleSafety").apply { isAccessible = true }
+      .set(controller.get(), AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings")))
+    showRoot("com.android.settings", "com.android.settings:id/content")
+
+    advance(Duration.ofSeconds(2))
+
+    assertNull(policy.reelsWindowRemainingMs(SystemClock.elapsedRealtime()))
+    assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertFalse(hasPendingDeadline())
+    assertFalse(overlay().isShowing)
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
   }
 
   @Test fun `deadline check stays silent after the screen turned off before it`() {
@@ -83,10 +182,32 @@ class InstagramReelsDeadlineServiceTest {
     context.sendBroadcast(Intent(Intent.ACTION_SCREEN_OFF))
     shadowOf(Looper.getMainLooper()).idle()
     assertNull(policy.debugState(SystemClock.elapsedRealtime()).reelsWindowRemainingMs)
+    assertFalse(hasPendingDeadline())
     power.setIsInteractive(true)
 
     advance(Duration.ofSeconds(45))
     assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertFalse(overlay().isShowing)
+  }
+
+  @Test fun `screen off cancels an outstanding expired-window retry`() {
+    val policy = grantOneMinuteWindow()
+    shadowOf(controller.get()).setRootInActiveWindow(null)
+    advance(Duration.ofSeconds(61))
+    assertTrue(hasPendingDeadline())
+    val power = shadowOf(context.getSystemService(PowerManager::class.java))
+    power.setIsInteractive(false)
+
+    context.sendBroadcast(Intent(Intent.ACTION_SCREEN_OFF))
+    shadowOf(Looper.getMainLooper()).idle()
+
+    assertNull(policy.reelsWindowRemainingMs(SystemClock.elapsedRealtime()))
+    assertFalse(hasPendingDeadline())
+    power.setIsInteractive(true)
+    showRoot("com.instagram.android", "com.instagram.android:id/clips_viewer_view_pager")
+    advance(Duration.ofSeconds(5))
+    assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertFalse(overlay().isShowing)
   }
 
   @Test fun `deadline check stays silent once observation mode is on`() {
@@ -95,6 +216,92 @@ class InstagramReelsDeadlineServiceTest {
 
     advance(Duration.ofSeconds(61))
     assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertFalse(hasPendingDeadline())
+    assertFalse(overlay().isShowing)
+  }
+
+  @Test fun `observation mode stops an outstanding expired-window retry`() {
+    val policy = grantOneMinuteWindow()
+    shadowOf(controller.get()).setRootInActiveWindow(null)
+    advance(Duration.ofSeconds(61))
+    assertTrue(hasPendingDeadline())
+    ZenGuardPreferences(context).instagramObservationMode = true
+    showRoot("com.instagram.android", "com.instagram.android:id/clips_viewer_view_pager")
+
+    advance(Duration.ofSeconds(2))
+
+    assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertFalse(hasPendingDeadline())
+    assertFalse(overlay().isShowing)
+  }
+
+  @Test fun `disabled protection clears an outstanding expired-window retry`() {
+    val policy = grantOneMinuteWindow()
+    shadowOf(controller.get()).setRootInActiveWindow(null)
+    advance(Duration.ofSeconds(61))
+    assertTrue(hasPendingDeadline())
+    ZenGuardPreferences(context).protectionEnabled = false
+    showRoot("com.instagram.android", "com.instagram.android:id/clips_viewer_view_pager")
+
+    advance(Duration.ofSeconds(2))
+
+    assertNull(policy.reelsWindowRemainingMs(SystemClock.elapsedRealtime()))
+    assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertFalse(hasPendingDeadline())
+    assertFalse(overlay().isShowing)
+  }
+
+  @Test fun `service interruption cancels an outstanding expired-window retry`() {
+    val policy = grantOneMinuteWindow()
+    shadowOf(controller.get()).setRootInActiveWindow(null)
+    advance(Duration.ofSeconds(61))
+    assertTrue(hasPendingDeadline())
+
+    controller.get().onInterrupt()
+
+    assertNull(policy.reelsWindowRemainingMs(SystemClock.elapsedRealtime()))
+    assertFalse(hasPendingDeadline())
+    showRoot("com.instagram.android", "com.instagram.android:id/clips_viewer_view_pager")
+    advance(Duration.ofSeconds(5))
+    assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+  }
+
+  @Test fun `service teardown cancels an outstanding expired-window retry`() {
+    val policy = grantOneMinuteWindow()
+    shadowOf(controller.get()).setRootInActiveWindow(null)
+    advance(Duration.ofSeconds(61))
+    assertTrue(hasPendingDeadline())
+
+    controller.destroy()
+    destroyed = true
+
+    assertNull(policy.reelsWindowRemainingMs(SystemClock.elapsedRealtime()))
+    assertFalse(hasPendingDeadline())
+    showRoot("com.instagram.android", "com.instagram.android:id/clips_viewer_view_pager")
+    advance(Duration.ofSeconds(5))
+    assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertFalse(overlay().isShowing)
+  }
+
+  private fun assertRecoveryWithoutEvent(showTransient: () -> Unit) {
+    val policy = grantOneMinuteWindow()
+    showTransient()
+    advance(Duration.ofSeconds(61))
+    assertEquals(0L, policy.reelsWindowRemainingMs(SystemClock.elapsedRealtime()))
+    assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertFalse(overlay().isShowing)
+    assertTrue(hasPendingDeadline())
+
+    showRoot("com.instagram.android", "com.instagram.android:id/clips_viewer_view_pager")
+    advance(Duration.ofSeconds(2))
+
+    assertEquals(InstagramBlockReason.REELS_WINDOW_EXPIRED, policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertTrue(overlay().isShowing)
+    assertFalse(hasPendingDeadline())
+    assertEquals(0L, policy.reelsWindowRemainingMs(SystemClock.elapsedRealtime()))
+    advance(Duration.ofSeconds(5))
+    assertFalse(hasPendingDeadline())
+    assertEquals(1L, expiryCount())
   }
 
   /** Opens a Reel from a DM thread, swipes to the pause, waits, and taps Continue. */
@@ -138,6 +345,24 @@ class InstagramReelsDeadlineServiceTest {
   private fun advance(duration: Duration) {
     shadowOf(Looper.getMainLooper()).idleFor(duration)
   }
+
+  private fun windowEvent(packageName: String) {
+    controller.get().onAccessibilityEvent(AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED).apply {
+      this.packageName = packageName
+    })
+  }
+
+  private fun overlay(): InstagramBlockerOverlay = controller.get().privateField("instagramOverlay")
+
+  private fun hasPendingDeadline(): Boolean {
+    val handler = controller.get().javaClass.getDeclaredMethod("getInstagramDeadlineHandler").apply {
+      isAccessible = true
+    }.invoke(controller.get()) as Handler
+    return handler.hasCallbacks(controller.get().privateField<Runnable>("instagramReelsDeadlineCheck"))
+  }
+
+  private fun expiryCount(): Long =
+    EnforcementStatsStore(context).snapshot().counts[EnforcementReason.INSTAGRAM_REELS.key] ?: 0L
 
   @Suppress("UNCHECKED_CAST")
   private fun <T> Any.privateField(name: String): T =

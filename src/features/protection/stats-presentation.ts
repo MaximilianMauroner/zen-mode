@@ -8,8 +8,8 @@ export const ENFORCEMENT_STAT_CATEGORIES = [
   { key: 'x_home', label: 'X home feed', detail: 'Home-feed time limits reached.' },
   { key: 'x_videos', label: 'X videos', detail: 'The next video was exited.' },
   { key: 'blocked_site', label: 'Blocked sites', detail: 'A matched site was covered.' },
-  { key: 'app_limit', label: 'App limits', detail: 'A daily app limit sent the app home.' },
-  { key: 'rolling_limit', label: 'Rolling app limits', detail: 'A rolling allowance sent the app home.' },
+  { key: 'app_limit', label: 'App limits', detail: 'A daily app limit blocked access.' },
+  { key: 'rolling_limit', label: 'Rolling app limits', detail: 'A rolling allowance blocked access.' },
   { key: 'timed_visit', label: 'Timed visits', detail: 'A timed-visit boundary appeared or ended a visit.' },
 ] as const;
 

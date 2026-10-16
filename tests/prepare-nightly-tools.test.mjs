@@ -16,9 +16,10 @@ function fixture() {
   mkdirSync(bin);
   writeFileSync(join(dir, 'scripts/prepare-nightly-space.sh'), 'exit 0\n');
   writeFileSync(join(sdk, 'cmdline-tools/latest/bin/sdkmanager'), '#!/bin/bash\nprintf "%s\\n" "$@" > "$SDK_CALLS"\n', { mode: 0o755 });
-  for (const command of ['curl', 'sha256sum', 'npm']) {
+  for (const command of ['curl', 'npm']) {
     writeFileSync(join(bin, command), '#!/bin/bash\nexit 0\n', { mode: 0o755 });
   }
+  writeFileSync(join(bin, 'sha256sum'), '#!/bin/bash\ncat > /dev/null\n', { mode: 0o755 });
   const env = { PATH: `${bin}:/usr/bin:/bin`, ANDROID_HOME: sdk,
     GITHUB_ENV: join(dir, 'env'), GITHUB_PATH: join(dir, 'path'),
     SDK_CALLS: join(dir, 'calls'), ANDROID_BUNDLETOOL_JAR: join(dir, 'bundletool.jar') };

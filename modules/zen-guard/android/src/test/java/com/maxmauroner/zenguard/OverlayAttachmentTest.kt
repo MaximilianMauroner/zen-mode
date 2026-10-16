@@ -27,6 +27,7 @@ import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.annotation.LooperMode
 import org.robolectric.shadow.api.Shadow
+import org.robolectric.shadows.ShadowSystemClock
 import org.robolectric.shadows.ShadowWindowManagerImpl
 import org.robolectric.util.ReflectionHelpers
 import java.time.Duration
@@ -248,12 +249,130 @@ class OverlayAttachmentTest {
   }
 
   @Test fun `an Instagram boundary counts once after the delayed attachment`() {
-    deliver(INSTAGRAM, node(INSTAGRAM, "$INSTAGRAM:id/explore_grid"))
+    observeExplore()
     assertEquals(0L, count(EnforcementReason.INSTAGRAM_EXPLORE))
 
     runLayoutPass()
     assertEquals(1L, count(EnforcementReason.INSTAGRAM_EXPLORE))
   }
+
+  @Test fun `repeat Instagram observations count one stop and one attachment`() {
+    observeExplore()
+    observeExplore()
+    runLayoutPass()
+    observeExplore()
+    runLayoutPass()
+    assertEquals(1, stoppedToday())
+    assertEquals(1L, count(EnforcementReason.INSTAGRAM_EXPLORE))
+    assertTrue(siteViews().single().isAttachedToWindow)
+  }
+
+  @Test fun `repeat Instagram observations before attachment request one boundary`() {
+    observeExplore()
+    observeExplore()
+    assertEquals(1, SiteWindowManager.addRequests)
+    runLayoutPass()
+    assertEquals(1L, stats().total)
+  }
+
+  @Test fun `Settings before Instagram attachment ends the boundary without a Settings event`() {
+    observeExplore()
+    shadowOf(service).setRootInActiveWindow(node("com.android.settings"))
+    runLayoutPass()
+    assertEquals(0L, stats().total)
+    assertTrue(siteViews().isEmpty())
+  }
+
+  @Test fun `protection off before Instagram attachment ends the boundary`() {
+    observeExplore()
+    ZenGuardPreferences(context).protectionEnabled = false
+    runLayoutPass()
+    assertEquals(0L, stats().total)
+    assertTrue(siteViews().isEmpty())
+  }
+
+  @Test fun `Open Messages ends an Explore boundary so a later visit counts again`() {
+    observeExplore()
+    runLayoutPass()
+    pressSiteButton(R.string.zen_guard_open_messages)
+    assertTrue(siteViews().isEmpty())
+    assertEquals(listOf(AccessibilityService.GLOBAL_ACTION_BACK), shadowOf(service).globalActionsPerformed)
+
+    openInstagramInbox()
+    observeExplore()
+    runLayoutPass()
+    assertEquals(2, stoppedToday())
+    assertEquals(2L, count(EnforcementReason.INSTAGRAM_EXPLORE))
+  }
+
+  @Test fun `Go to messages ends a Home boundary so the next one counts again`() {
+    lockInstagramHome()
+    runLayoutPass()
+    pressSiteButton(R.string.zen_guard_go_to_messages)
+    assertTrue(siteViews().isEmpty())
+
+    openInstagramInbox()
+    observeInstagramHome()
+    runLayoutPass()
+    assertEquals(2, stoppedToday())
+    assertEquals(2L, count(EnforcementReason.INSTAGRAM_HOME))
+  }
+
+  @Test fun `Go home leaves a Home boundary through the launcher`() {
+    lockInstagramHome()
+    runLayoutPass()
+    pressSiteButton(R.string.zen_guard_go_home)
+    assertTrue(siteViews().isEmpty())
+    assertEquals(listOf(AccessibilityService.GLOBAL_ACTION_HOME), shadowOf(service).globalActionsPerformed)
+  }
+
+  @Test fun `an ended Instagram boundary ignores its late attachment`() {
+    observeExplore()
+    val lateAttach = pendingAttachment()
+    deliver(NOTES, node(NOTES), AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
+    observeExplore()
+    lateAttach()
+    assertEquals(0L, stats().total)
+
+    runLayoutPass()
+    assertEquals(1L, count(EnforcementReason.INSTAGRAM_EXPLORE))
+    assertEquals(2, stoppedToday())
+  }
+
+  @Test fun `a failed Instagram attachment counts zero and a later observation retries`() {
+    SiteWindowManager.failNextAdd = true
+    observeExplore()
+    runLayoutPass()
+    assertEquals(0L, stats().total)
+    assertTrue(siteViews().isEmpty())
+
+    observeExplore()
+    runLayoutPass()
+    assertEquals(1L, count(EnforcementReason.INSTAGRAM_EXPLORE))
+    assertEquals(1, stoppedToday())
+  }
+
+  @Test fun `a Settings event removes an attached Instagram boundary`() {
+    observeExplore()
+    runLayoutPass()
+    deliver("com.android.settings", node("com.android.settings"), AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
+    assertTrue(siteViews().isEmpty())
+    assertEquals(1L, count(EnforcementReason.INSTAGRAM_EXPLORE))
+  }
+
+  private fun observeExplore() = deliver(INSTAGRAM, node(INSTAGRAM, "$INSTAGRAM:id/explore_grid"))
+
+  private fun observeInstagramHome() = deliver(INSTAGRAM, node(INSTAGRAM, "$INSTAGRAM:id/feed_recycler_view"))
+
+  private fun openInstagramInbox() = deliver(INSTAGRAM, node(INSTAGRAM, "$INSTAGRAM:id/direct_inbox"))
+
+  private fun lockInstagramHome() {
+    observeInstagramHome()
+    ShadowSystemClock.advanceBy(Duration.ofMinutes(5))
+    observeInstagramHome()
+  }
+
+  private fun stoppedToday() = DailyTally(context).counts(System.currentTimeMillis()).stopped
 
   private fun visitSite(host: String) =
     deliver(CHROME, addressBar(host))

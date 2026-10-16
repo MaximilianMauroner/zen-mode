@@ -24,17 +24,14 @@ import org.robolectric.shadows.ShadowAudioManager
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class InstagramBlockerOverlayAudioTest {
-  private lateinit var overlay: InstagramBlockerOverlay
+  private lateinit var intervention: InstagramIntervention
   private lateinit var audio: ShadowAudioManager
 
   @Before fun setUp() {
     val service = Robolectric.setupService(BlankAccessibilityService::class.java)
     audio = shadowOf(service.getSystemService(AudioManager::class.java))
-    overlay = InstagramBlockerOverlay(
+    intervention = InstagramIntervention(
       service = service,
-      onLeave = {},
-      onOpenMessages = {},
-      onContinue = { true },
       readStats = {
         InstagramBlockerStats(
           home = HomeFeedRuntimeState(usedMs = 0L, blockedUntilElapsedMs = null),
@@ -44,11 +41,17 @@ class InstagramBlockerOverlayAudioTest {
           dailyCountsResetInMs = 0L,
         )
       },
+      canEnforce = { true },
+      recordStop = {},
+      recordAttachment = {},
+      leave = {},
+      openMessages = {},
+      continueReels = { true },
     )
   }
 
   @After fun tearDown() {
-    overlay.hide()
+    intervention.end()
   }
 
   @Test fun `closing a Reels blocker does not tell the earlier player to resume`() {
@@ -59,7 +62,7 @@ class InstagramBlockerOverlayAudioTest {
     // transient request is abandoned. Only a permanent request ends cleanly.
     assertEquals(AudioManager.AUDIOFOCUS_GAIN, request.focusGain)
 
-    overlay.hide()
+    intervention.end()
     assertSame(request, audio.lastAbandonedAudioFocusRequest)
   }
 
@@ -73,14 +76,13 @@ class InstagramBlockerOverlayAudioTest {
   }
 
   private fun showReelsBlocker() {
-    overlay.show(
+    intervention.observe(
       action = InstagramGuardAction.ShowBlocker(InstagramBlockReason.REELS_ENTRY, continueAvailableAt = null),
       reelsMinutes = 5,
       debugInfo = null,
-      onAttached = {},
     )
     shadowOf(Looper.getMainLooper()).idle()
-    assertTrue(overlay.isShowing)
+    assertTrue(intervention.isShowing)
   }
 }
 

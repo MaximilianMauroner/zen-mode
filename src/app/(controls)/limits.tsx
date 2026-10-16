@@ -26,14 +26,14 @@ import {
   type IntentApp,
   type RollingLimit,
 } from '@/features/protection/native';
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import { colors } from '@/theme/colors';
 import { getAppRuleChangeAction, getConfiguredAppPresentation } from '@/features/protection/app-rule-presentation';
 import { getAppLimitsPlatformState } from '@/features/protection/app-limits-state';
-import { actionFailure, IDLE_ACTION, readValue, RUNNING_ACTION, type ActionState } from '@/features/protection/control-state';
+import { actionFailure, IDLE_ACTION, readValue, RUNNING_ACTION, type ActionState, type ReadState } from '@/features/protection/control-state';
 import type { ReadResult } from '@/features/protection/protection-reads';
 import { useScreenRead } from '@/features/protection/use-protection-read';
 
@@ -108,6 +108,8 @@ async function readAppRules(): Promise<ReadResult<AppRules>> {
 export default function AppLimitsScreen() {
   const { read, refresh } = useScreenRead(readAppRules, 'The app rules could not be loaded.');
   const rules = readValue(read);
+  const apps: ReadState<readonly InstalledApp[]> = read.kind === 'ready' ? { ...read, value: read.value.installedApps } : read;
+  const navigation = useNavigation();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selected, setSelected] = useState<InstalledApp | null>(null);
   const [mode, setMode] = useState<RuleMode>('daily');
@@ -123,9 +125,9 @@ export default function AppLimitsScreen() {
 
   // Warm inactive tabs after the first frame without delaying the visible screen.
   useEffect(() => {
-    const frame = requestAnimationFrame(() => { void refresh(); });
+    const frame = requestAnimationFrame(() => { if (!navigation.isFocused()) void refresh(); });
     return () => cancelAnimationFrame(frame);
-  }, [refresh]);
+  }, [navigation, refresh]);
 
   const runAction = useCallback((task: () => Promise<void>, fallbackMessage: string) => {
     if (busyRef.current) return;
@@ -365,7 +367,7 @@ export default function AppLimitsScreen() {
         </>
       )}
 
-      <AppPicker visible={pickerOpen} configuredPackages={new Set(guardedByPackage.keys())} onClose={() => setPickerOpen(false)} onSelect={(app) => { setPickerOpen(false); selectApp(app); }} />
+      <AppPicker visible={pickerOpen} apps={apps} onRetry={() => void refresh()} configuredPackages={new Set(guardedByPackage.keys())} onClose={() => setPickerOpen(false)} onSelect={(app) => { setPickerOpen(false); selectApp(app); }} />
       <GuardNotes reads={[read]} action={action} />
       {action.kind === 'refused' ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
       {read.kind === 'failed' ? <SecondaryButton title="Try again" disabled={busy} onPress={() => void refresh()} /> : null}

@@ -304,7 +304,6 @@ class InstagramReelsDeadlineServiceTest {
     assertEquals(1L, expiryCount())
   }
 
-  /** Opens a Reel from a DM thread, swipes to the pause, waits, and runs the service's Continue grant. */
   private fun grantOneMinuteWindow(): InstagramGuardStateMachine {
     val service = controller.get()
     val policy = service.privateField<InstagramGuardStateMachine>("instagramStateMachine")

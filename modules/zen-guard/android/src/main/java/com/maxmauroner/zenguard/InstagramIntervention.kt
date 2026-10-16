@@ -153,11 +153,6 @@ internal class ZenProgressRingView(context: Context) : View(context) {
   private fun dp(value: Float): Float = value * resources.displayMetrics.density
 }
 
-/**
- * Owns one Instagram pause from the policy decision to its end. A new intervention is one daily
- * stop. Statistics count only when this intervention's own view attaches while enforcement is
- * still allowed. Leave, Messages, and a granted Continue end it, so the next pause is fresh.
- */
 internal class InstagramIntervention(
   service: AccessibilityService,
   readStats: () -> InstagramBlockerStats,
@@ -168,7 +163,6 @@ internal class InstagramIntervention(
   private val openMessages: () -> Unit,
   private val continueReels: () -> Boolean,
 ) {
-  /** The policy re-emits a blocker on every event, so the session is the decision's identity. */
   private class Session(val action: InstagramGuardAction.ShowBlocker)
 
   private val renderer = InstagramBlockerOverlay(
@@ -187,7 +181,6 @@ internal class InstagramIntervention(
       active = it
       recordStop()
     }
-    // One view per intervention. A failed addView leaves no view, so the next event retries.
     if (renderer.hasView) return
     renderer.show(session.action, reelsMinutes, debugInfo, onAttached = { attached(session) })
   }
@@ -281,7 +274,6 @@ private class InstagramBlockerOverlay(
 
   val isShowing: Boolean get() = root?.isAttachedToWindow == true
 
-  /** True from the addView request until hide, including the wait for the first attach. */
   val hasView: Boolean get() = root != null
 
   private val tick = object : Runnable {

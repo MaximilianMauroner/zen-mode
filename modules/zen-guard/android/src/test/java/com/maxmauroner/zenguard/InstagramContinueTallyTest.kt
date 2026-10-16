@@ -80,7 +80,6 @@ class InstagramContinueTallyTest {
     assertEquals(3L, EnforcementStatsStore(context).snapshot().counts[EnforcementReason.INSTAGRAM_REELS.key])
   }
 
-  /** Opens a Reel from a DM thread and swipes, which makes the policy decide on a pause. */
   private fun swipeReelFromDm() {
     val policy = controller.get().privateField<InstagramGuardStateMachine>("instagramStateMachine")
     val settings = ZenGuardPreferences(context).instagramSettings()
@@ -99,7 +98,6 @@ class InstagramContinueTallyTest {
     )
   }
 
-  /** Taps the Continue button the pause shows once its wait ends. */
   private fun tapContinue() {
     val label = context.resources.getQuantityString(R.plurals.zen_guard_continue_doomscrolling, 1, 1)
     val matches = ArrayList<View>()

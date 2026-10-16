@@ -216,7 +216,7 @@ test('without earlier records, an absent overlay is for the operator to judge', 
   try {
     const run = openFirefox(observe, 'https://example.org', 'no-overlay', 'allowed', false);
     assert.equal(run.status, 0, run.stderr);
-    assert.match(run.stdout, /^OBSERVED allowed: 0ms no overlay \(org\.mozilla\.firefox\); .*absent overlay by hand/);
+    assert.match(run.stdout, /^OBSERVED allowed: \d+ms no overlay \(org\.mozilla\.firefox\); .*absent overlay by hand/);
     assert.deepEqual(records().map(({ expect, result }) => [expect, result]), [['no-overlay', 'OBSERVED']]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

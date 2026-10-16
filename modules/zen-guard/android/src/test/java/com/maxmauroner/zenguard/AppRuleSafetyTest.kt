@@ -18,10 +18,8 @@ class AppRuleSafetyTest {
     assertFalse(safety.isExempt("com.example.reader"))
   }
 
-  @Test fun allRuleModesRejectSettingsAtThePolicyBoundary() {
-    assertFalse(safety.allowsDailyEnforcement("com.android.settings"))
+  @Test fun timedVisitsRejectSettingsAtThePolicyBoundary() {
     assertFalse(safety.allowsTimedVisitEnforcement("com.android.settings"))
-    assertFalse(safety.allowsRollingEnforcement("com.android.settings"))
   }
 
   @Test fun settingsUnderTheGuardOverlayStopsQueuedActionsBeforeItsEventArrives() {

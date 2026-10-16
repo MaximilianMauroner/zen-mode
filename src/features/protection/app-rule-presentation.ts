@@ -30,14 +30,18 @@ export function getConfiguredAppPresentation(
   };
 }
 
+function describeMinutes(minutes: number) {
+  return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+}
+
 function describeRule(rule: AppRule): string {
   switch (rule.mode) {
     case 'daily':
-      return `a daily limit of ${rule.minutes} minutes`;
+      return `a daily limit of ${describeMinutes(rule.minutes)}`;
     case 'visit':
-      return `a timed visit of ${rule.sessionMinutes} minutes with a ${rule.cooldownMinutes}-minute cooldown`;
+      return `a timed visit of ${describeMinutes(rule.sessionMinutes)} with a ${rule.cooldownMinutes}-minute cooldown`;
     case 'rolling':
-      return `a rolling allowance of ${rule.allowanceMinutes} minutes per ${rule.windowMinutes}-minute window`;
+      return `a rolling allowance of ${describeMinutes(rule.allowanceMinutes)} per ${rule.windowMinutes}-minute window`;
   }
 }
 

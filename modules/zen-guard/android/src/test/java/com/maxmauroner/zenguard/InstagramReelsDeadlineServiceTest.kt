@@ -77,6 +77,30 @@ class InstagramReelsDeadlineServiceTest {
     assertEquals(1L, expiryCount())
   }
 
+  @Test fun `an early Reels deadline still pauses at the actual Continue expiry`() {
+    val policy = grantOneMinuteWindow()
+    val remainingMs = requireNotNull(policy.reelsWindowRemainingMs(SystemClock.elapsedRealtime()))
+    advance(Duration.ofMillis(remainingMs - 1L))
+    assertEquals(1L, policy.reelsWindowRemainingMs(SystemClock.elapsedRealtime()))
+
+    val deadline = reelsDeadline()
+    val post = deadline.privateField<Runnable>("current")
+    deadline.privateField<android.os.Handler>("handler").removeCallbacks(post)
+    post.run()
+
+    assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertFalse(overlay().isShowing)
+    assertTrue(deadline.isPending)
+    assertEquals(0L, expiryCount())
+
+    advance(Duration.ofMillis(20L))
+
+    assertEquals(InstagramBlockReason.REELS_WINDOW_EXPIRED, policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertTrue(overlay().isShowing)
+    assertFalse(deadline.isPending)
+    assertEquals(1L, expiryCount())
+  }
+
   @Test fun `expired window retries an absent root then pauses a restored viewer without an event`() {
     assertRecoveryWithoutEvent { shadowOf(controller.get()).setRootInActiveWindow(null) }
   }
@@ -352,12 +376,12 @@ class InstagramReelsDeadlineServiceTest {
 
   private fun overlay(): InstagramIntervention = controller.get().privateField("instagramIntervention")
 
-  private fun hasPendingDeadline(): Boolean {
-    val deadline = controller.get().javaClass.getDeclaredMethod("getReelsDeadline").apply {
+  private fun hasPendingDeadline(): Boolean = reelsDeadline().isPending
+
+  private fun reelsDeadline(): DeadlineTask =
+    controller.get().javaClass.getDeclaredMethod("getReelsDeadline").apply {
       isAccessible = true
     }.invoke(controller.get()) as DeadlineTask
-    return deadline.isPending
-  }
 
   private fun expiryCount(): Long =
     EnforcementStatsStore(context).snapshot().counts[EnforcementReason.INSTAGRAM_REELS.key] ?: 0L

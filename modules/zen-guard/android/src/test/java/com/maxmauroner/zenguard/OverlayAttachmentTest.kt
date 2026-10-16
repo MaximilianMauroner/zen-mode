@@ -366,7 +366,6 @@ class OverlayAttachmentTest {
 
   private fun openInstagramInbox() = deliver(INSTAGRAM, node(INSTAGRAM, "$INSTAGRAM:id/direct_inbox"))
 
-  /** Spends the default five-minute Home allowance, which starts a Home lockout. */
   private fun lockInstagramHome() {
     observeInstagramHome()
     ShadowSystemClock.advanceBy(Duration.ofMinutes(5))

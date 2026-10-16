@@ -40,7 +40,7 @@ class ZenGuardAccessibilityServiceStatsTest {
   }
 
   @Test
-  fun `production path hooks cover YouTube X Instagram and app limits`() {
+  fun `production path hooks cover YouTube X and app limits`() {
     val fixture = fixture()
     val service = fixture.service
 
@@ -61,10 +61,6 @@ class ZenGuardAccessibilityServiceStatsTest {
         outcome = EnforcementStatsOutcome.SUCCESS,
       ),
     )
-    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.REELS_ENTRY, EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.HOME_LIMIT, EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordInstagramBlockStats(InstagramBlockReason.HOME_LIMIT, EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, EnforcementStatsOutcome.SUCCESS))
     assertTrue(service.recordXVideoStats("video-callback-1", EnforcementStatsOutcome.SUCCESS))
     assertFalse(service.recordXVideoStats("video-callback-1", EnforcementStatsOutcome.SUCCESS))
     assertTrue(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.SUCCESS))
@@ -72,12 +68,9 @@ class ZenGuardAccessibilityServiceStatsTest {
     assertTrue(service.recordAppLimitStats("app.two", EnforcementStatsOutcome.SUCCESS))
 
     val snapshot = fixture.store.snapshot()
-    assertEquals(9L, snapshot.total)
+    assertEquals(6L, snapshot.total)
     assertEquals(2L, snapshot.counts[EnforcementReason.YOUTUBE_SHORTS.key])
     assertEquals(1L, snapshot.counts[EnforcementReason.X_HOME.key])
-    assertEquals(1L, snapshot.counts[EnforcementReason.INSTAGRAM_REELS.key])
-    assertEquals(1L, snapshot.counts[EnforcementReason.INSTAGRAM_HOME.key])
-    assertEquals(1L, snapshot.counts[EnforcementReason.INSTAGRAM_EXPLORE.key])
     assertEquals(1L, snapshot.counts[EnforcementReason.X_VIDEOS.key])
     assertEquals(2L, snapshot.counts[EnforcementReason.APP_LIMIT.key])
   }
@@ -112,19 +105,6 @@ class ZenGuardAccessibilityServiceStatsTest {
     val snapshot = fixture.store.snapshot()
     assertEquals(1L, snapshot.total)
     assertEquals(1L, snapshot.counts[EnforcementReason.YOUTUBE_SHORTS.key])
-  }
-
-  @Test
-  fun `Instagram dismissal resets the matching dedupe identity`() {
-    val fixture = fixture()
-    val service = fixture.service
-
-    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, EnforcementStatsOutcome.SUCCESS))
-    service.resetInstagramStatsDedupe(InstagramBlockReason.EXPLORE)
-    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, EnforcementStatsOutcome.SUCCESS))
-
-    assertEquals(2L, fixture.store.snapshot().counts[EnforcementReason.INSTAGRAM_EXPLORE.key])
   }
 
   @Test

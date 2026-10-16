@@ -304,7 +304,7 @@ class InstagramReelsDeadlineServiceTest {
     assertEquals(1L, expiryCount())
   }
 
-  /** Opens a Reel from a DM thread, swipes to the pause, waits, and taps Continue. */
+  /** Opens a Reel from a DM thread, swipes to the pause, waits, and runs the service's Continue grant. */
   private fun grantOneMinuteWindow(): InstagramGuardStateMachine {
     val service = controller.get()
     val policy = service.privateField<InstagramGuardStateMachine>("instagramStateMachine")
@@ -326,9 +326,9 @@ class InstagramReelsDeadlineServiceTest {
     assertEquals(InstagramBlockReason.REELS_SWIPE, (swipe as InstagramGuardAction.ShowBlocker).reason)
     advance(Duration.ofSeconds(30))
 
-    val onContinue = service.privateField<InstagramBlockerOverlay>("instagramOverlay")
-      .privateField<() -> Boolean>("onContinue")
-    assertTrue(onContinue())
+    val continueReels = service.privateField<InstagramIntervention>("instagramIntervention")
+      .privateField<() -> Boolean>("continueReels")
+    assertTrue(continueReels())
     assertEquals(60_000L, policy.debugState(SystemClock.elapsedRealtime()).reelsWindowRemainingMs)
     return policy
   }
@@ -352,7 +352,7 @@ class InstagramReelsDeadlineServiceTest {
     })
   }
 
-  private fun overlay(): InstagramBlockerOverlay = controller.get().privateField("instagramOverlay")
+  private fun overlay(): InstagramIntervention = controller.get().privateField("instagramIntervention")
 
   private fun hasPendingDeadline(): Boolean {
     val handler = controller.get().javaClass.getDeclaredMethod("getInstagramDeadlineHandler").apply {

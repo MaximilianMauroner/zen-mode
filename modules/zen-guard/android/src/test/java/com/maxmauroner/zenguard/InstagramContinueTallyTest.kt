@@ -77,6 +77,7 @@ class InstagramContinueTallyTest {
     observeReel()
     assertEquals(3, stoppedToday())
     assertEquals(2, DailyTally(context).counts(System.currentTimeMillis()).continued)
+    assertEquals(3L, EnforcementStatsStore(context).snapshot().counts[EnforcementReason.INSTAGRAM_REELS.key])
   }
 
   /** Opens a Reel from a DM thread and swipes, which makes the policy decide on a pause. */

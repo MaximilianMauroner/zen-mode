@@ -1,16 +1,19 @@
 package com.maxmauroner.zenguard
 
+import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Button
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,13 +23,17 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ServiceController
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.Implementation
+import org.robolectric.annotation.Implements
 import org.robolectric.annotation.LooperMode
 import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowWindowManagerImpl
+import org.robolectric.util.ReflectionHelpers
+import java.time.Duration
 
 /** The real service counts a boundary only after Android attaches it, not when addView returns. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], shadows = [OverlayAttachmentTest.SiteWindowManager::class])
 @LooperMode(LooperMode.Mode.PAUSED)
 class OverlayAttachmentTest {
   private lateinit var context: Context
@@ -34,7 +41,10 @@ class OverlayAttachmentTest {
   private val service get() = controller.get()
 
   @Before fun setUp() {
+    SiteWindowManager.failNextAdd = false
+    SiteWindowManager.addRequests = 0
     context = RuntimeEnvironment.getApplication()
+    HomeFeedStatusFailureRegistry.clearForTests()
     Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 7)
     val preferences = ZenGuardPreferences(context)
     preferences.acceptCurrentConsent()
@@ -49,15 +59,17 @@ class OverlayAttachmentTest {
     ZenGuardAccessibilityService::class.java.getDeclaredMethod("onServiceConnected").apply {
       isAccessible = true
     }.invoke(service)
+    ReflectionHelpers.setField(service, "appRuleSafety",
+      AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings")))
   }
 
   @After fun tearDown() {
     controller.destroy()
+    HomeFeedStatusFailureRegistry.clearForTests()
   }
 
   @Test fun `a site boundary counts once after the delayed attachment`() {
     visitSite(BLOCKED_HOST)
-    // The old hook read isAttachedToWindow here, before the layout pass, and skipped the count.
     assertEquals(0L, count(EnforcementReason.BLOCKED_SITE))
 
     runLayoutPass()
@@ -88,11 +100,151 @@ class OverlayAttachmentTest {
   @Test fun `a later site boundary counts after Home dismisses the first`() {
     visitSite(BLOCKED_HOST)
     runLayoutPass()
-    pressSiteHome() // Robolectric sends no launcher event after the Home action.
+    pressSiteHome()
+    visitSite(BLOCKED_HOST)
+    runLayoutPass()
+    assertTrue(siteViews().singleOrNull()?.isAttachedToWindow == true)
+    assertEquals(2L, count(EnforcementReason.BLOCKED_SITE))
+  }
+
+  @Test fun `Home before attachment rejects the old boundary and counts its replacement`() {
+    visitSite(BLOCKED_HOST)
+    val lateAttach = pendingAttachment()
+    pressSiteHome()
+    lateAttach()
+    runLayoutPass()
+    assertEquals(0L, count(EnforcementReason.BLOCKED_SITE))
+
+    visitSite(BLOCKED_HOST)
+    runLayoutPass()
+    assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
+  }
+
+  @Test fun `replacement before attachment counts only the current boundary`() {
+    visitSite(BLOCKED_HOST)
+    val lateAttach = pendingAttachment()
     visitSite(ALLOWED_HOST)
+    visitSite(BLOCKED_HOST)
+    lateAttach()
+    assertEquals(0L, count(EnforcementReason.BLOCKED_SITE))
+    runLayoutPass()
+    assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
+  }
+
+  @Test fun `interrupt before attachment rejects the old boundary`() {
+    visitSite(BLOCKED_HOST)
+    service.onInterrupt()
+    runLayoutPass()
+    assertEquals(0L, count(EnforcementReason.BLOCKED_SITE))
+
+    visitSite(BLOCKED_HOST)
+    runLayoutPass()
+    assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
+  }
+
+  @Test fun `repeat observations before attachment request one boundary`() {
+    visitSite(BLOCKED_HOST)
+    visitSite(BLOCKED_HOST)
+    assertEquals(1, SiteWindowManager.addRequests)
+    assertEquals(0L, stats().total)
+    runLayoutPass()
+    assertEquals(1L, stats().total)
+  }
+
+  @Test fun `a failed attachment counts zero and a later observation can retry`() {
+    SiteWindowManager.failNextAdd = true
+    visitSite(BLOCKED_HOST)
+    runLayoutPass()
+    assertEquals(0L, stats().total)
+    assertTrue(siteViews().isEmpty())
+
+    visitSite(BLOCKED_HOST)
+    runLayoutPass()
+    assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
+  }
+
+  @Test fun `protection off before attachment ends the boundary`() {
+    visitSite(BLOCKED_HOST)
+    ZenGuardPreferences(context).protectionEnabled = false
+    runLayoutPass()
+    assertEquals(0L, stats().total)
+    assertTrue(siteViews().isEmpty())
+  }
+
+  @Test fun `Settings before attachment ends the boundary without a Settings event`() {
+    visitSite(BLOCKED_HOST)
+    shadowOf(service).setRootInActiveWindow(node("com.android.settings"))
+    runLayoutPass()
+    assertEquals(0L, stats().total)
+    assertTrue(siteViews().isEmpty())
+  }
+
+  @Test fun `foreground loss cancels a queued Back recheck`() {
+    visitSite(BLOCKED_HOST)
+    runLayoutPass()
+    pressSiteButton(R.string.zen_guard_site_go_back)
+    leaveBrowser()
+    shadowOf(service).setRootInActiveWindow(addressBar(BLOCKED_HOST))
+    runRecheck()
+    assertTrue(siteViews().isEmpty())
+    assertEquals(1L, stats().total)
+  }
+
+  @Test fun `Back keeps a blocked boundary and clears it after an allowed observation`() {
+    visitSite(BLOCKED_HOST)
+    runLayoutPass()
+    pressSiteButton(R.string.zen_guard_site_go_back)
+    runRecheck()
+    assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
+    assertEquals(1, siteViews().size)
+    assertEquals(listOf(AccessibilityService.GLOBAL_ACTION_BACK), shadowOf(service).globalActionsPerformed)
+
+    pressSiteButton(R.string.zen_guard_site_go_back)
+    shadowOf(service).setRootInActiveWindow(addressBar(ALLOWED_HOST))
+    runRecheck()
+    assertTrue(siteViews().isEmpty())
     visitSite(BLOCKED_HOST)
     runLayoutPass()
     assertEquals(2L, count(EnforcementReason.BLOCKED_SITE))
+  }
+
+  @Test fun `a queued Back recheck reads live Settings safety without a Settings event`() {
+    visitSite(BLOCKED_HOST)
+    runLayoutPass()
+    pressSiteButton(R.string.zen_guard_site_go_back)
+    shadowOf(service).setRootInActiveWindow(node("com.android.settings"))
+    runRecheck()
+    assertTrue(siteViews().isEmpty())
+    assertEquals(1L, stats().total)
+    assertEquals(listOf(AccessibilityService.GLOBAL_ACTION_BACK), shadowOf(service).globalActionsPerformed)
+  }
+
+  @Test fun `Home cancels the old Back recheck before a replacement in the same browser`() {
+    visitSite(BLOCKED_HOST)
+    runLayoutPass()
+    pressSiteButton(R.string.zen_guard_site_go_back)
+    pressSiteHome()
+    visitSite(BLOCKED_HOST)
+    runLayoutPass()
+    shadowOf(service).setRootInActiveWindow(addressBar(ALLOWED_HOST))
+    runRecheck()
+    assertEquals(1, siteViews().size)
+    assertEquals(2L, count(EnforcementReason.BLOCKED_SITE))
+  }
+
+  @Test fun `destroy and reconnect reject the old attachment and accept a fresh boundary`() {
+    visitSite(BLOCKED_HOST)
+    val lateAttach = pendingAttachment()
+    controller.destroy()
+    controller = Robolectric.buildService(ZenGuardAccessibilityService::class.java).create()
+    ZenGuardAccessibilityService::class.java.getDeclaredMethod("onServiceConnected").apply {
+      isAccessible = true
+    }.invoke(service)
+    visitSite(BLOCKED_HOST)
+    lateAttach()
+    assertEquals(0L, stats().total)
+    runLayoutPass()
+    assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
   }
 
   @Test fun `an Instagram boundary counts once after the delayed attachment`() {
@@ -104,20 +256,54 @@ class OverlayAttachmentTest {
   }
 
   private fun visitSite(host: String) =
-    deliver(CHROME, node(CHROME, "$CHROME:id/url_bar").apply { text = host })
+    deliver(CHROME, addressBar(host))
+
+  private fun addressBar(host: String) = node(CHROME, "$CHROME:id/url_bar").apply { text = host }
 
   /** Leaving for an app with no browser window clears the site boundary unconditionally. */
   private fun leaveBrowser() =
     deliver(NOTES, node(NOTES), AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
 
-  /** The site detail copy also says "go home", so match only the button. */
-  private fun pressSiteHome() {
-    val windows = Shadow.extract<ShadowWindowManagerImpl>(service.getSystemService(WindowManager::class.java))
+  private fun siteViews(): List<View> =
+    Shadow.extract<ShadowWindowManagerImpl>(service.getSystemService(WindowManager::class.java)).views
+
+  private fun pressSiteHome() = pressSiteButton(R.string.zen_guard_go_home)
+
+  private fun pressSiteButton(label: Int) {
     val matches = ArrayList<View>()
-    windows.views.forEach {
-      it.findViewsWithText(matches, service.getString(R.string.zen_guard_go_home), View.FIND_VIEWS_WITH_TEXT)
+    siteViews().forEach {
+      it.findViewsWithText(matches, service.getString(label), View.FIND_VIEWS_WITH_TEXT)
     }
     matches.filterIsInstance<Button>().single().performClick()
+  }
+
+  private fun pendingAttachment(): () -> Unit {
+    val view = siteViews().single()
+    val listenerInfo = ReflectionHelpers.getField<Any>(view, "mListenerInfo")
+    val listeners = ReflectionHelpers.getField<List<View.OnAttachStateChangeListener>>(
+      listenerInfo, "mOnAttachStateChangeListeners",
+    ).toList()
+    return { listeners.forEach { it.onViewAttachedToWindow(view) } }
+  }
+
+  private fun runRecheck() = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(350))
+
+  @Implements(className = "android.view.WindowManagerImpl", isInAndroidSdk = false)
+  class SiteWindowManager : ShadowWindowManagerImpl() {
+    @Implementation
+    override fun addView(view: View, params: ViewGroup.LayoutParams) {
+      addRequests++
+      if (failNextAdd) {
+        failNextAdd = false
+        throw WindowManager.BadTokenException("Rejected test boundary")
+      }
+      super.addView(view, params)
+    }
+
+    companion object {
+      var failNextAdd = false
+      var addRequests = 0
+    }
   }
 
   private fun deliver(

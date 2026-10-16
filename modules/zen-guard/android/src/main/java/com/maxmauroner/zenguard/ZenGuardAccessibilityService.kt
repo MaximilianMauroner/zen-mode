@@ -53,8 +53,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private val navigationHandler by lazy { Handler(Looper.getMainLooper()) }
   private val instagramDeadlineHandler by lazy { Handler(Looper.getMainLooper()) }
   private val instagramReelsDeadlineCheck = Runnable { checkInstagramReelsDeadline() }
-  private lateinit var instagramOverlay: InstagramBlockerOverlay
-  private var instagramBlockReason: InstagramBlockReason? = null
+  private lateinit var instagramIntervention: InstagramIntervention
   private var instagramNavigationSuppressedUntilMs = 0L
   /** Wall-clock injection keeps daily and rolling service tests independent of host time. */
   internal var appRuleWallClock: () -> Long = System::currentTimeMillis
@@ -175,48 +174,38 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       }
     }
     xHandler.postDelayed(xTicker, 1_000L)
-    instagramOverlay = InstagramBlockerOverlay(
+    instagramIntervention = InstagramIntervention(
       service = this,
-      onLeave = {
-        if (canRunEnforcementAction()) {
-          val reason = instagramBlockReason
-          resetInstagramStatsDedupe(reason)
-          instagramStateMachine.leaveBlockedSurface()
-          instagramBlockReason = null
-          instagramOverlay.hide()
-          when (reason) {
-            InstagramBlockReason.HOME_LIMIT -> performGlobalAction(GLOBAL_ACTION_HOME)
-            InstagramBlockReason.EXPLORE -> openInstagramMessages()
-            InstagramBlockReason.REELS_ENTRY,
-            InstagramBlockReason.REELS_SWIPE,
-            InstagramBlockReason.REELS_WINDOW_EXPIRED,
-            -> openInstagramMessages()
-            else -> performGlobalAction(GLOBAL_ACTION_BACK)
-          }
+      readStats = ::instagramBlockerStats,
+      canEnforce = ::canRunEnforcementAction,
+      recordStop = { dailyTally.recordStop(System.currentTimeMillis()) },
+      recordAttachment = { reason ->
+        instagramDeadlineHandler.removeCallbacks(instagramReelsDeadlineCheck)
+        recordEnforcement(reason)
+      },
+      leave = { reason ->
+        instagramStateMachine.leaveBlockedSurface()
+        when (reason) {
+          InstagramBlockReason.HOME_LIMIT -> performGlobalAction(GLOBAL_ACTION_HOME)
+          InstagramBlockReason.EXPLORE,
+          InstagramBlockReason.REELS_ENTRY,
+          InstagramBlockReason.REELS_SWIPE,
+          InstagramBlockReason.REELS_WINDOW_EXPIRED,
+          -> openInstagramMessages()
         }
       },
-      onOpenMessages = {
-        if (canRunEnforcementAction()) {
-          resetInstagramStatsDedupe(instagramBlockReason)
-          instagramStateMachine.leaveBlockedSurface()
-          instagramBlockReason = null
-          instagramOverlay.hide()
-          openInstagramMessages()
-        }
+      openMessages = {
+        instagramStateMachine.leaveBlockedSurface()
+        openInstagramMessages()
       },
-      onContinue = {
-        if (canRunEnforcementAction()) {
-          val continued = instagramStateMachine.continueReels(SystemClock.elapsedRealtime(), preferences.instagramSettings())
+      continueReels = {
+        instagramStateMachine.continueReels(SystemClock.elapsedRealtime(), preferences.instagramSettings()).also { continued ->
           if (continued) {
-            resetInstagramStatsDedupe(instagramBlockReason)
-            instagramBlockReason = null
             dailyTally.recordContinue(System.currentTimeMillis())
             scheduleInstagramReelsDeadline()
           }
-          continued
-        } else false
+        }
       },
-      readStats = ::instagramBlockerStats,
     )
   }
 
@@ -816,8 +805,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     if (nowMs < instagramNavigationSuppressedUntilMs) {
       if (detection.surface == InstagramSurface.DIRECT_MESSAGES && isMessagesInbox(nodes)) {
         instagramNavigationSuppressedUntilMs = 0L
-        instagramBlockReason = null
-        instagramOverlay.hide()
+        instagramIntervention.end()
       }
       instagramDebugTrace?.record(
         event = event,
@@ -878,13 +866,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
 
     when (action) {
       is InstagramGuardAction.ShowBlocker -> {
-        // The state machine re-emits the same blocker on every event while it
-        // stays up. Count the stop only when the block appears, not per event.
-        val isNewBlock = instagramBlockReason == null
-        instagramBlockReason = action.reason
-        val wallNow = System.currentTimeMillis()
-        if (isNewBlock) dailyTally.recordStop(wallNow)
-        instagramOverlay.show(
+        instagramIntervention.observe(
           action = action,
           reelsMinutes = preferences.instagramReelsMinutes,
           debugInfo = if (BuildConfig.DEBUG) {
@@ -909,19 +891,9 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
           } else {
             null
           },
-          onAttached = {
-            instagramDeadlineHandler.removeCallbacks(instagramReelsDeadlineCheck)
-            recordInstagramBlockStats(action.reason, EnforcementStatsOutcome.SUCCESS)
-          },
         )
       }
-      InstagramGuardAction.None -> {
-        if (instagramBlockReason != null) {
-          instagramBlockReason = null
-          instagramOverlay.hide()
-        }
-        resetInstagramStatsDedupe()
-      }
+      InstagramGuardAction.None -> instagramIntervention.end()
     }
     publishInstagramHomeStatus()
   }
@@ -1005,7 +977,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private fun checkInstagramReelsDeadline() {
     val remainingMs = instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) ?: return
     if (!canRunEnforcementAction() || preferences.instagramObservationMode || !isScreenInteractive ||
-      instagramOverlay.isShowing
+      instagramIntervention.isShowing
     ) return
     // Handler delays use uptime and the policy uses elapsed time; separate rounding can run this 1 ms early.
     if (remainingMs > 0L) {
@@ -1013,7 +985,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       return
     }
     handleInstagramEvent(null)
-    if (!instagramOverlay.isShowing &&
+    if (!instagramIntervention.isShowing &&
       instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) == 0L
     ) {
       instagramDeadlineHandler.postDelayed(instagramReelsDeadlineCheck, INSTAGRAM_REELS_DEADLINE_RETRY_MS)
@@ -1027,9 +999,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     } else {
       instagramStateMachine.onSurfaceLost()
     }
-    instagramBlockReason = null
-    if (::instagramOverlay.isInitialized) instagramOverlay.hide()
-    resetInstagramStatsDedupe()
+    if (::instagramIntervention.isInitialized) instagramIntervention.end()
     publishInstagramHomeStatus()
   }
 
@@ -1110,18 +1080,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   internal fun recordXVideoStats(callbackKey: String, outcome: EnforcementStatsOutcome): Boolean =
     recordStatsAction(EnforcementReason.X_VIDEOS, outcome, callbackKey)
 
-  internal fun recordInstagramBlockStats(reason: InstagramBlockReason, outcome: EnforcementStatsOutcome): Boolean {
-    val statsReason = when (reason) {
-      InstagramBlockReason.REELS_ENTRY,
-      InstagramBlockReason.REELS_SWIPE,
-      InstagramBlockReason.REELS_WINDOW_EXPIRED,
-      -> EnforcementReason.INSTAGRAM_REELS
-      InstagramBlockReason.HOME_LIMIT -> EnforcementReason.INSTAGRAM_HOME
-      InstagramBlockReason.EXPLORE -> EnforcementReason.INSTAGRAM_EXPLORE
-    }
-    return recordStatsAction(statsReason, outcome, reason.name)
-  }
-
   internal fun recordAppLimitStats(packageName: String, outcome: EnforcementStatsOutcome): Boolean =
     recordStatsAction(EnforcementReason.APP_LIMIT, outcome, packageName)
 
@@ -1133,25 +1091,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
 
   private fun resetStatsDedupe(reason: EnforcementReason) {
     statsDedupeKeys.remove(reason)
-  }
-
-  private fun resetInstagramStatsDedupe() {
-    resetStatsDedupe(EnforcementReason.INSTAGRAM_REELS)
-    resetStatsDedupe(EnforcementReason.INSTAGRAM_HOME)
-    resetStatsDedupe(EnforcementReason.INSTAGRAM_EXPLORE)
-  }
-
-  internal fun resetInstagramStatsDedupe(reason: InstagramBlockReason?) {
-    val statsReason = when (reason) {
-      InstagramBlockReason.REELS_ENTRY,
-      InstagramBlockReason.REELS_SWIPE,
-      InstagramBlockReason.REELS_WINDOW_EXPIRED,
-      -> EnforcementReason.INSTAGRAM_REELS
-      InstagramBlockReason.HOME_LIMIT -> EnforcementReason.INSTAGRAM_HOME
-      InstagramBlockReason.EXPLORE -> EnforcementReason.INSTAGRAM_EXPLORE
-      null -> return
-    }
-    resetStatsDedupe(statsReason)
   }
 
   private fun clearStatsDedupeState() {

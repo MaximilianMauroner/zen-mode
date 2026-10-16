@@ -160,14 +160,22 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     }
     screenReceiverRegistered = true
     usageHandler.postDelayed(usageTicker, USAGE_TICK_MS)
-    xOverlay = XBreakOverlay(this) {
-      if (canRunEnforcementAction()) {
-        xStateMachine.leaveBlockedSurface()
-        xOverlay.hide()
+    xOverlay = XBreakOverlay(
+      service = this,
+      onLeave = {
+        if (canRunEnforcementAction()) {
+          xStateMachine.leaveBlockedSurface()
+          xOverlay.hide()
+          resetStatsDedupe(EnforcementReason.X_HOME)
+          performGlobalAction(GLOBAL_ACTION_HOME)
+        }
+      },
+      onExpired = {
+        xStateMachine.homeRuntimeState(SystemClock.elapsedRealtime())
         resetStatsDedupe(EnforcementReason.X_HOME)
-        performGlobalAction(GLOBAL_ACTION_HOME)
-      }
-    }
+        publishXHomeStatus()
+      },
+    )
     xHandler.postDelayed(xTicker, 1_000L)
     instagramOverlay = InstagramBlockerOverlay(
       service = this,
@@ -695,11 +703,13 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     }
     when (action) {
       XAction.HOME_BREAK -> {
-        val wasShowing = xOverlay.isShowing
         xHomeUsageState = HomeFeedUsageState.PAUSED
-        xOverlay.show(preferences.xHomeMinutes)
         val lockoutDeadline = xStateMachine.homeRuntimeState(nowMs).blockedUntilElapsedMs
-        recordXHomeStats(wasShowing, xOverlay.isShowing, EnforcementStatsOutcome.SUCCESS, lockoutDeadline)
+        if (lockoutDeadline != null) {
+          xOverlay.show(preferences.xHomeMinutes, lockoutDeadline) {
+            recordXHomeStats(false, true, EnforcementStatsOutcome.SUCCESS, lockoutDeadline)
+          }
+        }
       }
       XAction.HOME_UNAVAILABLE -> {
         xHomeUsageState = HomeFeedUsageState.UNKNOWN
@@ -977,6 +987,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     } else {
       clearXEnforcement()
     }
+    if (::xOverlay.isInitialized) xOverlay.hide()
     navigationHandler.removeCallbacksAndMessages(null)
     usageHandler.removeCallbacksAndMessages(null)
     instagramDeadlineHandler.removeCallbacksAndMessages(null)

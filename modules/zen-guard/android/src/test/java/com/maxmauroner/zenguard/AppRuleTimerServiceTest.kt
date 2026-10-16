@@ -901,6 +901,89 @@ class AppRuleTimerServiceTest {
     assertNull(overlay().requestedPackage())
   }
 
+  @Test fun `P5 observe visit post retained through Settings`() {
+    observeP5SettingsVisit(removeVisitPost = false)
+  }
+
+  @Test fun `P5 observe manual visit post removal after Settings`() {
+    observeP5SettingsVisit(removeVisitPost = true)
+  }
+
+  private fun observeP5SettingsVisit(removeVisitPost: Boolean) {
+    val service = controller.get()
+    val setupElapsedMs = SystemClock.elapsedRealtime()
+    val setupUptimeMs = SystemClock.uptimeMillis()
+    val setupWallMs = wallNow()
+    val handler = service.javaClass.getDeclaredMethod("getAppRuleHandler").apply { isAccessible = true }
+      .invoke(service) as android.os.Handler
+    val visitPost = service.privateField<Runnable>("intentDeadlineCheck")
+    val sessions = service.privateField<IntentSessionTracker>("intentSessions")
+    val store = service.privateField<IntentAppStore>("intentStore")
+    val stored = store.privateField<android.content.SharedPreferences>("preferences")
+    advance(Duration.ofSeconds(7))
+    startTimedVisit()
+    val grantElapsedMs = SystemClock.elapsedRealtime()
+    val expiryElapsedMs = grantElapsedMs + sessions.remainingMs(APP, grantElapsedMs)
+    val previousTickElapsedMs = setupElapsedMs + ((expiryElapsedMs - setupElapsedMs) / 15_000L) * 15_000L
+    val nextTickElapsedMs = previousTickElapsedMs + 15_000L
+    assertTrue("The real Start action must grant a visit", sessions.isActive(APP, grantElapsedMs))
+    assertTrue("The visit must have a pending post", handler.hasCallbacks(visitPost))
+    assertTrue("Expiry must be between usage ticks", expiryElapsedMs > previousTickElapsedMs && expiryElapsedMs < nextTickElapsedMs)
+    val log = { stage: String ->
+      val row = org.json.JSONObject()
+        .put("decision", "settings_visit")
+        .put("variant", if (removeVisitPost) "manual_remove_visit_post" else "production_retained_post")
+        .put("stage", stage)
+        .put("clockProvenance", "Robolectric SDK35 PAUSED main looper idleFor advances uptime and elapsed together; no clock reset")
+        .put("wallProvenance", "setUp appRuleWallClock anchors 2026-10-13T23:59:55Z to elapsedRealtime before onServiceConnected")
+        .put("setupElapsedMs", setupElapsedMs)
+        .put("setupUptimeMs", setupUptimeMs)
+        .put("setupWallMs", setupWallMs)
+        .put("grantElapsedMs", grantElapsedMs)
+        .put("expiryElapsedMs", expiryElapsedMs)
+        .put("previousTickElapsedMs", previousTickElapsedMs)
+        .put("nextTickElapsedMs", nextTickElapsedMs)
+        .put("elapsedMs", SystemClock.elapsedRealtime())
+        .put("uptimeMs", SystemClock.uptimeMillis())
+        .put("wallMs", wallNow())
+        .put("visitPostPending", handler.hasCallbacks(visitPost))
+        .put("cardRefreshPending", hasPendingAppRuleRefresh())
+        .put("sessionActive", sessions.isActive(APP, SystemClock.elapsedRealtime()))
+        .put("sessionRetained", sessions.privateField<Map<String, Long>>("expiries").containsKey(APP))
+        .put("remainingMs", sessions.remainingMs(APP, SystemClock.elapsedRealtime()))
+        .put("overlayMode", overlay().mode?.name ?: org.json.JSONObject.NULL)
+        .put("overlayRequestedPackage", overlay().requestedPackage() ?: org.json.JSONObject.NULL)
+        .put("overlayShowing", overlay().isShowing())
+        .put("activeRootPackage", service.rootInActiveWindow?.packageName?.toString() ?: org.json.JSONObject.NULL)
+        .put("trackedForegroundPackage", service.privateField<String?>("currentForegroundPackage") ?: org.json.JSONObject.NULL)
+        .put("navigationActions", org.json.JSONArray(shadowOf(service).globalActionsPerformed))
+        .put("storedLastEnds", org.json.JSONObject(stored.getString("last_ends", "{}") ?: "{}"))
+        .put("cooldownRemainingMs", store.cooldownRemainingMs(APP, wallNow()))
+      println("P5_PROBE $row")
+    }
+    log("active_grant")
+    advance(Duration.ofSeconds(1))
+    service.javaClass.getDeclaredField("appRuleSafety").apply { isAccessible = true }
+      .set(service, AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings")))
+    showAppWindows("com.android.settings")
+    windowEvent("com.android.settings")
+    val settingsGateAllows = service.javaClass.getDeclaredMethod("canRunEnforcementAction").apply { isAccessible = true }
+      .invoke(service) as Boolean
+    assertFalse("The configured real Settings gate must reject enforcement", settingsGateAllows)
+    log("settings_entered_before_simulation")
+    if (removeVisitPost) handler.removeCallbacks(visitPost)
+    log("settings_after_simulation")
+    advance(Duration.ofMillis(expiryElapsedMs - SystemClock.elapsedRealtime() - 1L))
+    assertTrue("Root restoration must follow the last usage tick", SystemClock.elapsedRealtime() > previousTickElapsedMs)
+    log("settings_after_last_tick")
+    showAppWindows(APP)
+    log("root_restored_without_event")
+    advance(Duration.ofMillis(1))
+    log("original_expiry")
+    advance(Duration.ofMillis(nextTickElapsedMs - SystemClock.elapsedRealtime() + 20L))
+    log("after_next_usage_tick")
+  }
+
   private fun startTimedVisit() {
     IntentAppStore(context).setIntent(APP, 1, 1)
     openApp(APP)

@@ -123,7 +123,6 @@ export default function AppLimitsScreen() {
   const busyRef = useRef(false);
   const gate = useWeakeningGate();
 
-  // Warm inactive tabs after the first frame without delaying the visible screen.
   useEffect(() => {
     const frame = requestAnimationFrame(() => { if (!navigation.isFocused()) void refresh(); });
     return () => cancelAnimationFrame(frame);

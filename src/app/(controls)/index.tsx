@@ -55,7 +55,6 @@ export default function FeedsScreen() {
     }).catch(() => {
       if (active) setSetupRead({ kind: 'failed', message: 'Could not read setup. Open Settings or try again.' });
     });
-    // Only the visible overview needs a current lock countdown.
     const timer = setInterval(() => void read(), 60_000);
     return () => { active = false; clearInterval(timer); };
   }, []));

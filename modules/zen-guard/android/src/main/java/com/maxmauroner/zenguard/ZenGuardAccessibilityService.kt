@@ -51,8 +51,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private val instagramStateMachine = InstagramGuardStateMachine()
   private val instagramDebugTrace = if (BuildConfig.DEBUG) InstagramDebugTrace() else null
   private val navigationHandler by lazy { Handler(Looper.getMainLooper()) }
-  private val instagramDeadlineHandler by lazy { Handler(Looper.getMainLooper()) }
-  private val instagramReelsDeadlineCheck = Runnable { checkInstagramReelsDeadline() }
+  private val reelsDeadline by lazy { DeadlineTask(Handler(Looper.getMainLooper()), decide = ::checkInstagramReelsDeadline) }
   private lateinit var instagramIntervention: InstagramIntervention
   private var instagramNavigationSuppressedUntilMs = 0L
   /** Wall-clock injection keeps daily and rolling service tests independent of host time. */
@@ -64,9 +63,13 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private lateinit var appRuleSafety: AppRuleSafety
   private val intentSessions = IntentSessionTracker()
   private lateinit var appRuleOverlay: AppRuleOverlay
-  private val appRuleHandler by lazy { Handler(Looper.getMainLooper()) }
-  private val appRuleRefresh = Runnable { refreshAppRuleOverlay() }
-  private val intentDeadlineCheck = Runnable { enforceIntentSession() }
+  private val appCardRefresh by lazy { DeadlineTask(Handler(Looper.getMainLooper()), decide = ::refreshAppRuleOverlay) }
+  private val visitDeadline by lazy {
+    DeadlineTask(Handler(Looper.getMainLooper())) {
+      enforceIntentSession()
+      DeadlineDecision.Complete
+    }
+  }
   private lateinit var adultSiteStore: AdultSiteRuleStore
   private var browserIntervention: BrowserIntervention? = null
   private lateinit var homeFeedStatusStore: HomeFeedStatusStore
@@ -80,7 +83,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       val nowMs = SystemClock.elapsedRealtime()
       xStateMachine.pause(nowMs, xSettings())
       if (xHomeUsageState != HomeFeedUsageState.UNKNOWN) xHomeUsageState = HomeFeedUsageState.PAUSED
-      instagramDeadlineHandler.removeCallbacks(instagramReelsDeadlineCheck)
+      reelsDeadline.cancel()
       instagramStateMachine.onAppBackground(nowMs, preferences.instagramSettings())
       publishXHomeStatus()
       publishInstagramHomeStatus()
@@ -180,7 +183,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       canEnforce = ::canRunEnforcementAction,
       recordStop = { dailyTally.recordStop(System.currentTimeMillis()) },
       recordAttachment = { reason ->
-        instagramDeadlineHandler.removeCallbacks(instagramReelsDeadlineCheck)
+        reelsDeadline.cancel()
         recordEnforcement(reason)
       },
       leave = { reason ->
@@ -390,7 +393,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
 
   private fun closeAppRuleOverlay() {
     if (::appRuleOverlay.isInitialized) appRuleOverlay.hide()
-    appRuleHandler.removeCallbacks(appRuleRefresh)
+    appCardRefresh.cancel()
     resetStatsDedupe(EnforcementReason.APP_LIMIT)
     resetStatsDedupe(EnforcementReason.ROLLING_LIMIT)
     resetStatsDedupe(EnforcementReason.TIMED_VISIT)
@@ -414,34 +417,35 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   }
 
   private fun scheduleAppRuleRefresh() {
-    appRuleHandler.removeCallbacks(appRuleRefresh)
-    if (appRuleOverlay.requestedPackage() != null) appRuleHandler.postDelayed(appRuleRefresh, 1_000L)
+    if (appRuleOverlay.requestedPackage() == null) {
+      appCardRefresh.cancel()
+    } else {
+      appCardRefresh.scheduleAt(SystemClock.elapsedRealtime() + APP_RULE_REFRESH_MS)
+    }
   }
 
-  private fun refreshAppRuleOverlay() {
-    if (!canRunEnforcementAction()) return
-    val blockedPackage = appRuleOverlay.requestedPackage() ?: return
-    val foreground = foregroundAppPackage()
-    if (foreground == null) {
-      // Keep the boundary and paused accounting until the actual app can be verified.
-      scheduleAppRuleRefresh()
-      return
-    }
+  private fun refreshAppRuleOverlay(): DeadlineDecision {
+    if (!canRunEnforcementAction()) return DeadlineDecision.Cancel
+    val blockedPackage = appRuleOverlay.requestedPackage() ?: return DeadlineDecision.Complete
+    // Keep the boundary and paused accounting until the actual app can be verified.
+    val foreground = foregroundAppPackage() ?: return DeadlineDecision.RetryAfter(APP_RULE_REFRESH_MS)
     if (foreground != blockedPackage) {
       currentForegroundPackage = foreground
       if (!enforceAppLimits(foreground)) handleIntentForeground(foreground)
       if (appRuleOverlay.requestedPackage() == null) {
         usageTracker.onForeground(foreground, SystemClock.elapsedRealtime())?.let(::bankUsage)
       }
-      scheduleAppRuleRefresh()
-      return
+    } else if (!enforceAppLimits(blockedPackage)) {
+      handleIntentForeground(blockedPackage)
+      if (appRuleOverlay.requestedPackage() == null) {
+        usageTracker.onForeground(blockedPackage, SystemClock.elapsedRealtime())
+      }
     }
-    if (enforceAppLimits(blockedPackage)) return
-    handleIntentForeground(blockedPackage)
-    if (appRuleOverlay.requestedPackage() == null && foreground == blockedPackage) {
-      usageTracker.onForeground(blockedPackage, SystemClock.elapsedRealtime())
+    return if (appRuleOverlay.requestedPackage() == null) {
+      DeadlineDecision.Complete
+    } else {
+      DeadlineDecision.RetryAfter(APP_RULE_REFRESH_MS)
     }
-    scheduleAppRuleRefresh()
   }
 
   /**
@@ -513,9 +517,9 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   }
 
   private fun scheduleIntentDeadline(packageName: String) {
-    appRuleHandler.removeCallbacks(intentDeadlineCheck)
-    val remaining = intentSessions.remainingMs(packageName, SystemClock.elapsedRealtime())
-    if (remaining > 0L) appRuleHandler.postDelayed(intentDeadlineCheck, remaining)
+    val nowElapsedMs = SystemClock.elapsedRealtime()
+    val remaining = intentSessions.remainingMs(packageName, nowElapsedMs)
+    if (remaining > 0L) visitDeadline.scheduleAt(nowElapsedMs + remaining) else visitDeadline.cancel()
   }
 
   /** Leaves the current card without starting a visit or opening another app. */
@@ -534,7 +538,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     val packageName = foregroundAppPackage() ?: return
     if (!appRuleSafety.allowsTimedVisitEnforcement(packageName)) return
     if (intentSessions.isActive(packageName, SystemClock.elapsedRealtime())) {
-      // Uptime-based dispatch can round ahead of the elapsed-time grant deadline.
       scheduleIntentDeadline(packageName)
       return
     }
@@ -930,7 +933,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   }
 
   override fun onDestroy() {
-    appRuleHandler.removeCallbacksAndMessages(null)
+    visitDeadline.cancel()
     browserIntervention?.end()
     resetYouTubeEnforcement()
     xHandler.removeCallbacksAndMessages(null)
@@ -944,7 +947,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     }
     navigationHandler.removeCallbacksAndMessages(null)
     usageHandler.removeCallbacksAndMessages(null)
-    instagramDeadlineHandler.removeCallbacksAndMessages(null)
     closeAppRuleOverlay()
     clearInstagramEnforcement(preserveHomeSession = hasActiveProtection())
     clearStatsDedupeState()
@@ -963,9 +965,9 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
    * otherwise end only at the next swipe. Recheck the live tree when the window ends.
    */
   private fun scheduleInstagramReelsDeadline() {
-    instagramDeadlineHandler.removeCallbacks(instagramReelsDeadlineCheck)
-    val remainingMs = instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) ?: return
-    instagramDeadlineHandler.postDelayed(instagramReelsDeadlineCheck, remainingMs)
+    val nowMs = SystemClock.elapsedRealtime()
+    val remainingMs = instagramStateMachine.reelsWindowRemainingMs(nowMs)
+    if (remainingMs == null) reelsDeadline.cancel() else reelsDeadline.scheduleAt(nowMs + remainingMs)
   }
 
   /**
@@ -974,26 +976,22 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
    * trees until a blocker attaches or the policy clears the window. The normal handler still
    * requires a live Instagram root and a visible Reels pager.
    */
-  private fun checkInstagramReelsDeadline() {
-    val remainingMs = instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) ?: return
-    if (!canRunEnforcementAction() || preferences.instagramObservationMode || !isScreenInteractive ||
-      instagramIntervention.isShowing
-    ) return
-    // Handler delays use uptime and the policy uses elapsed time; separate rounding can run this 1 ms early.
-    if (remainingMs > 0L) {
-      instagramDeadlineHandler.postDelayed(instagramReelsDeadlineCheck, remainingMs)
-      return
+  private fun checkInstagramReelsDeadline(): DeadlineDecision {
+    if (instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) == null) return DeadlineDecision.Cancel
+    if (!canRunEnforcementAction() || preferences.instagramObservationMode || !isScreenInteractive) {
+      return DeadlineDecision.Cancel
     }
-    handleInstagramEvent(null)
-    if (!instagramIntervention.isShowing &&
-      instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) == 0L
-    ) {
-      instagramDeadlineHandler.postDelayed(instagramReelsDeadlineCheck, INSTAGRAM_REELS_DEADLINE_RETRY_MS)
+    if (!instagramIntervention.isShowing) handleInstagramEvent(null)
+    return when {
+      instagramIntervention.isShowing -> DeadlineDecision.Complete
+      instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) == 0L ->
+        DeadlineDecision.RetryAfter(INSTAGRAM_REELS_DEADLINE_RETRY_MS)
+      else -> DeadlineDecision.Cancel
     }
   }
 
   private fun clearInstagramEnforcement(preserveHomeSession: Boolean = false) {
-    instagramDeadlineHandler.removeCallbacks(instagramReelsDeadlineCheck)
+    reelsDeadline.cancel()
     if (preserveHomeSession) {
       instagramStateMachine.onAppBackground(SystemClock.elapsedRealtime(), preferences.instagramSettings())
     } else {
@@ -1113,7 +1111,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     usageTracker.reset()
     currentForegroundPackage = null
     intentSessions.reset()
-    appRuleHandler.removeCallbacks(intentDeadlineCheck)
+    visitDeadline.cancel()
     closeAppRuleOverlay()
     navigationHandler.removeCallbacksAndMessages(null)
     instagramNavigationSuppressedUntilMs = 0L
@@ -1376,6 +1374,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     private const val MAIN_LAUNCH_ATTEMPT = 3
     private const val MAX_NAVIGATION_ATTEMPTS = 12
     private const val USAGE_TICK_MS = 15_000L
+    private const val APP_RULE_REFRESH_MS = 1_000L
     private const val INSTAGRAM_REELS_DEADLINE_RETRY_MS = 1_000L
     private const val MAX_BROWSER_NODES = 180
     private const val MAX_BROWSER_DEPTH = 18

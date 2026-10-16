@@ -2,7 +2,6 @@ package com.maxmauroner.zenguard
 
 import android.content.Context
 import android.content.Intent
-import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
@@ -354,10 +353,10 @@ class InstagramReelsDeadlineServiceTest {
   private fun overlay(): InstagramIntervention = controller.get().privateField("instagramIntervention")
 
   private fun hasPendingDeadline(): Boolean {
-    val handler = controller.get().javaClass.getDeclaredMethod("getInstagramDeadlineHandler").apply {
+    val deadline = controller.get().javaClass.getDeclaredMethod("getReelsDeadline").apply {
       isAccessible = true
-    }.invoke(controller.get()) as Handler
-    return handler.hasCallbacks(controller.get().privateField<Runnable>("instagramReelsDeadlineCheck"))
+    }.invoke(controller.get()) as DeadlineTask
+    return deadline.isPending
   }
 
   private fun expiryCount(): Long =

@@ -106,12 +106,12 @@ test('a tap rejected during refresh keeps the picker and query until selection i
   view.input().props.onChangeText('fire');
   view.refresh(true);
   const row = view.row();
-  assert.equal(row.props.disabled, true);
-  assert.equal(row.props.accessibilityState.disabled, true);
   row.props.onPress();
   assert.equal(view.pickerProps().visible, true, 'a rejected selection does not close the picker');
   assert.equal(view.input().props.value, 'fire', 'a rejected selection keeps the search');
   assert.equal(find(view.screen(), (node) => node.props?.title === 'Firefox'), undefined);
+  assert.equal(row.props.disabled, true);
+  assert.equal(row.props.accessibilityState.disabled, true);
 
   view.refresh(false);
   assert.equal(view.row().props.disabled, false);

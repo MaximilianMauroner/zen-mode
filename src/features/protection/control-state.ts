@@ -29,12 +29,16 @@ export function actionFailure(cause: unknown, fallback: string): ActionState {
   return message.includes('locked') ? { kind: 'refused', message } : { kind: 'failed', message };
 }
 
+export type ReadInputs = readonly [ReadState<unknown>, ...ReadState<unknown>[]];
+
 export type GuardNote = { channel: 'read' | 'action'; message: string };
 
 /** A read failure and an action failure are separate facts, so neither may hide the other. */
-export function getGuardNotes(read: ReadState<unknown>, action: ActionState): GuardNote[] {
+export function getGuardNotes(reads: ReadInputs, action: ActionState): GuardNote[] {
   const notes: GuardNote[] = [];
-  if (read.kind === 'failed' && read.message) notes.push({ channel: 'read', message: read.message });
-  if ((action.kind === 'refused' || action.kind === 'failed') && action.message) notes.push({ channel: 'action', message: action.message });
+  for (const read of reads) {
+    if (read.kind === 'failed') notes.push({ channel: 'read', message: read.message });
+  }
+  if (action.kind === 'refused' || action.kind === 'failed') notes.push({ channel: 'action', message: action.message });
   return notes;
 }

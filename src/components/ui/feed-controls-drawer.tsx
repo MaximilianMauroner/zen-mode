@@ -147,7 +147,7 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
             {targetPresentation.showOpener ? (
               <SecondaryButton className="mt-5" title={isInstagram ? 'Open Instagram to check' : isX ? 'Open X to check' : 'Open YouTube to check'} disabled={disabled} onPress={() => run(async () => { if (isInstagram) await openInstagram(); else if (isX) await openX(); else await openYouTube(); })} />
             ) : null}
-            <GuardNotes read={read} action={action} className="mt-5" />
+            <GuardNotes reads={[read]} action={action} className="mt-5" />
           </ScrollView>
         </SafeAreaView>
         <WeakeningGateDialog gate={gate} embedded />

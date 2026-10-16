@@ -116,7 +116,7 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
               <View className="flex-1">
                 <Text className="text-item font-semibold text-copy">Block adult sites</Text>
                 <Text accessibilityLiveRegion="polite" className="mt-0.5 text-support text-muted">
-                  {settings?.enabled ? 'Built-in list plus sites you add.' : 'No website rule is running.'}
+                  {settings?.available ? settings.enabled ? 'Built-in list plus sites you add.' : 'No website rule is running.' : null}
                 </Text>
               </View>
               <Switch
@@ -209,11 +209,11 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
             ) : null}
 
             <SecondaryButton className="mt-5" title="Open default browser to check" disabled={disabled || !settings?.enabled || !status?.serviceEnabled || !status.protectionEnabled || getBrowserReadiness(status) === 'none-installed' || getBrowserReadiness(status) === 'disabled'} onPress={() => run(openBrowserCheck, 'The default browser could not be opened. Check that a browser is installed.')} />
-            {!settings?.enabled ? <Text className="mt-2 text-caption text-muted">Turn on website blocking before checking a browser.</Text> : !status?.serviceEnabled || !status?.protectionEnabled ? <Text className="mt-2 text-caption text-muted">Turn on Android access and Protection in Settings before checking a browser.</Text> : getBrowserReadiness(status) === 'none-installed' ? <Text className="mt-2 text-caption text-muted">Install one of the supported browsers above before checking a browser.</Text> : getBrowserReadiness(status) === 'disabled' ? <Text className="mt-2 text-caption text-muted">Enable one of the supported browsers above in Android before checking a browser.</Text> : <Text className="mt-2 text-caption text-muted">This opens the default browser at a safe example page. The rows above explain which supported browser still needs its own check.</Text>}
+            {!settings || !status ? null : !settings.available || !status.available ? <Text className="mt-2 text-caption text-muted">Website protection needs the Android app.</Text> : !settings.enabled ? <Text className="mt-2 text-caption text-muted">Turn on website blocking before checking a browser.</Text> : !status?.serviceEnabled || !status?.protectionEnabled ? <Text className="mt-2 text-caption text-muted">Turn on Android access and Protection in Settings before checking a browser.</Text> : getBrowserReadiness(status) === 'none-installed' ? <Text className="mt-2 text-caption text-muted">Install one of the supported browsers above before checking a browser.</Text> : getBrowserReadiness(status) === 'disabled' ? <Text className="mt-2 text-caption text-muted">Enable one of the supported browsers above in Android before checking a browser.</Text> : <Text className="mt-2 text-caption text-muted">This opens the default browser at a safe example page. The rows above explain which supported browser still needs its own check.</Text>}
             <Text className="mt-4 text-center text-caption text-faint">The built-in list ships with Zen Mode and is not shown here.</Text>
-            <GuardNotes read={read} action={action} className="mt-4" />
+            <GuardNotes reads={[statusRead, read]} action={action} className="mt-4" />
             {action.kind === 'refused' ? <SecondaryButton className="mt-3" title="Manage lock" disabled={busy} onPress={() => { close(); router.navigate('/lock'); }} /> : null}
-            {read.kind === 'failed' ? <PrimaryButton className="mt-3" title="Try again" disabled={busy} onPress={() => void refresh()} /> : null}
+            {statusRead.kind === 'failed' || read.kind === 'failed' ? <PrimaryButton className="mt-3" title="Try again" disabled={busy} onPress={() => void Promise.all([refreshStatus(), refresh()])} /> : null}
           </ScrollView>
         </SafeAreaView>
         <WeakeningGateDialog gate={gate} embedded />

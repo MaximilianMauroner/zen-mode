@@ -224,7 +224,7 @@ internal class InstagramIntervention(
 
   private fun continueReelsWindow() {
     if (active == null || !canEnforce()) return
-    if (continueReels()) end()
+    if (continueReels()) renderer.hide()
   }
 }
 

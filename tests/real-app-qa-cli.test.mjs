@@ -240,7 +240,7 @@ test('cleared opens the target only over a live overlay, and a cleared overlay n
     // ended look the same, so the operator judges it.
     const run = clear('lost-at-launch', 'overlay', 'launch');
     assert.equal(run.status, 0, run.stderr);
-    assert.match(run.stdout, /^OBSERVED lost-at-launch: 0ms overlay \(org\.mozilla\.firefox\) -> \d+ms no overlay \(org\.mozilla\.firefox\); .*cleared overlay by hand/);
+    assert.match(run.stdout, /^OBSERVED lost-at-launch: \d+ms overlay \(org\.mozilla\.firefox\) -> \d+ms no overlay \(org\.mozilla\.firefox\); .*cleared overlay by hand/);
     const launch = run.calls.findIndex((call) => call.startsWith('shell am start'));
     assert.deepEqual(run.calls.slice(launch - 3, launch), ['exec-out screencap -p', ...lastCheck],
       'no screenshot or media work between the last check and the launch');

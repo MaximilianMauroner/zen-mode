@@ -34,13 +34,16 @@ export function createProtectionRead<T>({ read, failure, whileWatched }: Options
   let watchers = 0;
   let stopWatching: (() => void) | undefined;
   let reading: Promise<void> | null = null;
+  let orphaned = false;
   let followUp: { promise: Promise<void>; resolve: () => void } | null = null;
 
   const attached = () => listeners.size > 0 || watchers > 0;
 
-  const dropFollowUpWhenDetached = () => {
-    if (attached() || !followUp) return;
-    followUp.resolve();
+  const detachIfLast = () => {
+    if (attached()) return;
+    state = LOADING;
+    orphaned = reading !== null;
+    followUp?.resolve();
     followUp = null;
   };
 
@@ -50,11 +53,16 @@ export function createProtectionRead<T>({ read, failure, whileWatched }: Options
     listeners.forEach((listener) => listener());
   };
 
+  const settle = (next: ReadState<T>) => {
+    if (!orphaned) publish(next);
+  };
+
   const start = (): Promise<void> => {
+    orphaned = false;
     publish(state.kind === 'ready' ? { ...state, refreshing: true } : state.kind === 'failed' ? LOADING : state);
     reading = read().then(
-      (result) => publish(result.kind === 'ready' ? { ...result, refreshing: false } : ANDROID_REQUIRED),
-      () => publish({ kind: 'failed', message: failure }),
+      (result) => settle(result.kind === 'ready' ? { ...result, refreshing: false } : ANDROID_REQUIRED),
+      () => settle({ kind: 'failed', message: failure }),
     ).finally(() => {
       reading = null;
       const next = followUp;
@@ -83,7 +91,7 @@ export function createProtectionRead<T>({ read, failure, whileWatched }: Options
       listeners.add(listener);
       return () => {
         listeners.delete(listener);
-        dropFollowUpWhenDetached();
+        detachIfLast();
       };
     },
     refresh,
@@ -100,7 +108,7 @@ export function createProtectionRead<T>({ read, failure, whileWatched }: Options
           stopWatching?.();
           stopWatching = undefined;
         }
-        dropFollowUpWhenDetached();
+        detachIfLast();
       };
     },
   };

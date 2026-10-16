@@ -196,3 +196,140 @@ test('a StrictMode remount keeps one set of triggers and reads again after the f
   assert.equal(background.active, 0);
   assert.equal(reads.started, 2);
 });
+
+function screen(owner) {
+  const seen = [];
+  const unsubscribe = owner.subscribe(() => seen.push(owner.getSnapshot()));
+  return { seen, unsubscribe };
+}
+
+const PRE_SETUP = { serviceEnabled: false, protectionEnabled: false };
+const POST_SETUP = { serviceEnabled: true, protectionEnabled: true };
+
+test('detach: a ready snapshot does not reach the next attachment', async () => {
+  const reads = nativeReads();
+  const owner = createProtectionRead({ read: reads.read, failure: 'Could not read.' });
+  const controls = screen(owner);
+  const first = owner.refresh();
+  reads.pending[0].resolve(ready(PRE_SETUP));
+  await first;
+  controls.unsubscribe();
+
+  screen(owner);
+  assert.deepEqual(owner.getSnapshot(), { kind: 'loading' }, 'the remount shows Checking, not Android access needed');
+});
+
+test('detach: a read pending at detach does not publish after it resolves', async () => {
+  const reads = nativeReads();
+  const owner = createProtectionRead({ read: reads.read, failure: 'Could not read.' });
+  const controls = screen(owner);
+  const pending = owner.refresh();
+  controls.unsubscribe();
+  reads.pending[0].resolve(ready(PRE_SETUP));
+  await pending;
+
+  const remount = screen(owner);
+  assert.deepEqual(owner.getSnapshot(), { kind: 'loading' });
+  assert.deepEqual(remount.seen, []);
+  assert.equal(reads.started, 1, 'no read while detached');
+});
+
+test('detach: a failure pending at detach does not reach the next attachment', async () => {
+  const reads = nativeReads();
+  const owner = createProtectionRead({ read: reads.read, failure: 'Could not read.' });
+  const controls = screen(owner);
+  const pending = owner.refresh();
+  controls.unsubscribe();
+  reads.pending[0].reject(new Error('native'));
+  await pending;
+
+  screen(owner);
+  assert.deepEqual(owner.getSnapshot(), { kind: 'loading' });
+});
+
+test('detach: a remount during the old read waits for a newer read, and the old result is never shown', async () => {
+  const reads = nativeReads();
+  const owner = createProtectionRead({ read: reads.read, failure: 'Could not read.' });
+  const controls = screen(owner);
+  const blur = owner.watch();
+  blur();
+  controls.unsubscribe();
+
+  const remount = screen(owner);
+  let confirmed = false;
+  const focus = owner.refresh().then(() => {
+    confirmed = true;
+  });
+  assert.equal(reads.started, 1, 'one in-flight read, so the remount request queues');
+
+  reads.pending[0].resolve(ready(PRE_SETUP));
+  await settled();
+  assert.deepEqual(remount.seen.filter((state) => state.kind === 'ready'), [], 'the old result is not published');
+  assert.equal(confirmed, false, 'the old completion does not confirm the remount request');
+  assert.equal(reads.started, 2, 'the follow-up read starts after the old read ends');
+
+  reads.pending[1].resolve(ready(POST_SETUP));
+  await focus;
+  assert.deepEqual(owner.getSnapshot(), { kind: 'ready', value: POST_SETUP, refreshing: false });
+});
+
+test('detach: an old rejection after reattach cannot fail or confirm the new request', async () => {
+  const { reads, owner, seen, release } = ownedRead();
+  const oldRead = owner.refresh();
+  release();
+  const remount = screen(owner);
+  let confirmed = false;
+  const freshRead = owner.refresh().then(() => { confirmed = true; });
+  assert.deepEqual(owner.getSnapshot(), { kind: 'loading' });
+  assert.equal(reads.started, 1);
+
+  reads.pending[0].reject(new Error('old native failure'));
+  await oldRead;
+  await settled();
+  assert.deepEqual(owner.getSnapshot(), { kind: 'loading' });
+  assert.deepEqual(seen, [], 'no callback to the detached screen');
+  assert.deepEqual(remount.seen, [], 'no stale failure reaches the remount');
+  assert.equal(confirmed, false, 'the old rejection cannot confirm a fresh request');
+  assert.equal(reads.started, 2, 'the fresh read waits for the old physical read');
+
+  reads.pending[1].resolve(ready(POST_SETUP));
+  await freshRead;
+  assert.equal(confirmed, true);
+  assert.deepEqual(remount.seen, [{ kind: 'ready', value: POST_SETUP, refreshing: false }]);
+  assert.equal(reads.started, 2);
+  remount.unsubscribe();
+});
+
+test('detach: queued requests from separate attachments complete independently', async () => {
+  const { reads, owner, release } = ownedRead();
+  const oldRead = owner.refresh();
+  let oldConfirmed = false;
+  const oldQueued = owner.refresh().then(() => { oldConfirmed = true; });
+  release();
+  await oldQueued;
+  assert.equal(oldConfirmed, true, 'detach releases the old queued request');
+  assert.equal(reads.started, 1, 'releasing the old queue starts no read');
+  assert.deepEqual(owner.getSnapshot(), { kind: 'loading' });
+
+  const remount = screen(owner);
+  let newConfirmed = false;
+  const newQueued = owner.refresh().then(() => { newConfirmed = true; });
+  assert.equal(reads.started, 1, 'remount shares the physical read slot');
+  assert.equal(newConfirmed, false);
+  reads.pending[0].resolve(ready(PRE_SETUP));
+  await oldRead;
+  await settled();
+  assert.equal(newConfirmed, false, 'old completion cannot release the new queue');
+  assert.equal(reads.started, 2, 'only the new attachment gets a follow-up');
+  assert.deepEqual(owner.getSnapshot(), { kind: 'loading' });
+  assert.deepEqual(remount.seen, [], 'old data never reaches the new attachment');
+
+  reads.pending[1].resolve(ready(POST_SETUP));
+  await newQueued;
+  assert.equal(newConfirmed, true);
+  assert.deepEqual(remount.seen, [{ kind: 'ready', value: POST_SETUP, refreshing: false }]);
+  remount.unsubscribe();
+  await owner.refresh();
+  assert.equal(reads.started, 2, 'no read after the second teardown');
+  assert.deepEqual(owner.getSnapshot(), { kind: 'loading' });
+});

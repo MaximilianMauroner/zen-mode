@@ -2,6 +2,7 @@ name: Zen Mode PR checks
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -16,6 +17,7 @@ env:
 jobs:
   app:
     name: Zen Mode app checks
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -46,6 +48,7 @@ jobs:
 
   native:
     name: Zen Mode native checks
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:

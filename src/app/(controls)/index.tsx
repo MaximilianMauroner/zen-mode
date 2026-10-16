@@ -16,7 +16,7 @@ import { getFeedStatus, getFeedStatusDetail } from '@/features/protection/feed-s
 import { getHomeFeedTimeLabel } from '@/features/protection/home-feed-time';
 import { getOverviewAction } from '@/features/protection/overview-actions';
 import { getAdultSitePresentation } from '@/features/protection/adult-site-presentation';
-import { actionFailure, IDLE_ACTION, isReading, readValue, RUNNING_ACTION, type ActionState } from '@/features/protection/control-state';
+import { actionFailure, IDLE_ACTION, isReading, readValue, RUNNING_ACTION, type ActionState, type ReadState } from '@/features/protection/control-state';
 import { useSharedGuardStatus } from '@/features/protection/guard-status-context';
 import { hasCompletedSetup } from '@/features/protection/setup';
 import { shouldShowCustomizePrompt } from '@/features/protection/setup-policy';
@@ -29,6 +29,7 @@ export default function FeedsScreen() {
   const status = readValue(statusRead);
   const loading = isReading(statusRead);
   const readError = statusRead.kind === 'failed' ? statusRead.message : '';
+  const [setupRead, setSetupRead] = useState<ReadState<boolean>>({ kind: 'loading' });
   const [lock, setLock] = useState<LockState | null>(null);
   const [action, setAction] = useState<ActionState>(IDLE_ACTION);
   const [drawer, setDrawer] = useState<FeedDrawer | null>(null);
@@ -48,10 +49,11 @@ export default function FeedsScreen() {
     };
     void hasCompletedSetup().then((complete) => {
       if (!active) return;
+      setSetupRead({ kind: 'ready', value: complete, refreshing: false });
       if (!complete) router.replace('/setup');
       else void read();
     }).catch(() => {
-      if (active) setAction({ kind: 'failed', message: 'Could not read setup. Open Settings or try again.' });
+      if (active) setSetupRead({ kind: 'failed', message: 'Could not read setup. Open Settings or try again.' });
     });
     // Only the visible overview needs a current lock countdown.
     const timer = setInterval(() => void read(), 60_000);
@@ -104,7 +106,7 @@ export default function FeedsScreen() {
           <PrimaryButton title={busy ? 'Working…' : nextAction.title} disabled={busy || loading} onPress={() => runAction(nextAction.run)} />
         </View>
       ) : null}
-      <GuardNotes read={statusRead} action={action} />
+      <GuardNotes reads={[statusRead, setupRead]} action={action} />
 
       <RowGroup>
         <Row icon={Play} label="YouTube" detail={`Home: ${getFeedPresentation(status, 'youtubeHome', loading).statusLabel} · Shorts: ${getFeedPresentation(status, 'shorts', loading).statusLabel}`} onPress={() => setDrawer('youtube')} disabled={!editable} />

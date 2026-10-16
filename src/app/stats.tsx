@@ -33,7 +33,7 @@ export default function StatsScreen() {
         <Text className="text-item text-muted">total interventions</Text>
       </Card>
 
-      <GuardNotes read={read} action={IDLE_ACTION} />
+      <GuardNotes reads={[read]} action={IDLE_ACTION} />
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">By protection</Text>
         {screenModel ? (

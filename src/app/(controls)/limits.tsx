@@ -366,7 +366,7 @@ export default function AppLimitsScreen() {
       )}
 
       <AppPicker visible={pickerOpen} configuredPackages={new Set(guardedByPackage.keys())} onClose={() => setPickerOpen(false)} onSelect={(app) => { setPickerOpen(false); selectApp(app); }} />
-      <GuardNotes read={read} action={action} />
+      <GuardNotes reads={[read]} action={action} />
       {action.kind === 'refused' ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
       {read.kind === 'failed' ? <SecondaryButton title="Try again" disabled={busy} onPress={() => void refresh()} /> : null}
     </Screen>

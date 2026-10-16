@@ -985,7 +985,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     return when {
       instagramIntervention.isShowing -> DeadlineDecision.Complete
       instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) == 0L ->
-        DeadlineDecision.RetryAfter(INSTAGRAM_REELS_DEADLINE_RETRY_MS)
+        DeadlineDecision.Complete
       else -> DeadlineDecision.Cancel
     }
   }

@@ -471,6 +471,7 @@ class AppRuleTimerServiceTest {
 
   @Test fun `idle budget release guards direct Reels from the actual Instagram window`() {
     assertInstagramBudgetHandoff("clips_viewer_view_pager", InstagramBlockReason.REELS_ENTRY)
+    assertEquals(1L, count(EnforcementReason.INSTAGRAM_REELS))
   }
 
   @Test fun `idle budget release guards Explore from the actual Instagram window`() {

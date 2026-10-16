@@ -5,8 +5,11 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
+import android.view.View
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.Button
 import java.time.Duration
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -21,6 +24,8 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ServiceController
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
+import org.robolectric.shadow.api.Shadow
+import org.robolectric.shadows.ShadowWindowManagerImpl
 
 /** Continue ends a block, so the next blocker on screen is a new stop in today's tally. */
 @RunWith(RobolectricTestRunner::class)
@@ -54,22 +59,28 @@ class InstagramContinueTallyTest {
   }
 
   @Test fun `a Reels pause after Continue counts as a new stop`() {
-    openReelFromDmAndContinue()
-
-    advance(Duration.ofSeconds(61))
+    swipeReelFromDm()
     observeReel()
     assertEquals(1, stoppedToday())
 
-    advance(Duration.ofSeconds(30))
-    assertTrue(tapContinue())
+    advance(Duration.ofSeconds(31))
+    tapContinue()
+    assertTrue(overlayViews().isEmpty())
     // An untouched Reel sends no event during the window, so no other path clears the old block.
     advance(Duration.ofSeconds(61))
     observeReel()
     assertEquals(2, stoppedToday())
+
+    advance(Duration.ofSeconds(31))
+    tapContinue()
+    advance(Duration.ofSeconds(61))
+    observeReel()
+    assertEquals(3, stoppedToday())
+    assertEquals(2, DailyTally(context).counts(System.currentTimeMillis()).continued)
   }
 
-  /** Opens a Reel from a DM thread, swipes to the pause, waits, and taps Continue. */
-  private fun openReelFromDmAndContinue() {
+  /** Opens a Reel from a DM thread and swipes, which makes the policy decide on a pause. */
+  private fun swipeReelFromDm() {
     val policy = controller.get().privateField<InstagramGuardStateMachine>("instagramStateMachine")
     val settings = ZenGuardPreferences(context).instagramSettings()
     val start = SystemClock.elapsedRealtime()
@@ -85,14 +96,16 @@ class InstagramContinueTallyTest {
       ),
       settings,
     )
-    advance(Duration.ofSeconds(30))
-    assertTrue(tapContinue())
   }
 
-  /** Does what the Continue button does: run the service callback, then hide the blocker. */
-  private fun tapContinue(): Boolean {
-    val overlay = controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay")
-    return overlay.privateField<() -> Boolean>("onContinue").invoke().also { if (it) overlay.hide() }
+  /** Taps the Continue button the pause shows once its wait ends. */
+  private fun tapContinue() {
+    val label = context.resources.getQuantityString(R.plurals.zen_guard_continue_doomscrolling, 1, 1)
+    val matches = ArrayList<View>()
+    overlayViews().forEach { it.findViewsWithText(matches, label, View.FIND_VIEWS_WITH_TEXT) }
+    val button = matches.filterIsInstance<Button>().single()
+    assertTrue(button.isEnabled)
+    button.performClick()
   }
 
   private fun observeReel() {
@@ -108,6 +121,9 @@ class InstagramContinueTallyTest {
     }
     service.onAccessibilityEvent(event)
   }
+
+  private fun overlayViews(): List<View> =
+    Shadow.extract<ShadowWindowManagerImpl>(controller.get().getSystemService(WindowManager::class.java)).views
 
   private fun stoppedToday(): Int = DailyTally(context).counts(System.currentTimeMillis()).stopped
 

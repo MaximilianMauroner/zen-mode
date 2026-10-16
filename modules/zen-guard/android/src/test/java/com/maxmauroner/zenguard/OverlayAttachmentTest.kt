@@ -267,6 +267,30 @@ class OverlayAttachmentTest {
     assertTrue(siteViews().single().isAttachedToWindow)
   }
 
+  @Test fun `repeat Instagram observations before attachment request one boundary`() {
+    observeExplore()
+    observeExplore()
+    assertEquals(1, SiteWindowManager.addRequests)
+    runLayoutPass()
+    assertEquals(1L, stats().total)
+  }
+
+  @Test fun `Settings before Instagram attachment ends the boundary without a Settings event`() {
+    observeExplore()
+    shadowOf(service).setRootInActiveWindow(node("com.android.settings"))
+    runLayoutPass()
+    assertEquals(0L, stats().total)
+    assertTrue(siteViews().isEmpty())
+  }
+
+  @Test fun `protection off before Instagram attachment ends the boundary`() {
+    observeExplore()
+    ZenGuardPreferences(context).protectionEnabled = false
+    runLayoutPass()
+    assertEquals(0L, stats().total)
+    assertTrue(siteViews().isEmpty())
+  }
+
   @Test fun `Open Messages ends an Explore boundary so a later visit counts again`() {
     observeExplore()
     runLayoutPass()

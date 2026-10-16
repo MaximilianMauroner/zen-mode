@@ -255,7 +255,7 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofMillis(20))
     assertEquals(InstagramBlockReason.HOME_LIMIT, policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
     assertEquals(resting.blockedUntilElapsedMs, policy.homeRuntimeState(SystemClock.elapsedRealtime()).blockedUntilElapsedMs)
-    assertTrue(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+    assertTrue(controller.get().privateField<InstagramIntervention>("instagramIntervention").isShowing)
   }
 
   @Test fun `idle budget release applies suppressed Chrome and Firefox site rules`() {
@@ -452,7 +452,7 @@ class AppRuleTimerServiceTest {
 
     assertNull(overlay().requestedPackage())
     assertEquals(InstagramBlockReason.EXPLORE, instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
-    assertTrue(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+    assertTrue(controller.get().privateField<InstagramIntervention>("instagramIntervention").isShowing)
   }
 
   @Test fun `app downtime and the next question keep priority over a blocked site`() {
@@ -507,7 +507,7 @@ class AppRuleTimerServiceTest {
     assertTrue(hasPendingAppRuleRefresh())
     assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(INSTAGRAM, SystemClock.elapsedRealtime()))
     assertNull(instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
-    assertFalse(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+    assertFalse(controller.get().privateField<InstagramIntervention>("instagramIntervention").isShowing)
     assertEquals(usageAfterBudgetExpiry, rolling.usedMs(INSTAGRAM, wallNow()))
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
 
@@ -517,7 +517,7 @@ class AppRuleTimerServiceTest {
     assertNull(overlay().requestedPackage())
     assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(INSTAGRAM, SystemClock.elapsedRealtime()))
     assertEquals(InstagramBlockReason.EXPLORE, instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
-    assertTrue(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+    assertTrue(controller.get().privateField<InstagramIntervention>("instagramIntervention").isShowing)
   }
 
   @Test fun `handoff leaves observation and unknown Instagram surfaces unblocked`() {
@@ -534,7 +534,7 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofSeconds(6))
     assertNull(overlay().requestedPackage())
     assertNull(instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
-    assertFalse(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+    assertFalse(controller.get().privateField<InstagramIntervention>("instagramIntervention").isShowing)
   }
 
   @Test fun `a background blocked browser is not the root used for a polled switch handoff`() {
@@ -972,7 +972,7 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofSeconds(6))
     assertNull(overlay().requestedPackage())
     assertEquals(reason, instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
-    assertTrue(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+    assertTrue(controller.get().privateField<InstagramIntervention>("instagramIntervention").isShowing)
   }
 
   private fun assertScreenOffInstagramBudgetHandoff(id: String, reason: InstagramBlockReason) {
@@ -990,7 +990,7 @@ class AppRuleTimerServiceTest {
     assertTrue(overlay().isShowing())
     assertTrue(hasPendingAppRuleRefresh())
     assertNull(instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
-    assertFalse(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+    assertFalse(controller.get().privateField<InstagramIntervention>("instagramIntervention").isShowing)
     assertEquals(usageAfterBudgetExpiry, rolling.usedMs(INSTAGRAM, wallNow()))
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
 
@@ -1000,7 +1000,7 @@ class AppRuleTimerServiceTest {
     assertNull(overlay().requestedPackage())
     assertFalse(hasPendingAppRuleRefresh())
     assertEquals(reason, instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
-    assertTrue(controller.get().privateField<InstagramBlockerOverlay>("instagramOverlay").isShowing)
+    assertTrue(controller.get().privateField<InstagramIntervention>("instagramIntervention").isShowing)
   }
 
   private fun turnScreenOff() {

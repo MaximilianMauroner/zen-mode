@@ -153,11 +153,93 @@ internal class ZenProgressRingView(context: Context) : View(context) {
   private fun dp(value: Float): Float = value * resources.displayMetrics.density
 }
 
-internal class InstagramBlockerOverlay(
+/**
+ * Owns one Instagram pause from the policy decision to its end. A new intervention is one daily
+ * stop. Statistics count only when this intervention's own view attaches while enforcement is
+ * still allowed. Leave, Messages, and a granted Continue end it, so the next pause is fresh.
+ */
+internal class InstagramIntervention(
+  service: AccessibilityService,
+  readStats: () -> InstagramBlockerStats,
+  private val canEnforce: () -> Boolean,
+  private val recordStop: () -> Unit,
+  private val recordAttachment: (EnforcementReason) -> Unit,
+  private val leave: (InstagramBlockReason) -> Unit,
+  private val openMessages: () -> Unit,
+  private val continueReels: () -> Boolean,
+) {
+  /** The policy re-emits a blocker on every event, so the session is the decision's identity. */
+  private class Session(val action: InstagramGuardAction.ShowBlocker)
+
+  private val renderer = InstagramBlockerOverlay(
+    service = service,
+    onLeave = ::leaveSurface,
+    onOpenMessages = ::leaveForMessages,
+    onContinue = ::continueReelsWindow,
+    readStats = readStats,
+  )
+  private var active: Session? = null
+
+  val isShowing: Boolean get() = renderer.isShowing
+
+  fun observe(action: InstagramGuardAction.ShowBlocker, reelsMinutes: Int, debugInfo: InstagramBlockerDebugInfo?) {
+    val session = active ?: Session(action).also {
+      active = it
+      recordStop()
+    }
+    // One view per intervention. A failed addView leaves no view, so the next event retries.
+    if (renderer.hasView) return
+    renderer.show(session.action, reelsMinutes, debugInfo, onAttached = { attached(session) })
+  }
+
+  fun end() {
+    if (active == null) return
+    active = null
+    renderer.hide()
+  }
+
+  private fun attached(session: Session) {
+    if (active !== session) return
+    if (!canEnforce()) {
+      end()
+      return
+    }
+    recordAttachment(
+      when (session.action.reason) {
+        InstagramBlockReason.REELS_ENTRY,
+        InstagramBlockReason.REELS_SWIPE,
+        InstagramBlockReason.REELS_WINDOW_EXPIRED,
+        -> EnforcementReason.INSTAGRAM_REELS
+        InstagramBlockReason.HOME_LIMIT -> EnforcementReason.INSTAGRAM_HOME
+        InstagramBlockReason.EXPLORE -> EnforcementReason.INSTAGRAM_EXPLORE
+      },
+    )
+  }
+
+  private fun leaveSurface() {
+    val session = active ?: return
+    if (!canEnforce()) return
+    end()
+    leave(session.action.reason)
+  }
+
+  private fun leaveForMessages() {
+    if (active == null || !canEnforce()) return
+    end()
+    openMessages()
+  }
+
+  private fun continueReelsWindow() {
+    if (active == null || !canEnforce()) return
+    if (continueReels()) end()
+  }
+}
+
+private class InstagramBlockerOverlay(
   private val service: AccessibilityService,
   private val onLeave: () -> Unit,
   private val onOpenMessages: () -> Unit,
-  private val onContinue: () -> Boolean,
+  private val onContinue: () -> Unit,
   private val readStats: () -> InstagramBlockerStats,
 ) {
   private val handler = Handler(Looper.getMainLooper())
@@ -199,6 +281,9 @@ internal class InstagramBlockerOverlay(
 
   val isShowing: Boolean get() = root?.isAttachedToWindow == true
 
+  /** True from the addView request until hide, including the wait for the first attach. */
+  val hasView: Boolean get() = root != null
+
   private val tick = object : Runnable {
     override fun run() {
       updateCountdown()
@@ -219,10 +304,6 @@ internal class InstagramBlockerOverlay(
     debugInfo: InstagramBlockerDebugInfo?,
     onAttached: () -> Unit,
   ) {
-    root?.let {
-      if (it.isAttachedToWindow) return
-      hide()
-    }
     continueAt = action.continueAvailableAt
     this.reelsMinutes = reelsMinutes
     blockReason = action.reason
@@ -442,9 +523,7 @@ internal class InstagramBlockerOverlay(
     if (hasPause) {
       continueButton = actionButton("", primary = false).apply {
         tag = reelsMinutes
-        setOnClickListener {
-          if (onContinue()) hide()
-        }
+        setOnClickListener { onContinue() }
       }
       actions.addView(continueButton, matchWrap(topMargin = dp(10)))
     }
@@ -470,7 +549,7 @@ internal class InstagramBlockerOverlay(
       PixelFormat.TRANSLUCENT,
     )
     root = container
-    container.doOnFirstAttach { if (root === container) onAttached() }
+    container.doOnFirstAttach(onAttached)
     val nextStatsUpdateMs = updateStats()
     try {
       windowManager.addView(container, params)

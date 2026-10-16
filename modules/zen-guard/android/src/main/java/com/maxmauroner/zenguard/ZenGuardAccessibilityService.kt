@@ -82,6 +82,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       val nowMs = SystemClock.elapsedRealtime()
       xStateMachine.pause(nowMs, xSettings())
       if (xHomeUsageState != HomeFeedUsageState.UNKNOWN) xHomeUsageState = HomeFeedUsageState.PAUSED
+      instagramDeadlineHandler.removeCallbacks(instagramReelsDeadlineCheck)
       instagramStateMachine.onAppBackground(nowMs, preferences.instagramSettings())
       publishXHomeStatus()
       publishInstagramHomeStatus()
@@ -304,7 +305,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       if (packageName == this.packageName) return
       // A keyboard or system window is not a switch away from the app under our overlay.
       packageName = foregroundAppPackage() ?: return
-      if (packageName != blockedPackage) closeAppRuleOverlay()
     }
     if (statsDedupeKeys[EnforcementReason.APP_LIMIT] != packageName) resetStatsDedupe(EnforcementReason.APP_LIMIT)
     if (statsDedupeKeys[EnforcementReason.ROLLING_LIMIT] != packageName) resetStatsDedupe(EnforcementReason.ROLLING_LIMIT)
@@ -317,6 +317,10 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     if (enforceAppLimits(packageName)) return
     if (packageName != this.packageName) {
       handleIntentForeground(packageName)
+      if (blockedPackage != null && appRuleOverlay.requestedPackage() == null) {
+        usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())?.let(::bankUsage)
+      }
+      scheduleAppRuleRefresh()
     }
   }
 
@@ -389,6 +393,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
 
   private fun pauseAppRuleUsage() {
     usageTracker.onForeground(null, SystemClock.elapsedRealtime())?.let(::bankUsage)
+    clearInstagramEnforcement(preserveHomeSession = true)
   }
 
   private fun prepareAppRuleOverlay(packageName: String, mode: AppRuleOverlayMode) {
@@ -402,6 +407,23 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     resetStatsDedupe(EnforcementReason.APP_LIMIT)
     resetStatsDedupe(EnforcementReason.ROLLING_LIMIT)
     resetStatsDedupe(EnforcementReason.TIMED_VISIT)
+  }
+
+  /** Apply content rules to the verified app beneath the card before exposing it again. */
+  private fun releaseAppRuleOverlay(packageName: String): Boolean {
+    if (!canRunEnforcementAction()) return false
+    // Keep the retry while off and reject queued Start callbacks even after card dismissal.
+    if (!isScreenInteractive) return false
+    if (appRuleOverlay.requestedPackage() == null) return true
+    val root = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }?.root
+      ?.takeIf { it.packageName?.toString() == packageName } ?: return false
+    when {
+      BrowserUrlDetector.supports(packageName) -> handleBrowserEvent(packageName, root)
+      packageName == INSTAGRAM_PACKAGE -> handleInstagramEvent(null, root)
+      packageName == YOUTUBE_PACKAGE -> handleYouTubeEvent(null, root)
+    }
+    closeAppRuleOverlay()
+    return true
   }
 
   private fun scheduleAppRuleRefresh() {
@@ -419,9 +441,12 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       return
     }
     if (foreground != blockedPackage) {
-      closeAppRuleOverlay()
       currentForegroundPackage = foreground
-      usageTracker.onForeground(foreground, SystemClock.elapsedRealtime())
+      if (!enforceAppLimits(foreground)) handleIntentForeground(foreground)
+      if (appRuleOverlay.requestedPackage() == null) {
+        usageTracker.onForeground(foreground, SystemClock.elapsedRealtime())?.let(::bankUsage)
+      }
+      scheduleAppRuleRefresh()
       return
     }
     if (enforceAppLimits(blockedPackage)) return
@@ -445,13 +470,13 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     }
     val rule = intentStore.intents()[packageName]
     if (rule == null) {
-      closeAppRuleOverlay()
+      releaseAppRuleOverlay(packageName)
       return
     }
 
     val nowElapsedMs = SystemClock.elapsedRealtime()
     if (intentSessions.isActive(packageName, nowElapsedMs)) {
-      closeAppRuleOverlay()
+      releaseAppRuleOverlay(packageName)
       scheduleIntentDeadline(packageName)
       return
     }
@@ -494,8 +519,8 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     if (!canRunEnforcementAction()) return
     if (foregroundAppPackage() != packageName || enforceAppLimits(packageName)) return
     if (intentStore.cooldownRemainingMs(packageName, appRuleWallClock()) > 0L) return
+    if (!releaseAppRuleOverlay(packageName)) return
     intentSessions.grant(packageName, minutes, SystemClock.elapsedRealtime())
-    closeAppRuleOverlay()
     usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())
     scheduleIntentDeadline(packageName)
   }
@@ -539,8 +564,9 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     packageName
   }
 
-  private fun handleYouTubeEvent(event: AccessibilityEvent) {
-    val root = rootInActiveWindow ?: return
+  /** A card handoff has a verified root but no scroll event or inferred pager transition. */
+  private fun handleYouTubeEvent(event: AccessibilityEvent?, observedRoot: AccessibilityNodeInfo? = rootInActiveWindow) {
+    val root = observedRoot ?: return
     if (root.packageName?.toString() != YOUTUBE_PACKAGE) return
     val nowMs = System.currentTimeMillis()
     preferences.recordEvent(nowMs)
@@ -571,11 +597,11 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     val page = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/reel_player_page_container")
       .firstOrNull { it.isVisibleToUser }
     val pagerTransitionIndex = youtubeShortsPager.stablePageIndex(
-      isViewScrolled = event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED,
-      sourceViewId = event.source?.viewIdResourceName,
-      fromIndex = event.fromIndex,
-      toIndex = event.toIndex,
-      scrollY = event.scrollY,
+      isViewScrolled = event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED,
+      sourceViewId = event?.source?.viewIdResourceName,
+      fromIndex = event?.fromIndex ?: -1,
+      toIndex = event?.toIndex ?: -1,
+      scrollY = event?.scrollY ?: -1,
     )
     val pageIndex = page?.collectionItemInfo?.rowIndex ?: pagerTransitionIndex
     if (stateMachine.next(
@@ -778,9 +804,9 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     }
   }
 
-  /** [event] is null when [checkInstagramReelsDeadline] re-reads the live tree without a new event. */
-  private fun handleInstagramEvent(event: AccessibilityEvent?) {
-    val root = rootInActiveWindow ?: return
+  /** Null [event] re-reads a deadline or card handoff without inventing a click or scroll. */
+  private fun handleInstagramEvent(event: AccessibilityEvent?, observedRoot: AccessibilityNodeInfo? = rootInActiveWindow) {
+    val root = observedRoot ?: return
     // While our accessibility overlay is attached, Android can still deliver queued Instagram
     // events even though rootInActiveWindow points at the overlay (or another transient window).
     // Never classify that tree as Instagram UNKNOWN and erase the DM provenance underneath it.
@@ -899,7 +925,10 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
           } else {
             null
           },
-          onAttached = { recordInstagramBlockStats(action.reason, EnforcementStatsOutcome.SUCCESS) },
+          onAttached = {
+            instagramDeadlineHandler.removeCallbacks(instagramReelsDeadlineCheck)
+            recordInstagramBlockStats(action.reason, EnforcementStatsOutcome.SUCCESS)
+          },
         )
       }
       InstagramGuardAction.None -> {
@@ -987,17 +1016,26 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
 
   /**
    * Acts only while the policy still holds the ended window. Leaving Reels, the app, or the
-   * screen clears that window, so a stale callback cannot block another surface. The normal
-   * handler then requires a live Instagram root and a visible Reels pager.
+   * screen clears that window, so a stale callback cannot block another surface. Retry transient
+   * trees until a blocker attaches or the policy clears the window. The normal handler still
+   * requires a live Instagram root and a visible Reels pager.
    */
   private fun checkInstagramReelsDeadline() {
     val remainingMs = instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) ?: return
+    if (!canRunEnforcementAction() || preferences.instagramObservationMode || !isScreenInteractive ||
+      instagramOverlay.isShowing
+    ) return
     // Handler delays use uptime and the policy uses elapsed time; separate rounding can run this 1 ms early.
     if (remainingMs > 0L) {
       instagramDeadlineHandler.postDelayed(instagramReelsDeadlineCheck, remainingMs)
       return
     }
-    if (canRunEnforcementAction()) handleInstagramEvent(null)
+    handleInstagramEvent(null)
+    if (!instagramOverlay.isShowing &&
+      instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) == 0L
+    ) {
+      instagramDeadlineHandler.postDelayed(instagramReelsDeadlineCheck, INSTAGRAM_REELS_DEADLINE_RETRY_MS)
+    }
   }
 
   private fun clearInstagramEnforcement(preserveHomeSession: Boolean = false) {
@@ -1207,14 +1245,15 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   }
 
   /** Reads text and descriptions only from exact address-bar nodes; page text is never copied. */
-  private fun handleBrowserEvent(browserPackage: String) {
+  private fun handleBrowserEvent(browserPackage: String, observedRoot: AccessibilityNodeInfo? = null) {
     if (!::adultSiteStore.isInitialized || !::adultSiteOverlay.isInitialized) return
     if (!canRunEnforcementAction()) return
     if (!adultSiteStore.enabled) {
       clearAdultSiteEnforcement()
       return
     }
-    val root = browserRoot(browserPackage) ?: return
+    val root = observedRoot ?: browserRoot(browserPackage) ?: return
+    if (root.packageName?.toString() != browserPackage) return
     val detection = BrowserUrlDetector.detect(browserPackage, browserAddressBars(root, browserPackage)) ?: return
     adultSiteStore.recordBrowserSignal(detection.browserMask)
     if (AdultSitePolicy.isBlocked(detection.host, adultSiteStore.customHosts())) {
@@ -1454,6 +1493,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     private const val MAIN_LAUNCH_ATTEMPT = 3
     private const val MAX_NAVIGATION_ATTEMPTS = 12
     private const val USAGE_TICK_MS = 15_000L
+    private const val INSTAGRAM_REELS_DEADLINE_RETRY_MS = 1_000L
     private const val BROWSER_RECHECK_MS = 350L
     private const val MAX_BROWSER_NODES = 180
     private const val MAX_BROWSER_DEPTH = 18

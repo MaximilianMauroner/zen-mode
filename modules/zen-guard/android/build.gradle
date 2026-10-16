@@ -17,6 +17,12 @@ android {
   }
   testOptions {
     unitTests.includeAndroidResources = true
+    unitTests.all {
+      testLogging {
+        showStandardStreams = true
+        exceptionFormat = 'full'
+      }
+    }
   }
 }
 

@@ -12,14 +12,15 @@ import { IDLE_ACTION, type ReadState } from '@/features/protection/control-state
 
 type AppPickerProps = {
   visible: boolean;
+  disabled: boolean;
   apps: ReadState<readonly InstalledApp[]>;
   onRetry: () => void;
   configuredPackages: ReadonlySet<string>;
   onClose: () => void;
-  onSelect: (app: InstalledApp) => void;
+  onSelect: (app: InstalledApp) => boolean;
 };
 
-export function AppPicker({ visible, apps, onRetry, configuredPackages, onClose, onSelect }: AppPickerProps) {
+export function AppPicker({ visible, disabled, apps, onRetry, configuredPackages, onClose, onSelect }: AppPickerProps) {
   const [query, setQuery] = useState('');
   const reduceMotion = useReducedMotion();
   const filtered = useMemo(() => apps.kind === 'ready' ? apps.value.filter((app) => !configuredPackages.has(app.packageName) && app.label.toLowerCase().includes(query.trim().toLowerCase())) : [], [apps, configuredPackages, query]);
@@ -44,7 +45,7 @@ export function AppPicker({ visible, apps, onRetry, configuredPackages, onClose,
                 windowSize={5}
                 getItemLayout={(_, index) => ({ length: 64, offset: 64 * index, index })}
                 renderItem={({ item }) => (
-                  <Pressable accessibilityRole="button" accessibilityLabel={`Add ${item.label}`} onPress={() => { setQuery(''); onSelect(item); }} style={{ height: 64 }} className="flex-row items-center justify-between border-b border-line active:opacity-60">
+                  <Pressable accessibilityRole="button" accessibilityLabel={`Add ${item.label}`} accessibilityState={{ disabled }} disabled={disabled} onPress={() => { if (onSelect(item)) { setQuery(''); onClose(); } }} style={{ height: 64 }} className="flex-row items-center justify-between border-b border-line active:opacity-60">
                     <Text numberOfLines={1} className="flex-1 pr-3 text-item font-medium text-copy">{item.label}</Text><Plus color={colors.accent} size={20} />
                   </Pressable>
                 )}

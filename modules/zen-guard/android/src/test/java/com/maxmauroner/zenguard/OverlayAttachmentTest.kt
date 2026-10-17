@@ -209,6 +209,28 @@ class OverlayAttachmentTest {
     assertEquals(2L, count(EnforcementReason.BLOCKED_SITE))
   }
 
+  @Test fun `protection off during a queued Back recheck ends the boundary`() {
+    visitSite(BLOCKED_HOST)
+    runLayoutPass()
+    pressSiteButton(R.string.zen_guard_site_go_back)
+    ZenGuardPreferences(context).protectionEnabled = false
+    runRecheck()
+    assertTrue(siteViews().isEmpty())
+    assertEquals(1L, stats().total)
+    assertEquals(listOf(AccessibilityService.GLOBAL_ACTION_BACK), shadowOf(service).globalActionsPerformed)
+  }
+
+  @Test fun `site protection off during a queued Back recheck ends the boundary`() {
+    visitSite(BLOCKED_HOST)
+    runLayoutPass()
+    pressSiteButton(R.string.zen_guard_site_go_back)
+    AdultSiteRuleStore(context).enabled = false
+    runRecheck()
+    assertTrue(siteViews().isEmpty())
+    assertEquals(1L, stats().total)
+    assertEquals(listOf(AccessibilityService.GLOBAL_ACTION_BACK), shadowOf(service).globalActionsPerformed)
+  }
+
   @Test fun `a queued Back recheck reads live Settings safety without a Settings event`() {
     visitSite(BLOCKED_HOST)
     runLayoutPass()

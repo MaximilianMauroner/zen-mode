@@ -178,7 +178,7 @@ export default function AppLimitsScreen() {
 
   // Opening an app pre-fills its current rule, or plain defaults for a new one.
   const selectApp = (app: InstalledApp) => {
-    if (controlsDisabled) return;
+    if (controlsDisabled) return false;
     const entry = guardedByPackage.get(app.packageName);
     if (entry?.limit) {
       setMode('daily');
@@ -201,6 +201,7 @@ export default function AppLimitsScreen() {
     }
     setAction(IDLE_ACTION);
     setSelected(app);
+    return true;
   };
 
   // One rule per app keeps enforcement predictable, so saving replaces the rest.
@@ -366,7 +367,7 @@ export default function AppLimitsScreen() {
         </>
       )}
 
-      <AppPicker visible={pickerOpen} apps={apps} onRetry={() => void refresh()} configuredPackages={new Set(guardedByPackage.keys())} onClose={() => setPickerOpen(false)} onSelect={(app) => { setPickerOpen(false); selectApp(app); }} />
+      <AppPicker visible={pickerOpen} disabled={controlsDisabled} apps={apps} onRetry={() => void refresh()} configuredPackages={new Set(guardedByPackage.keys())} onClose={() => setPickerOpen(false)} onSelect={selectApp} />
       <GuardNotes reads={[read]} action={action} />
       {action.kind === 'refused' ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
       {read.kind === 'failed' ? <SecondaryButton title="Try again" disabled={busy} onPress={() => void refresh()} /> : null}

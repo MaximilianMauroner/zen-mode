@@ -25,10 +25,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
 
   private lateinit var preferences: ZenGuardPreferences
   private val stats = InterventionStats(null)
-  private val stateMachine = EnforcementStateMachine()
-  private val youtubeShortsPager = YouTubeShortsPager()
-  private val youtubeShortsExitResult = YouTubeShortsExitResult()
-  private lateinit var youtubeShortsResultOverlay: YouTubeShortsResultOverlay
+  private val youtube = YouTubeOwner(this, stats)
   private val xStateMachine = XGuardStateMachine()
   private var xHomeUsageState = HomeFeedUsageState.PAUSED
   private var xStorageAvailable = true
@@ -128,7 +125,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       recordAttachment = { stats.record(EnforcementReason.BLOCKED_SITE, EnforcementStatsOutcome.SUCCESS) },
       recheck = { handleBrowserEvent(it) },
     )
-    youtubeShortsResultOverlay = YouTubeShortsResultOverlay(this)
+    youtube.onServiceConnected(preferences)
     homeFeedStatusStore = HomeFeedStatusStore(this)
     val nowElapsedMs = SystemClock.elapsedRealtime()
     val storedInstagram = homeFeedStatusStore.instagram(nowElapsedMs)
@@ -240,7 +237,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     if (eventPackage == packageName) {
       if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
         if (windows.none { it.root?.packageName?.toString() == YOUTUBE_PACKAGE }) {
-          resetYouTubeEnforcement()
+          youtube.reset()
         }
         if (windows.none { it.root?.packageName?.toString() == X_PACKAGE }) {
           clearXEnforcement(preserveHomeLockout = true)
@@ -269,7 +266,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       YOUTUBE_PACKAGE -> {
         instagramNavigationSuppressedUntilMs = 0L
         clearInstagramEnforcement(preserveHomeSession = true)
-        handleYouTubeEvent(event)
+        youtube.observe(event)
       }
       INSTAGRAM_PACKAGE -> handleInstagramEvent(event)
       X_PACKAGE -> {
@@ -301,7 +298,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     if (appRuleOverlay.requestedPackage() == null) {
       usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())?.let(::bankUsage)
     }
-    if (packageName != YOUTUBE_PACKAGE && packageName != this.packageName) resetYouTubeEnforcement()
+    if (packageName != YOUTUBE_PACKAGE && packageName != this.packageName) youtube.reset()
     currentForegroundPackage = packageName
     if (enforceAppLimits(packageName)) return
     if (packageName != this.packageName) {
@@ -409,7 +406,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     when {
       BrowserUrlDetector.supports(packageName) -> handleBrowserEvent(packageName, root)
       packageName == INSTAGRAM_PACKAGE -> handleInstagramEvent(null, root)
-      packageName == YOUTUBE_PACKAGE -> handleYouTubeEvent(null, root)
+      packageName == YOUTUBE_PACKAGE -> youtube.observe(null, root)
     }
     closeAppRuleOverlay()
     return true
@@ -553,62 +550,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     packageName
   }
 
-  /** A card handoff has a verified root but no scroll event or inferred pager transition. */
-  private fun handleYouTubeEvent(event: AccessibilityEvent?, observedRoot: AccessibilityNodeInfo? = rootInActiveWindow) {
-    val root = observedRoot ?: return
-    if (root.packageName?.toString() != YOUTUBE_PACKAGE) return
-    val nowMs = System.currentTimeMillis()
-    preferences.recordEvent(nowMs)
-    val nodes = snapshot(root)
-    val result = ShortsDetector.detect(nodes)
-    if (!result.isShortsViewer) {
-      val surface = YouTubeSurfaceDetector.detect(nodes)
-      val homeTab = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/pivot_bar")
-        .firstOrNull()?.getChild(0)?.getChild(0)
-      val homeSelected = homeTab?.isSelected == true || homeTab?.getChild(0)?.isSelected == true
-      youtubeShortsExitResult.confirmed(surface, homeSelected, SystemClock.elapsedRealtime())?.let { exit ->
-        recordYouTubeShortsStats(exit.pageIndex, EnforcementStatsOutcome.SUCCESS)
-        youtubeShortsResultOverlay.show()
-      }
-      stateMachine.reset()
-      youtubeShortsPager.reset()
-      stats.reset(EnforcementReason.YOUTUBE_SHORTS)
-      return
-    }
-    preferences.recordDetection(nowMs, result.reason)
-    if (preferences.observationMode || !preferences.shortsEnabled) {
-      resetYouTubeEnforcement()
-      stats.reset(EnforcementReason.YOUTUBE_SHORTS)
-      return
-    }
-    // The pager's collection row stays constant during playback and changes with the video.
-    // Titles, like counts, comments, and playback progress must never consume the allowance.
-    val page = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/reel_player_page_container")
-      .firstOrNull { it.isVisibleToUser }
-    val pagerTransitionIndex = youtubeShortsPager.stablePageIndex(
-      isViewScrolled = event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED,
-      sourceViewId = event?.source?.viewIdResourceName,
-      fromIndex = event?.fromIndex ?: -1,
-      toIndex = event?.toIndex ?: -1,
-      scrollY = event?.scrollY ?: -1,
-    )
-    val pageIndex = page?.collectionItemInfo?.rowIndex ?: pagerTransitionIndex
-    if (stateMachine.next(
-        isShorts = true,
-        pageIndex = pageIndex,
-        nowMs = SystemClock.elapsedRealtime(),
-        pagerTransitionIndex = pagerTransitionIndex,
-      ) == EnforcementAction.LEAVE_SHORTS
-    ) {
-      // Back/Home can put Premium Shorts into PiP. Use YouTube's own Home tab instead.
-      val tabs = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/pivot_bar").firstOrNull()
-      val homeTab = tabs?.getChild(0)?.getChild(0)
-      if (homeTab?.isClickable == true && homeTab.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-        youtubeShortsExitResult.requested(stateMachine.pendingExitPageIndex(), SystemClock.elapsedRealtime())
-      }
-    }
-  }
-
   private fun clearXEnforcement(preserveHomeLockout: Boolean = false) {
     if (preserveHomeLockout && xStorageAvailable) {
       xStateMachine.pause(SystemClock.elapsedRealtime(), xSettings())
@@ -659,7 +600,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       publishXHomeStatus()
       return
     }
-    val surface = XDetector.detect(snapshot(root))
+    val surface = XDetector.detect(snapshotNodeSignals(root))
     val pager = if (surface == XSurface.VIDEO) findXNode(root) { isXVideoPager(it) } else null
     if (surface == XSurface.HOME) preferences.recordXSignal(ZenGuardPreferences.X_HOME_SIGNAL)
     if (pager != null) preferences.recordXSignal(ZenGuardPreferences.X_VIDEO_SIGNAL)
@@ -786,7 +727,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     // events even though rootInActiveWindow points at the overlay (or another transient window).
     // Never classify that tree as Instagram UNKNOWN and erase the DM provenance underneath it.
     if (root.packageName?.toString() != INSTAGRAM_PACKAGE) return
-    val nodes = snapshot(root)
+    val nodes = snapshotNodeSignals(root)
     val detection = InstagramDetector.detect(nodes)
     if (detection.surface == InstagramSurface.UNKNOWN) {
       instagramDebugTrace?.record(
@@ -916,7 +857,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     closeAppRuleOverlay()
     browserIntervention?.end()
     clearXEnforcement(preserveHomeLockout = true)
-    resetYouTubeEnforcement()
+    youtube.reset()
     stats.clear()
     clearInstagramEnforcement(preserveHomeSession = true)
   }
@@ -934,7 +875,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   override fun onDestroy() {
     visitDeadline.cancel()
     browserIntervention?.end()
-    resetYouTubeEnforcement()
+    youtube.reset()
     xHandler.removeCallbacksAndMessages(null)
     if (::preferences.isInitialized && hasActiveProtection()) {
       // Keep the last durable X boundary so a reconnect can reconcile the time
@@ -1041,11 +982,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private fun hasActiveProtection(): Boolean =
     ::preferences.isInitialized && preferences.hasCurrentConsent && preferences.protectionEnabled
 
-  internal fun recordYouTubeShortsStats(pageIndex: Int?, outcome: EnforcementStatsOutcome): Boolean {
-    if (pageIndex == null) return false
-    return stats.record(EnforcementReason.YOUTUBE_SHORTS, outcome, "page:$pageIndex")
-  }
-
   internal fun recordXHomeStats(
     wasShowing: Boolean,
     overlayAttached: Boolean,
@@ -1072,7 +1008,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   /** Clear every in-memory action path without inspecting another app's screen. */
   private fun clearInactiveProtection() {
     browserIntervention?.end()
-    resetYouTubeEnforcement()
+    youtube.reset()
     stats.clear()
     clearXEnforcement()
     usageTracker.reset()
@@ -1091,7 +1027,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
    */
   private fun enterSystemSettings() {
     browserIntervention?.end()
-    resetYouTubeEnforcement()
+    youtube.reset()
     stats.clear()
     clearXEnforcement(preserveHomeLockout = true)
     usageTracker.reset()
@@ -1100,13 +1036,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     navigationHandler.removeCallbacksAndMessages(null)
     instagramNavigationSuppressedUntilMs = 0L
     clearInstagramEnforcement(preserveHomeSession = true)
-  }
-
-  private fun resetYouTubeEnforcement() {
-    stateMachine.reset()
-    youtubeShortsPager.reset()
-    youtubeShortsExitResult.clear()
-    if (::youtubeShortsResultOverlay.isInitialized) youtubeShortsResultOverlay.hide()
   }
 
   /** Re-check the live windows at execution time so queued callbacks cannot eject Settings. */
@@ -1211,7 +1140,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     val root = rootInActiveWindow
     val rootIsInstagram = root?.packageName?.toString() == INSTAGRAM_PACKAGE
     if (rootIsInstagram) {
-      val nodes = snapshot(root)
+      val nodes = snapshotNodeSignals(root)
       val detection = InstagramDetector.detect(nodes)
       if (detection.surface == InstagramSurface.DIRECT_MESSAGES && isMessagesInbox(nodes)) {
         instagramNavigationSuppressedUntilMs = 0L
@@ -1299,34 +1228,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       current = node.parent
     }
     return signals
-  }
-
-  private fun snapshot(root: AccessibilityNodeInfo): List<NodeSignal> {
-    data class PendingNode(val node: AccessibilityNodeInfo, val depth: Int)
-
-    val result = ArrayList<NodeSignal>(128)
-    val queue = ArrayDeque<PendingNode>()
-    queue.add(PendingNode(root, 0))
-
-    while (queue.isNotEmpty() && result.size < MAX_NODES) {
-      val (node, depth) = queue.removeFirst()
-      if (!node.isVisibleToUser) continue
-      result.add(
-        NodeSignal(
-          viewId = node.viewIdResourceName.orEmpty(),
-          text = node.text?.toString().orEmpty(),
-          description = node.contentDescription?.toString().orEmpty(),
-          selected = node.isSelected,
-        ),
-      )
-
-      if (depth >= MAX_DEPTH) continue
-      for (index in 0 until node.childCount) {
-        node.getChild(index)?.let { queue.add(PendingNode(it, depth + 1)) }
-      }
-    }
-
-    return result
   }
 
   companion object {

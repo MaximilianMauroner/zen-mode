@@ -62,10 +62,12 @@ class XOwnerStatsTest {
     assertFalse(recordHomeStats(true, true, EnforcementStatsOutcome.SUCCESS))
     assertTrue(recordVideoStats("video-callback-1", EnforcementStatsOutcome.SUCCESS))
     assertFalse(recordVideoStats("video-callback-1", EnforcementStatsOutcome.SUCCESS))
-    val service = controller.get()
-    assertTrue(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordAppLimitStats("app.two", EnforcementStatsOutcome.SUCCESS))
+    val stats = ZenGuardAccessibilityService::class.java.getDeclaredField("stats").apply {
+      isAccessible = true
+    }.get(controller.get()) as InterventionStats
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertFalse(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.two"))
 
     val snapshot = store.snapshot()
     assertEquals(4L, snapshot.total)

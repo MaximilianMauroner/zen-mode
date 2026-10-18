@@ -60,8 +60,9 @@ class OverlayAttachmentTest {
     ZenGuardAccessibilityService::class.java.getDeclaredMethod("onServiceConnected").apply {
       isAccessible = true
     }.invoke(service)
-    ReflectionHelpers.setField(service, "appRuleSafety",
-      AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings")))
+    val safety = AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings"))
+    ReflectionHelpers.setField(service, "appRuleSafety", safety)
+    ReflectionHelpers.setField(ReflectionHelpers.getField<WholeAppOwner>(service, "wholeApp"), "appRuleSafety", safety)
   }
 
   @After fun tearDown() {

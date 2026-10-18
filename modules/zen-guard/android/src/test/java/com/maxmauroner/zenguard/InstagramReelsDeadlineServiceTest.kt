@@ -328,8 +328,8 @@ class InstagramReelsDeadlineServiceTest {
   }
 
   private fun grantOneMinuteWindow(): InstagramGuardStateMachine {
-    val service = controller.get()
-    val policy = service.privateField<InstagramGuardStateMachine>("instagramStateMachine")
+    val instagram = controller.get().privateField<InstagramOwner>("instagram")
+    val policy = instagram.privateField<InstagramGuardStateMachine>("policy")
     val settings = ZenGuardPreferences(context).instagramSettings()
     showRoot("com.instagram.android", "com.instagram.android:id/clips_viewer_view_pager")
     val start = SystemClock.elapsedRealtime()
@@ -348,7 +348,7 @@ class InstagramReelsDeadlineServiceTest {
     assertEquals(InstagramBlockReason.REELS_SWIPE, (swipe as InstagramGuardAction.ShowBlocker).reason)
     advance(Duration.ofSeconds(30))
 
-    val continueReels = service.privateField<InstagramIntervention>("instagramIntervention")
+    val continueReels = instagram.privateField<InstagramIntervention>("intervention")
       .privateField<() -> Boolean>("continueReels")
     assertTrue(continueReels())
     assertEquals(60_000L, policy.debugState(SystemClock.elapsedRealtime()).reelsWindowRemainingMs)
@@ -374,14 +374,16 @@ class InstagramReelsDeadlineServiceTest {
     })
   }
 
-  private fun overlay(): InstagramIntervention = controller.get().privateField("instagramIntervention")
+  private fun overlay(): InstagramIntervention = controller.get().privateField<InstagramOwner>("instagram").privateField("intervention")
 
   private fun hasPendingDeadline(): Boolean = reelsDeadline().isPending
 
-  private fun reelsDeadline(): DeadlineTask =
-    controller.get().javaClass.getDeclaredMethod("getReelsDeadline").apply {
+  private fun reelsDeadline(): DeadlineTask {
+    val instagram = controller.get().privateField<InstagramOwner>("instagram")
+    return instagram.javaClass.getDeclaredMethod("getReelsDeadline").apply {
       isAccessible = true
-    }.invoke(controller.get()) as DeadlineTask
+    }.invoke(instagram) as DeadlineTask
+  }
 
   private fun expiryCount(): Long =
     EnforcementStatsStore(context).snapshot().counts[EnforcementReason.INSTAGRAM_REELS.key] ?: 0L

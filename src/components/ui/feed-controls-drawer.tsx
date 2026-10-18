@@ -4,7 +4,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useReducedMotion } from 'react-native-reanimated';
 import { PrimaryButton, SecondaryButton } from './button';
 import { ChipGroup } from './choice';
-import { ErrorNote, SheetHeader } from './screen';
+import { GuardNotes } from './guard-notes';
+import { SheetHeader } from './screen';
+import { actionFailure, IDLE_ACTION, isReading, readValue, RUNNING_ACTION, type ActionState } from '@/features/protection/control-state';
 import { useSharedGuardStatus } from '@/features/protection/guard-status-context';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { getHomeFeedTimeLabel } from '@/features/protection/home-feed-time';
@@ -25,13 +27,14 @@ const HOME_MINUTES = [1, 5, 10, 15, 30];
 
 /** Keep the feed list in place while editing cached rules in a native drawer. */
 export function FeedControlsDrawer({ feed, onClose }: Props) {
-  const { status, loading, readError, refresh } = useSharedGuardStatus();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const { read, refresh } = useSharedGuardStatus();
+  const status = readValue(read);
+  const [action, setAction] = useState<ActionState>(IDLE_ACTION);
+  const busy = action.kind === 'running';
   const inFlight = useRef(false);
   const reduceMotion = useReducedMotion();
   const gate = useWeakeningGate();
-  const disabled = busy || loading || !status?.available || Boolean(readError);
+  const disabled = busy || isReading(read) || !status?.available;
   const isX = feed === 'x';
   const isInstagram = feed === 'instagram';
   const targetApp: SupportedAppKey = isInstagram ? 'instagram' : isX ? 'x' : 'youtube';
@@ -51,22 +54,21 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
     xGuidance.postSetupAwaiting.length > 0,
   );
 
-  const run = (action: (fresh: ZenGuardStatus) => Promise<void>) => {
+  const run = (task: (fresh: ZenGuardStatus) => Promise<void>) => {
     if (inFlight.current || disabled) return;
     inFlight.current = true;
-    setBusy(true);
-    setError('');
+    setAction(RUNNING_ACTION);
     void (async () => {
       try {
         const fresh = await getZenGuardStatus();
         if (!fresh.available) throw new Error('Feed controls need the Android app.');
-        await action(fresh);
+        await task(fresh);
         await refresh();
+        setAction(IDLE_ACTION);
       } catch (cause: unknown) {
-        setError(cause instanceof Error ? cause.message : 'Could not change the rule. Try again.');
+        setAction(actionFailure(cause, 'Could not change the rule. Try again.'));
       } finally {
         inFlight.current = false;
-        setBusy(false);
       }
     })();
   };
@@ -89,7 +91,7 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
   const homeTime = isInstagram ? getHomeFeedTimeLabel(status, 'instagram') : isX ? getHomeFeedTimeLabel(status, 'x') : null;
 
   return (
-    <Modal visible={feed !== null} transparent animationType={reduceMotion ? 'none' : 'slide'} onRequestClose={() => { if (gate.session) gate.finish(false); else close(); }} onShow={() => { setError(''); void refresh(); }} statusBarTranslucent>
+    <Modal visible={feed !== null} transparent animationType={reduceMotion ? 'none' : 'slide'} onRequestClose={() => { if (gate.session) gate.finish(false); else close(); }} onShow={() => { setAction(IDLE_ACTION); void refresh(); }} statusBarTranslucent>
       <View className="flex-1 justify-end bg-black/50">
         <Pressable accessibilityRole="button" accessibilityLabel="Close feed controls" onPress={close} disabled={busy} className="absolute inset-0" />
         <SafeAreaView edges={['bottom']} style={{ maxHeight: '88%' }} className="rounded-t-3xl border-t border-line2 bg-panel pt-3">
@@ -145,10 +147,7 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
             {targetPresentation.showOpener ? (
               <SecondaryButton className="mt-5" title={isInstagram ? 'Open Instagram to check' : isX ? 'Open X to check' : 'Open YouTube to check'} disabled={disabled} onPress={() => run(async () => { if (isInstagram) await openInstagram(); else if (isX) await openX(); else await openYouTube(); })} />
             ) : null}
-            {error || readError ? <View className="mt-5 gap-2">
-              <ErrorNote message={readError} />
-              <ErrorNote message={error} />
-            </View> : null}
+            <GuardNotes reads={[read]} action={action} className="mt-5" />
           </ScrollView>
         </SafeAreaView>
         <WeakeningGateDialog gate={gate} embedded />

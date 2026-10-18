@@ -222,7 +222,7 @@ class InstagramConnectionServiceTest {
   }
 
   private fun grantOneMinuteWindow(): InstagramGuardStateMachine {
-    val policy = controller.get().privateField<InstagramGuardStateMachine>("instagramStateMachine")
+    val policy = controller.get().privateField<InstagramOwner>("instagram").privateField<InstagramGuardStateMachine>("policy")
     val settings = ZenGuardPreferences(context).instagramSettings()
     showRoot(node(INSTAGRAM, "clips_viewer_view_pager"))
     val start = SystemClock.elapsedRealtime()
@@ -240,7 +240,7 @@ class InstagramConnectionServiceTest {
     )
     assertEquals(InstagramBlockReason.REELS_SWIPE, (swipe as InstagramGuardAction.ShowBlocker).reason)
     advance(Duration.ofSeconds(30))
-    val continueReels = controller.get().privateField<InstagramIntervention>("instagramIntervention")
+    val continueReels = controller.get().privateField<InstagramOwner>("instagram").privateField<InstagramIntervention>("intervention")
       .privateField<() -> Boolean>("continueReels")
     assertTrue(continueReels())
     assertEquals(60_000L, policy.reelsWindowRemainingMs(SystemClock.elapsedRealtime()))
@@ -292,9 +292,9 @@ class InstagramConnectionServiceTest {
     EnforcementStatsStore(context).snapshot().counts[reason.key] ?: 0L
 
   private fun reelsDeadline(): DeadlineTask =
-    controller.get().javaClass.getDeclaredMethod("getReelsDeadline").apply {
+    controller.get().privateField<InstagramOwner>("instagram").javaClass.getDeclaredMethod("getReelsDeadline").apply {
       isAccessible = true
-    }.invoke(controller.get()) as DeadlineTask
+    }.invoke(controller.get().privateField<InstagramOwner>("instagram")) as DeadlineTask
 
   private fun advance(duration: Duration) {
     shadowOf(Looper.getMainLooper()).idleFor(duration)

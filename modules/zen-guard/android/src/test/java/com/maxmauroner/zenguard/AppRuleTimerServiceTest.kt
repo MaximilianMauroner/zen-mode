@@ -80,7 +80,7 @@ class AppRuleTimerServiceTest {
     controller = Robolectric.buildService(ZenGuardAccessibilityService::class.java).create()
     val startElapsed = SystemClock.elapsedRealtime()
     val startWall = Instant.parse("2026-10-13T23:59:55Z").toEpochMilli()
-    controller.get().appRuleWallClock = { startWall + SystemClock.elapsedRealtime() - startElapsed }
+    wholeApp().appRuleWallClock = { startWall + SystemClock.elapsedRealtime() - startElapsed }
     controller.get().javaClass.getDeclaredMethod("onServiceConnected").apply { isAccessible = true }.invoke(controller.get())
   }
 
@@ -210,7 +210,7 @@ class AppRuleTimerServiceTest {
     openApp(INSTAGRAM)
     showOverlayWindow(INSTAGRAM)
 
-    val policy = controller.get().privateField<InstagramGuardStateMachine>("instagramStateMachine")
+    val policy = controller.get().privateField<InstagramOwner>("instagram").privateField<InstagramGuardStateMachine>("policy")
     val paused = policy.homeRuntimeState(SystemClock.elapsedRealtime())
     assertEquals(HomeFeedUsageState.PAUSED, paused.usageState)
     assertTrue(paused.usedMs in 30_000L..30_100L)
@@ -239,7 +239,7 @@ class AppRuleTimerServiceTest {
     observeInstagramHome()
     advance(Duration.ofSeconds(61))
     observeInstagramHome()
-    val policy = controller.get().privateField<InstagramGuardStateMachine>("instagramStateMachine")
+    val policy = controller.get().privateField<InstagramOwner>("instagram").privateField<InstagramGuardStateMachine>("policy")
     val resting = policy.homeRuntimeState(SystemClock.elapsedRealtime())
     assertEquals(HomeFeedLockoutState.ACTIVE, resting.lockoutState)
 
@@ -255,7 +255,7 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofMillis(20))
     assertEquals(InstagramBlockReason.HOME_LIMIT, policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
     assertEquals(resting.blockedUntilElapsedMs, policy.homeRuntimeState(SystemClock.elapsedRealtime()).blockedUntilElapsedMs)
-    assertTrue(controller.get().privateField<InstagramIntervention>("instagramIntervention").isShowing)
+    assertTrue(controller.get().privateField<InstagramOwner>("instagram").privateField<InstagramIntervention>("intervention").isShowing)
   }
 
   @Test fun `idle budget release applies suppressed Chrome and Firefox site rules`() {
@@ -347,7 +347,7 @@ class AppRuleTimerServiceTest {
     assertNull(overlay().requestedPackage())
     assertTrue(siteBoundaryShowing())
     assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
-    assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(CHROME, SystemClock.elapsedRealtime()))
+    assertTrue(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(CHROME, SystemClock.elapsedRealtime()))
   }
 
   @Test fun `a queued Start while screen-off keeps the question and does not grant a visit`() {
@@ -364,7 +364,7 @@ class AppRuleTimerServiceTest {
     assertEquals(CHROME, overlay().requestedPackage())
     assertEquals(AppRuleOverlayMode.ASK, overlay().mode)
     assertTrue(hasPendingAppRuleRefresh())
-    assertFalse(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(CHROME, SystemClock.elapsedRealtime()))
+    assertFalse(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(CHROME, SystemClock.elapsedRealtime()))
     assertEquals(0L, count(EnforcementReason.BLOCKED_SITE))
     assertFalse(siteBoundaryShowing())
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
@@ -375,7 +375,7 @@ class AppRuleTimerServiceTest {
 
     assertNull(overlay().requestedPackage())
     assertTrue(siteBoundaryShowing())
-    assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(CHROME, SystemClock.elapsedRealtime()))
+    assertTrue(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(CHROME, SystemClock.elapsedRealtime()))
   }
 
   @Test fun `a stale Start after card dismissal cannot grant or bill while screen-off`() {
@@ -394,7 +394,7 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofSeconds(16))
 
     assertNull(overlay().requestedPackage())
-    assertFalse(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
+    assertFalse(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
     assertEquals(usageBeforeQueuedStart, rolling.usedMs(APP, wallNow()))
     assertFalse(hasPendingAppRuleRefresh())
     assertEquals(listOf(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME), shadowOf(controller.get()).globalActionsPerformed)
@@ -404,7 +404,7 @@ class AppRuleTimerServiceTest {
     showOverlayWindow(APP)
     views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
     assertNull(overlay().requestedPackage())
-    assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
+    assertTrue(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
   }
 
   @Test fun `a polled switch applies the foreground browser rule without a new event`() {
@@ -452,7 +452,7 @@ class AppRuleTimerServiceTest {
 
     assertNull(overlay().requestedPackage())
     assertEquals(InstagramBlockReason.EXPLORE, instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
-    assertTrue(controller.get().privateField<InstagramIntervention>("instagramIntervention").isShowing)
+    assertTrue(controller.get().privateField<InstagramOwner>("instagram").privateField<InstagramIntervention>("intervention").isShowing)
   }
 
   @Test fun `app downtime and the next question keep priority over a blocked site`() {
@@ -506,9 +506,9 @@ class AppRuleTimerServiceTest {
 
     assertEquals(INSTAGRAM, overlay().requestedPackage())
     assertTrue(hasPendingAppRuleRefresh())
-    assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(INSTAGRAM, SystemClock.elapsedRealtime()))
+    assertTrue(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(INSTAGRAM, SystemClock.elapsedRealtime()))
     assertNull(instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
-    assertFalse(controller.get().privateField<InstagramIntervention>("instagramIntervention").isShowing)
+    assertFalse(controller.get().privateField<InstagramOwner>("instagram").privateField<InstagramIntervention>("intervention").isShowing)
     assertEquals(usageAfterBudgetExpiry, rolling.usedMs(INSTAGRAM, wallNow()))
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
 
@@ -516,9 +516,9 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofMillis(1_020))
 
     assertNull(overlay().requestedPackage())
-    assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(INSTAGRAM, SystemClock.elapsedRealtime()))
+    assertTrue(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(INSTAGRAM, SystemClock.elapsedRealtime()))
     assertEquals(InstagramBlockReason.EXPLORE, instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
-    assertTrue(controller.get().privateField<InstagramIntervention>("instagramIntervention").isShowing)
+    assertTrue(controller.get().privateField<InstagramOwner>("instagram").privateField<InstagramIntervention>("intervention").isShowing)
   }
 
   @Test fun `handoff leaves observation and unknown Instagram surfaces unblocked`() {
@@ -535,7 +535,7 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofSeconds(6))
     assertNull(overlay().requestedPackage())
     assertNull(instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
-    assertFalse(controller.get().privateField<InstagramIntervention>("instagramIntervention").isShowing)
+    assertFalse(controller.get().privateField<InstagramOwner>("instagram").privateField<InstagramIntervention>("intervention").isShowing)
   }
 
   @Test fun `a background blocked browser is not the root used for a polled switch handoff`() {
@@ -619,7 +619,7 @@ class AppRuleTimerServiceTest {
 
     assertEquals(AppRuleOverlayMode.ASK, overlay().mode)
     assertTrue(texts().contains("Start 2 min"))
-    assertFalse(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(OTHER_APP, SystemClock.elapsedRealtime()))
+    assertFalse(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(OTHER_APP, SystemClock.elapsedRealtime()))
     assertEquals(2L, count(EnforcementReason.TIMED_VISIT))
   }
 
@@ -638,8 +638,7 @@ class AppRuleTimerServiceTest {
     IntentAppStore(context).setIntent(APP, 1, 1)
     openApp(APP)
     showOverlayWindow(APP)
-    controller.get().javaClass.getDeclaredField("appRuleSafety").apply { isAccessible = true }
-      .set(controller.get(), AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings")))
+    setAppRuleSafety(AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings")))
     showOverlayWindow("com.android.settings")
     advance(Duration.ofSeconds(1))
     assertNull(overlay().requestedPackage())
@@ -662,8 +661,7 @@ class AppRuleTimerServiceTest {
     showOverlayWindow(APP)
     val start = views().filterIsInstance<Button>().single { it.text == "Start 1 min" }
     turnScreenOff()
-    controller.get().javaClass.getDeclaredField("appRuleSafety").apply { isAccessible = true }
-      .set(controller.get(), AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings")))
+    setAppRuleSafety(AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings")))
     showOverlayWindow("com.android.settings")
 
     start.performClick()
@@ -671,7 +669,7 @@ class AppRuleTimerServiceTest {
 
     assertNull(overlay().requestedPackage())
     assertFalse(hasPendingAppRuleRefresh())
-    assertFalse(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
+    assertFalse(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
   }
 
@@ -688,7 +686,7 @@ class AppRuleTimerServiceTest {
 
     assertNull(overlay().requestedPackage())
     assertFalse(hasPendingAppRuleRefresh())
-    assertFalse(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
+    assertFalse(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
   }
 
@@ -720,13 +718,13 @@ class AppRuleTimerServiceTest {
     showAppWindows(APP)
     advance(Duration.ofSeconds(2))
     assertNull(overlay().requestedPackage())
-    assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
+    assertTrue(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
     assertTrue(visitDeadline().isPending)
 
     advance(Duration.ofSeconds(4))
     assertEquals("The retained post ends the visit before the next usage tick", AppRuleOverlayMode.COOLDOWN, overlay().mode)
     assertTrue(overlay().isShowing())
-    assertFalse(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
+    assertFalse(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
     assertTrue(IntentAppStore(context).cooldownRemainingMs(APP, wallNow()) > 0L)
     assertFalse(visitDeadline().isPending)
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
@@ -778,7 +776,7 @@ class AppRuleTimerServiceTest {
     ZenGuardPreferences(context).protectionEnabled = false
     advance(Duration.ofSeconds(2))
     assertFalse(visitDeadline().isPending)
-    assertFalse(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
+    assertFalse(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
   }
 
   @Test fun `a combined card predicts the cooldown that starts before its budget clears`() {
@@ -825,7 +823,7 @@ class AppRuleTimerServiceTest {
     assertTrue(texts().toString(), texts().contains("Available again in 0:05"))
     advance(Duration.ofSeconds(6))
     assertNull(overlay().requestedPackage())
-    assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
+    assertTrue(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
   }
 
@@ -833,8 +831,8 @@ class AppRuleTimerServiceTest {
     IntentAppStore(context).recordSessionEnd(APP, wallNow() - 61_000L)
     startTimedVisit()
     advance(Duration.ofSeconds(50))
-    val previousClock = controller.get().appRuleWallClock
-    controller.get().appRuleWallClock = { previousClock() - 70_000L }
+    val previousClock = wholeApp().appRuleWallClock
+    wholeApp().appRuleWallClock = { previousClock() - 70_000L }
     assertTrue(IntentAppStore(context).cooldownRemainingMs(APP, wallNow()) > 0L)
     RollingLimitStore(context).apply {
       setRule(APP, 1, 15)
@@ -846,7 +844,7 @@ class AppRuleTimerServiceTest {
     assertTrue(texts().toString(), texts().contains("Available again in 0:05"))
     advance(Duration.ofSeconds(6))
     assertNull(overlay().requestedPackage())
-    assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
+    assertTrue(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
   }
 
   @Test fun `a zero-minute downtime adds no future rest to a combined card`() {
@@ -894,8 +892,7 @@ class AppRuleTimerServiceTest {
   @Test fun `Settings stops a retry while the active root remains unobservable`() {
     IntentAppStore(context).setIntent(APP, 1, 1)
     openApp(APP)
-    controller.get().javaClass.getDeclaredField("appRuleSafety").apply { isAccessible = true }
-      .set(controller.get(), AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings")))
+    setAppRuleSafety(AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings")))
     shadowOf(controller.get()).apply { setRootInActiveWindow(null); setWindows(emptyList()) }
     advance(Duration.ofSeconds(1))
     assertEquals(APP, overlay().requestedPackage())
@@ -1014,7 +1011,7 @@ class AppRuleTimerServiceTest {
     })
   }
 
-  private fun instagramPolicy(): InstagramGuardStateMachine = controller.get().privateField("instagramStateMachine")
+  private fun instagramPolicy(): InstagramGuardStateMachine = controller.get().privateField<InstagramOwner>("instagram").privateField("policy")
 
   private fun blockExampleSite() {
     AdultSiteRuleStore(context).apply { enabled = true; add("example.com") }
@@ -1055,7 +1052,7 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofSeconds(6))
     assertNull(overlay().requestedPackage())
     assertEquals(reason, instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
-    assertTrue(controller.get().privateField<InstagramIntervention>("instagramIntervention").isShowing)
+    assertTrue(controller.get().privateField<InstagramOwner>("instagram").privateField<InstagramIntervention>("intervention").isShowing)
   }
 
   private fun assertScreenOffInstagramBudgetHandoff(id: String, reason: InstagramBlockReason) {
@@ -1073,7 +1070,7 @@ class AppRuleTimerServiceTest {
     assertTrue(overlay().isShowing())
     assertTrue(hasPendingAppRuleRefresh())
     assertNull(instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
-    assertFalse(controller.get().privateField<InstagramIntervention>("instagramIntervention").isShowing)
+    assertFalse(controller.get().privateField<InstagramOwner>("instagram").privateField<InstagramIntervention>("intervention").isShowing)
     assertEquals(usageAfterBudgetExpiry, rolling.usedMs(INSTAGRAM, wallNow()))
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
 
@@ -1083,7 +1080,7 @@ class AppRuleTimerServiceTest {
     assertNull(overlay().requestedPackage())
     assertFalse(hasPendingAppRuleRefresh())
     assertEquals(reason, instagramPolicy().debugState(SystemClock.elapsedRealtime()).blockerReason)
-    assertTrue(controller.get().privateField<InstagramIntervention>("instagramIntervention").isShowing)
+    assertTrue(controller.get().privateField<InstagramOwner>("instagram").privateField<InstagramIntervention>("intervention").isShowing)
   }
 
   private fun turnScreenOff() {
@@ -1093,8 +1090,7 @@ class AppRuleTimerServiceTest {
   }
 
   private fun openSystemSettings() {
-    controller.get().javaClass.getDeclaredField("appRuleSafety").apply { isAccessible = true }
-      .set(controller.get(), AppRuleSafety.fromPackages(context.packageName, setOf(SETTINGS)))
+    setAppRuleSafety(AppRuleSafety.fromPackages(context.packageName, setOf(SETTINGS)))
     showAppWindows(SETTINGS)
     windowEvent(SETTINGS)
   }
@@ -1104,7 +1100,14 @@ class AppRuleTimerServiceTest {
   private fun visitDeadline(): DeadlineTask = deadlineTask("getVisitDeadline")
 
   private fun deadlineTask(getter: String): DeadlineTask =
-    controller.get().javaClass.getDeclaredMethod(getter).apply { isAccessible = true }.invoke(controller.get()) as DeadlineTask
+    wholeApp().javaClass.getDeclaredMethod(getter).apply { isAccessible = true }.invoke(wholeApp()) as DeadlineTask
+
+  private fun setAppRuleSafety(safety: AppRuleSafety) {
+    controller.get().javaClass.getDeclaredField("appRuleSafety").apply { isAccessible = true }
+      .set(controller.get(), safety)
+    wholeApp().javaClass.getDeclaredField("appRuleSafety").apply { isAccessible = true }
+      .set(wholeApp(), safety)
+  }
 
   /** The fixture exposes real page metadata and records the native Home-tab action. */
   private fun youtubeRoot(rowIndex: Int?): Pair<AccessibilityNodeInfo, AccessibilityNodeInfo> {
@@ -1138,7 +1141,7 @@ class AppRuleTimerServiceTest {
     }
   }
 
-  private fun wallNow() = controller.get().appRuleWallClock()
+  private fun wallNow() = wholeApp().appRuleWallClock()
 
   private fun openApp(packageName: String) {
     showAppWindows(packageName)
@@ -1195,7 +1198,8 @@ class AppRuleTimerServiceTest {
 
   private fun count(reason: EnforcementReason) = EnforcementStatsStore(context).snapshot().counts[reason.key] ?: 0L
   private fun advance(duration: Duration) { shadowOf(Looper.getMainLooper()).idleFor(duration) }
-  private fun overlay(): AppRuleOverlay = controller.get().privateField("appRuleOverlay")
+  private fun wholeApp(): WholeAppOwner = controller.get().privateField("wholeApp")
+  private fun overlay(): AppRuleOverlay = wholeApp().privateField("appRuleOverlay")
   private fun texts(): List<String> = views().filterIsInstance<TextView>().map { it.text.toString() }.toList()
   private fun views(): Sequence<View> {
     val root = overlay().privateField<View?>("root") ?: return emptySequence()

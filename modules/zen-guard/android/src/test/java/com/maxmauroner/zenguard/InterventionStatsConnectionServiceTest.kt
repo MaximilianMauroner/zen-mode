@@ -37,8 +37,10 @@ class InterventionStatsConnectionServiceTest {
   }
 
   @Test fun `another connection on the same service preserves callback dedupe and later counts`() {
-    val service = controller.get()
-    assertTrue(service.recordAppLimitStats("other.app", EnforcementStatsOutcome.SUCCESS))
+    val stats = ZenGuardAccessibilityService::class.java.getDeclaredField("stats").apply {
+      isAccessible = true
+    }.get(controller.get()) as InterventionStats
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "other.app"))
     assertTrue(recordVideoStats("callback:1", EnforcementStatsOutcome.SUCCESS))
 
     connect()

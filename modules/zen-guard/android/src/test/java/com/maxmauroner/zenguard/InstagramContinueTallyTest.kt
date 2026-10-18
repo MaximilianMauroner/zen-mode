@@ -81,7 +81,7 @@ class InstagramContinueTallyTest {
   }
 
   private fun swipeReelFromDm() {
-    val policy = controller.get().privateField<InstagramGuardStateMachine>("instagramStateMachine")
+    val policy = controller.get().privateField<InstagramOwner>("instagram").privateField<InstagramGuardStateMachine>("policy")
     val settings = ZenGuardPreferences(context).instagramSettings()
     val start = SystemClock.elapsedRealtime()
     policy.next(InstagramGuardInput(InstagramSurface.DIRECT_MESSAGES, start, dmThreadVisible = true), settings)

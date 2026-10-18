@@ -184,8 +184,12 @@ class InstagramReelsDeadlineServiceTest {
     shadowOf(controller.get()).setRootInActiveWindow(null)
     advance(Duration.ofSeconds(61))
     assertTrue(hasPendingDeadline())
+    val safety = AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings"))
     controller.get().javaClass.getDeclaredField("appRuleSafety").apply { isAccessible = true }
-      .set(controller.get(), AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings")))
+      .set(controller.get(), safety)
+    val wholeApp = controller.get().privateField<WholeAppOwner>("wholeApp")
+    wholeApp.javaClass.getDeclaredField("appRuleSafety").apply { isAccessible = true }
+      .set(wholeApp, safety)
     showRoot("com.android.settings", "com.android.settings:id/content")
 
     advance(Duration.ofSeconds(2))

@@ -1,8 +1,12 @@
 package com.maxmauroner.zenguard
 
-internal class InterventionStats(private val store: EnforcementStatsStore?) {
+internal class InterventionStats(private var store: EnforcementStatsStore?) {
   private var actionSequence = 0L
   private val dedupeKeys = mutableMapOf<EnforcementReason, String>()
+
+  fun replaceStore(store: EnforcementStatsStore?) {
+    this.store = store
+  }
 
   fun record(
     reason: EnforcementReason,

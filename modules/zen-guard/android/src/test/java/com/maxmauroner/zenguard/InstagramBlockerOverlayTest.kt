@@ -4,6 +4,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.TextView
 import java.time.Duration
 import java.time.Instant
@@ -21,7 +22,9 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ServiceController
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
+import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowSystemClock
+import org.robolectric.shadows.ShadowWindowManagerImpl
 
 /** The actual overlay must distinguish a Home break from daily tally rollover. */
 @RunWith(RobolectricTestRunner::class)
@@ -29,7 +32,7 @@ import org.robolectric.shadows.ShadowSystemClock
 @LooperMode(LooperMode.Mode.PAUSED)
 class InstagramBlockerOverlayTest {
   private lateinit var controller: ServiceController<ZenGuardAccessibilityService>
-  private lateinit var overlay: InstagramBlockerOverlay
+  private lateinit var intervention: InstagramIntervention
   private lateinit var tally: DailyTally
   private val policy = InstagramGuardStateMachine()
   private val settings = InstagramGuardSettings(homeAllowanceMs = 60_000)
@@ -44,11 +47,8 @@ class InstagramBlockerOverlayTest {
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
     controller = Robolectric.buildService(ZenGuardAccessibilityService::class.java).create()
     tally = DailyTally(controller.get())
-    overlay = InstagramBlockerOverlay(
+    intervention = InstagramIntervention(
       service = controller.get(),
-      onLeave = {},
-      onOpenMessages = {},
-      onContinue = { false },
       readStats = {
         statsReads++
         val wallNow = wallNowMs()
@@ -61,11 +61,17 @@ class InstagramBlockerOverlayTest {
           dailyCountsResetInMs = millisUntilLocalMidnight(wallNow),
         )
       },
+      canEnforce = { true },
+      recordStop = {},
+      recordAttachment = {},
+      leave = {},
+      openMessages = {},
+      continueReels = { false },
     )
   }
 
   @After fun tearDown() {
-    overlay.hide()
+    intervention.end()
     controller.destroy()
     TimeZone.setDefault(originalTimeZone)
   }
@@ -102,7 +108,7 @@ class InstagramBlockerOverlayTest {
     assertEquals("Now", statValue("Home available again"))
     assertTrue(texts().contains("READY"))
     assertTrue(texts().contains(controller.get().getString(R.string.zen_guard_instagram_home_ready_detail)))
-    assertTrue(overlay.isShowing)
+    assertTrue(intervention.isShowing)
   }
 
   @Test fun `unknown lockout and failed storage give distinct recovery guidance without a countdown`() {
@@ -124,7 +130,7 @@ class InstagramBlockerOverlayTest {
       assertTrue(texts().contains(controller.get().getString(detail)))
       val otherDetail = unknownStates.single { it.second != detail }.second
       assertFalse(texts().contains(controller.get().getString(otherDetail)))
-      overlay.hide()
+      intervention.end()
     }
   }
 
@@ -167,7 +173,7 @@ class InstagramBlockerOverlayTest {
 
   @Test fun `hiding an overlay stops its stats refresh`() {
     show(startHomeBreak())
-    overlay.hide()
+    intervention.end()
     val readsAfterHide = statsReads
 
     idle(Duration.ofMinutes(2))
@@ -187,7 +193,7 @@ class InstagramBlockerOverlayTest {
   )
 
   private fun show(action: InstagramGuardAction.ShowBlocker) {
-    overlay.show(action, reelsMinutes = 1, debugInfo = null, onAttached = {})
+    intervention.observe(action, reelsMinutes = 1, debugInfo = null)
   }
 
   private fun idle(duration: Duration) {
@@ -204,9 +210,8 @@ class InstagramBlockerOverlayTest {
 
   private fun texts(): List<String> = views(root()).filterIsInstance<TextView>().map { it.text.toString() }.toList()
 
-  private fun root(): View = InstagramBlockerOverlay::class.java.getDeclaredField("root").apply {
-    isAccessible = true
-  }.get(overlay) as View
+  private fun root(): View =
+    Shadow.extract<ShadowWindowManagerImpl>(controller.get().getSystemService(WindowManager::class.java)).views.single()
 
   private fun views(view: View): Sequence<View> = sequence {
     yield(view)

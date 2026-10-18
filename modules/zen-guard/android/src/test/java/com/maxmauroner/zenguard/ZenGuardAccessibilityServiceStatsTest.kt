@@ -8,12 +8,10 @@ import org.junit.Test
 
 class ZenGuardAccessibilityServiceStatsTest {
   @Test
-  fun `failed actions and detector observations never reach the ledger`() {
+  fun `failed actions and unattached overlays never reach the ledger`() {
     val fixture = fixture()
     val service = fixture.service
 
-    assertFalse(service.recordYouTubeShortsStats(1, EnforcementStatsOutcome.OBSERVED))
-    assertFalse(service.recordYouTubeShortsStats(1, EnforcementStatsOutcome.FAILED))
     assertFalse(service.recordXVideoStats("failed-node-action", EnforcementStatsOutcome.FAILED))
     assertFalse(service.recordXHomeStats(false, false, EnforcementStatsOutcome.SUCCESS))
     assertFalse(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.FAILED))
@@ -40,13 +38,10 @@ class ZenGuardAccessibilityServiceStatsTest {
   }
 
   @Test
-  fun `production path hooks cover YouTube X and app limits`() {
+  fun `production path hooks cover X and app limits`() {
     val fixture = fixture()
     val service = fixture.service
 
-    assertTrue(service.recordYouTubeShortsStats(1, EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordYouTubeShortsStats(1, EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordYouTubeShortsStats(2, EnforcementStatsOutcome.SUCCESS))
     assertTrue(
       service.recordXHomeStats(
         wasShowing = false,
@@ -68,8 +63,7 @@ class ZenGuardAccessibilityServiceStatsTest {
     assertTrue(service.recordAppLimitStats("app.two", EnforcementStatsOutcome.SUCCESS))
 
     val snapshot = fixture.store.snapshot()
-    assertEquals(6L, snapshot.total)
-    assertEquals(2L, snapshot.counts[EnforcementReason.YOUTUBE_SHORTS.key])
+    assertEquals(4L, snapshot.total)
     assertEquals(1L, snapshot.counts[EnforcementReason.X_HOME.key])
     assertEquals(1L, snapshot.counts[EnforcementReason.X_VIDEOS.key])
     assertEquals(2L, snapshot.counts[EnforcementReason.APP_LIMIT.key])
@@ -94,20 +88,6 @@ class ZenGuardAccessibilityServiceStatsTest {
   }
 
   @Test
-  fun `an observed Shorts callback does not poison the later successful action`() {
-    val fixture = fixture()
-    val service = fixture.service
-
-    assertFalse(service.recordYouTubeShortsStats(7, EnforcementStatsOutcome.OBSERVED))
-    assertTrue(service.recordYouTubeShortsStats(7, EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordYouTubeShortsStats(7, EnforcementStatsOutcome.SUCCESS))
-
-    val snapshot = fixture.store.snapshot()
-    assertEquals(1L, snapshot.total)
-    assertEquals(1L, snapshot.counts[EnforcementReason.YOUTUBE_SHORTS.key])
-  }
-
-  @Test
   fun `X Home lockout identity survives service reconnection and unrelated stats`() {
     val preferences = TestPreferences()
     val firstStore = EnforcementStatsStore(preferences)
@@ -122,6 +102,50 @@ class ZenGuardAccessibilityServiceStatsTest {
     val snapshot = secondStore.snapshot()
     assertEquals(2L, snapshot.total)
     assertEquals(1L, snapshot.counts[EnforcementReason.X_HOME.key])
+  }
+
+  @Test
+  fun `conditional key clearing preserves a match and does not remember the new key`() {
+    val store = EnforcementStatsStore(TestPreferences())
+    val stats = InterventionStats(store)
+
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertTrue(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+
+    stats.clearKeyIfDifferent(EnforcementReason.APP_LIMIT, "app.one")
+    assertFalse(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+
+    stats.clearKeyIfDifferent(EnforcementReason.APP_LIMIT, "app.two")
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.two"))
+    assertFalse(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+
+    val snapshot = store.snapshot()
+    assertEquals(3L, snapshot.total)
+    assertEquals(2L, snapshot.counts[EnforcementReason.APP_LIMIT.key])
+    assertEquals(1L, snapshot.counts[EnforcementReason.TIMED_VISIT.key])
+  }
+
+  @Test
+  fun `reset clears one reason and clear permits later interventions without erasing totals`() {
+    val store = EnforcementStatsStore(TestPreferences())
+    val stats = InterventionStats(store)
+
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertTrue(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+
+    stats.reset(EnforcementReason.APP_LIMIT)
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertFalse(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertEquals(3L, store.snapshot().total)
+
+    stats.clear()
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertTrue(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+
+    val snapshot = store.snapshot()
+    assertEquals(5L, snapshot.total)
+    assertEquals(3L, snapshot.counts[EnforcementReason.APP_LIMIT.key])
+    assertEquals(2L, snapshot.counts[EnforcementReason.TIMED_VISIT.key])
   }
 
   private data class Fixture(

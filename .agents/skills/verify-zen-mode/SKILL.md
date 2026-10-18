@@ -1,21 +1,24 @@
 ---
 name: verify-zen-mode
-description: Verify Zen Mode focus-rule setup and Android enforcement. Use when checking changed rules or settings lock on an owned test device.
+description: Audit Zen Mode focus-rule setup and Android enforcement on an owned test device or emulator. Use only for an explicit device audit request.
 ---
 
 # Verify Zen Mode
 
-Draft: native journeys require an Android SDK and an owned emulator or test device.
+Use this skill only for an explicit Android device audit request.
+For ordinary code changes, follow [code validation](../../../AGENTS.md#validation).
+
+Use an owned Android emulator or test device.
 Read AGENTS.md, README.md, SDK 57 docs and [features.md](features.md).
 Use an isolated worktree and separate device profile. Do not use a daily phone.
 Record revision, device/API level, installed build, starting permissions and rules.
 Check active work, host memory, load and device ownership before commands.
 Select only journeys affected by work in the requested audit window.
 
-Install with `npm ci`. Supporting checks are `npm test`, `npx tsc --noEmit`,
-`npm run lint` and `npx expo export --platform web`. Native edits additionally
-require `npm run test:native`. These checks do not prove accessibility behavior.
-With the Android SDK configured, `npm run android` installs the native build.
+Install with `npm ci`. Run `npm run verify` for supporting code checks.
+The shared command includes nightly tests. These checks do not prove
+accessibility behavior. For the requested audit, `npm run android` installs
+the native build.
 Confirm the app opens before enabling its service in Android Accessibility.
 Do not use release/internal upload commands. Expo Go and web cannot enforce rules.
 

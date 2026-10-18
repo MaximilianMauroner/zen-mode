@@ -39,16 +39,27 @@ class InterventionStatsConnectionServiceTest {
   @Test fun `another connection on the same service preserves callback dedupe and later counts`() {
     val service = controller.get()
     assertTrue(service.recordAppLimitStats("other.app", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordXVideoStats("callback:1", EnforcementStatsOutcome.SUCCESS))
+    assertTrue(recordVideoStats("callback:1", EnforcementStatsOutcome.SUCCESS))
 
     connect()
 
-    assertFalse(service.recordXVideoStats("callback:1", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordXVideoStats("callback:2", EnforcementStatsOutcome.SUCCESS))
+    assertFalse(recordVideoStats("callback:1", EnforcementStatsOutcome.SUCCESS))
+    assertTrue(recordVideoStats("callback:2", EnforcementStatsOutcome.SUCCESS))
     val snapshot = EnforcementStatsStore(context).snapshot()
     assertEquals(3L, snapshot.total)
     assertEquals(1L, snapshot.counts[EnforcementReason.APP_LIMIT.key])
     assertEquals(2L, snapshot.counts[EnforcementReason.X_VIDEOS.key])
+  }
+
+  private fun recordVideoStats(callbackKey: String, outcome: EnforcementStatsOutcome): Boolean {
+    val owner = ZenGuardAccessibilityService::class.java.getDeclaredField("x").apply {
+      isAccessible = true
+    }.get(controller.get()) as XOwner
+    return XOwner::class.java.getDeclaredMethod(
+      "recordXVideoStats",
+      String::class.java,
+      EnforcementStatsOutcome::class.java,
+    ).apply { isAccessible = true }.invoke(owner, callbackKey, outcome) as Boolean
   }
 
   private fun connect() {

@@ -4,6 +4,7 @@ import { Link, router, usePathname } from 'expo-router';
 import { Settings } from 'lucide-react-native';
 import { type MaterialTopTabNavigationOptions } from 'expo-router/js-top-tabs';
 import { type ParamListBase, type TabNavigationState } from 'expo-router/react-navigation';
+import { readValue } from '@/features/protection/control-state';
 import { useSharedGuardStatus } from '@/features/protection/guard-status-context';
 import { getFeedStatus } from '@/features/protection/feed-status';
 
@@ -39,12 +40,13 @@ export function ControlHeader({ position, state: navigationState, descriptors }:
   const pathname = usePathname();
   const [width, setWidth] = useState(0);
   const disabled = descriptors[navigationState.routes[navigationState.index].key].options.swipeEnabled === false;
-  const { status, readError } = useSharedGuardStatus();
-  const state = getFeedStatus(status);
-  const summary = readError
+  const { read } = useSharedGuardStatus();
+  const readFailed = read.kind === 'failed';
+  const state = getFeedStatus(readValue(read));
+  const summary = readFailed
     ? 'Status unavailable'
     : SUMMARY[state];
-  const summaryTone = state === 'active' ? 'text-accent' : readError || state === 'paused' || state === 'permission' ? 'text-danger' : 'text-copy';
+  const summaryTone = state === 'active' ? 'text-accent' : readFailed || state === 'paused' || state === 'permission' ? 'text-danger' : 'text-copy';
   return (
     <View className="mx-auto w-full max-w-xl gap-3 px-5 pt-3">
       <View className="flex-row items-center justify-between">

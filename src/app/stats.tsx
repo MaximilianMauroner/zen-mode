@@ -1,45 +1,29 @@
-import { useCallback, useState } from 'react';
-import { AppState, Platform, RefreshControl, Text, View } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { Platform, RefreshControl, Text, View } from 'react-native';
+import { router } from 'expo-router';
 
 import { Card, Row, RowGroup } from '@/components/ui/card';
-import { ErrorNote, Screen, ScreenHeader } from '@/components/ui/screen';
+import { GuardNotes } from '@/components/ui/guard-notes';
+import { Screen, ScreenHeader } from '@/components/ui/screen';
+import { IDLE_ACTION, isReading, readValue } from '@/features/protection/control-state';
 import { getEnforcementStats, type EnforcementStats } from '@/features/protection/native';
+import type { ReadResult } from '@/features/protection/protection-reads';
 import { getStatsScreenState } from '@/features/protection/stats-screen-model';
+import { useScreenRead } from '@/features/protection/use-protection-read';
 import { colors } from '@/theme/colors';
 
+async function readStats(): Promise<ReadResult<EnforcementStats>> {
+  if (Platform.OS === 'web') return { kind: 'android-required' };
+  return { kind: 'ready', value: await getEnforcementStats() };
+}
+
 export default function StatsScreen() {
-  const [stats, setStats] = useState<EnforcementStats | null>(null);
-  const [loading, setLoading] = useState(Platform.OS !== 'web');
-  const [error, setError] = useState('');
-
-  const load = useCallback(async () => {
-    if (Platform.OS === 'web') return;
-    setLoading(true);
-    setError('');
-    try {
-      setStats(await getEnforcementStats());
-    } catch {
-      setStats(null);
-      setError('Statistics could not be read. Try again.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useFocusEffect(useCallback(() => {
-    void load();
-    const listener = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void load();
-    });
-    return () => listener.remove();
-  }, [load]));
-
-  const screenState = getStatsScreenState(Platform.OS, stats, loading);
+  const { read, refresh } = useScreenRead(readStats, 'Statistics could not be read. Try again.');
+  const loading = isReading(read);
+  const screenState = getStatsScreenState(Platform.OS, readValue(read), loading);
   const screenModel = screenState.model;
 
   return (
-    <Screen refreshControl={screenState.available ? <RefreshControl refreshing={loading} onRefresh={() => void load()} tintColor={colors.accent} /> : undefined}>
+    <Screen refreshControl={screenState.available ? <RefreshControl refreshing={loading} onRefresh={() => void refresh()} tintColor={colors.accent} /> : undefined}>
       <ScreenHeader title="Statistics" onBack={() => router.back()} backDisabled={loading} />
       <Text className="-mt-1 text-body text-muted">Local totals show when a protection rule actually stopped or covered something. Detector observations are not counted.</Text>
 
@@ -49,7 +33,7 @@ export default function StatsScreen() {
         <Text className="text-item text-muted">total interventions</Text>
       </Card>
 
-      <ErrorNote message={error} />
+      <GuardNotes reads={[read]} action={IDLE_ACTION} />
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">By protection</Text>
         {screenModel ? (

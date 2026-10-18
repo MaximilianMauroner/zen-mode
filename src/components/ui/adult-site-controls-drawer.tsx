@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,8 +6,12 @@ import { useReducedMotion } from 'react-native-reanimated';
 
 import { PrimaryButton, SecondaryButton } from '@/components/ui/button';
 import { SectionLabel } from '@/components/ui/card';
-import { ErrorNote, SheetHeader } from '@/components/ui/screen';
+import { GuardNotes } from '@/components/ui/guard-notes';
+import { SheetHeader } from '@/components/ui/screen';
 import { authorizeWeakening } from '@/features/protection/authorize-weakening';
+import { actionFailure, IDLE_ACTION, isReading, readValue, RUNNING_ACTION, type ActionState } from '@/features/protection/control-state';
+import { createProtectionRead, type ReadResult } from '@/features/protection/protection-reads';
+import { useProtectionRead } from '@/features/protection/use-protection-read';
 import { useWeakeningGate, WeakeningGateDialog } from './weakening-gate';
 import {
   addBlockedDomain,
@@ -26,49 +30,38 @@ import { getBrowserReadiness, getSupportedBrowserAvailability, SUPPORTED_BROWSER
 type Props = { visible: boolean; onClose: () => void };
 const BROWSERS = SUPPORTED_BROWSERS;
 
+async function readSiteSettings(): Promise<ReadResult<AdultSiteSettings>> {
+  return { kind: 'ready', value: await getAdultSiteSettings() };
+}
+
 /** Website rules stay in a drawer so the three-tab control surface does not grow. */
 export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
-  const { status, refresh: refreshStatus } = useSharedGuardStatus();
-  const [settings, setSettings] = useState<AdultSiteSettings | null>(null);
+  const { read: statusRead, refresh: refreshStatus } = useSharedGuardStatus();
+  const status = readValue(statusRead);
+  const [sites] = useState(() => createProtectionRead({ read: readSiteSettings, failure: 'The site rules could not be loaded.' }));
+  const { read, refresh } = useProtectionRead(sites);
+  const settings = readValue(read);
+  const loading = isReading(read);
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [lockBlocked, setLockBlocked] = useState(false);
+  const [action, setAction] = useState<ActionState>(IDLE_ACTION);
+  const busy = action.kind === 'running';
   const inFlight = useRef(false);
   const reduceMotion = useReducedMotion();
   const gate = useWeakeningGate();
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      setSettings(await getAdultSiteSettings());
-    } catch {
-      setSettings(null);
-      setError('The site rules could not be loaded.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   const run = (task: () => Promise<void>, fallback: string) => {
     if (inFlight.current || loading || !settings?.available) return;
     inFlight.current = true;
-    setBusy(true);
-    setError('');
-    setLockBlocked(false);
+    setAction(RUNNING_ACTION);
     void (async () => {
       try {
         await task();
-        await Promise.all([load(), refreshStatus()]);
+        await Promise.all([refresh(), refreshStatus()]);
+        setAction(IDLE_ACTION);
       } catch (cause: unknown) {
-        const message = cause instanceof Error ? cause.message : fallback;
-        if (message.includes('locked')) setLockBlocked(true);
-        setError(message);
+        setAction(actionFailure(cause, fallback));
       } finally {
         inFlight.current = false;
-        setBusy(false);
       }
     })();
   };
@@ -83,7 +76,7 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
   const add = () => {
     const value = input;
     if (!value.trim()) {
-      setError('Enter a domain like example.com.');
+      setAction({ kind: 'failed', message: 'Enter a domain like example.com.' });
       return;
     }
     run(async () => {
@@ -107,7 +100,7 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
       transparent
       animationType={reduceMotion ? 'none' : 'slide'}
       onRequestClose={() => { if (gate.session) gate.finish(false); else close(); }}
-      onShow={() => { setInput(''); setLockBlocked(false); void load(); }}
+      onShow={() => { setInput(''); setAction(IDLE_ACTION); void refresh(); }}
       statusBarTranslucent>
       {/* The embedded gate owns Android keyboard avoidance while it is open. */}
       <KeyboardAvoidingView
@@ -123,7 +116,7 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
               <View className="flex-1">
                 <Text className="text-item font-semibold text-copy">Block adult sites</Text>
                 <Text accessibilityLiveRegion="polite" className="mt-0.5 text-support text-muted">
-                  {settings?.enabled ? 'Built-in list plus sites you add.' : 'No website rule is running.'}
+                  {settings?.available ? settings.enabled ? 'Built-in list plus sites you add.' : 'No website rule is running.' : null}
                 </Text>
               </View>
               <Switch
@@ -216,15 +209,11 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
             ) : null}
 
             <SecondaryButton className="mt-5" title="Open default browser to check" disabled={disabled || !settings?.enabled || !status?.serviceEnabled || !status.protectionEnabled || getBrowserReadiness(status) === 'none-installed' || getBrowserReadiness(status) === 'disabled'} onPress={() => run(openBrowserCheck, 'The default browser could not be opened. Check that a browser is installed.')} />
-            {!settings?.enabled ? <Text className="mt-2 text-caption text-muted">Turn on website blocking before checking a browser.</Text> : !status?.serviceEnabled || !status?.protectionEnabled ? <Text className="mt-2 text-caption text-muted">Turn on Android access and Protection in Settings before checking a browser.</Text> : getBrowserReadiness(status) === 'none-installed' ? <Text className="mt-2 text-caption text-muted">Install one of the supported browsers above before checking a browser.</Text> : getBrowserReadiness(status) === 'disabled' ? <Text className="mt-2 text-caption text-muted">Enable one of the supported browsers above in Android before checking a browser.</Text> : <Text className="mt-2 text-caption text-muted">This opens the default browser at a safe example page. The rows above explain which supported browser still needs its own check.</Text>}
+            {!settings || !status ? null : !settings.available || !status.available ? <Text className="mt-2 text-caption text-muted">Website protection needs the Android app.</Text> : !settings.enabled ? <Text className="mt-2 text-caption text-muted">Turn on website blocking before checking a browser.</Text> : !status?.serviceEnabled || !status?.protectionEnabled ? <Text className="mt-2 text-caption text-muted">Turn on Android access and Protection in Settings before checking a browser.</Text> : getBrowserReadiness(status) === 'none-installed' ? <Text className="mt-2 text-caption text-muted">Install one of the supported browsers above before checking a browser.</Text> : getBrowserReadiness(status) === 'disabled' ? <Text className="mt-2 text-caption text-muted">Enable one of the supported browsers above in Android before checking a browser.</Text> : <Text className="mt-2 text-caption text-muted">This opens the default browser at a safe example page. The rows above explain which supported browser still needs its own check.</Text>}
             <Text className="mt-4 text-center text-caption text-faint">The built-in list ships with Zen Mode and is not shown here.</Text>
-            {error ? (
-              <View className="mt-4 gap-3">
-                <ErrorNote message={error} />
-                {lockBlocked ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => { close(); router.navigate('/lock'); }} /> : null}
-                {!settings ? <PrimaryButton title="Try again" disabled={loading || busy} onPress={() => void load()} /> : null}
-              </View>
-            ) : null}
+            <GuardNotes reads={[statusRead, read]} action={action} className="mt-4" />
+            {action.kind === 'refused' ? <SecondaryButton className="mt-3" title="Manage lock" disabled={busy} onPress={() => { close(); router.navigate('/lock'); }} /> : null}
+            {statusRead.kind === 'failed' || read.kind === 'failed' ? <PrimaryButton className="mt-3" title="Try again" disabled={busy} onPress={() => void Promise.all([refreshStatus(), refresh()])} /> : null}
           </ScrollView>
         </SafeAreaView>
         <WeakeningGateDialog gate={gate} embedded />

@@ -6,15 +6,17 @@ import { Clapperboard, Globe2, House, LockKeyhole, Play } from 'lucide-react-nat
 import { AdultSiteControlsDrawer } from '@/components/ui/adult-site-controls-drawer';
 import { FeedControlsDrawer, type FeedDrawer } from '@/components/ui/feed-controls-drawer';
 import { PrimaryButton } from '@/components/ui/button';
+import { GuardNotes } from '@/components/ui/guard-notes';
 import { TopTabs } from 'expo-router/js-top-tabs';
 import { Card, Row, RowGroup } from '@/components/ui/card';
-import { ErrorNote, Screen } from '@/components/ui/screen';
+import { Screen } from '@/components/ui/screen';
 import { formatRemaining, readLockState, type LockState } from '@/features/protection/lock';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { getFeedStatus, getFeedStatusDetail } from '@/features/protection/feed-status';
 import { getHomeFeedTimeLabel } from '@/features/protection/home-feed-time';
 import { getOverviewAction } from '@/features/protection/overview-actions';
 import { getAdultSitePresentation } from '@/features/protection/adult-site-presentation';
+import { actionFailure, IDLE_ACTION, isReading, readValue, RUNNING_ACTION, type ActionState, type ReadState } from '@/features/protection/control-state';
 import { useSharedGuardStatus } from '@/features/protection/guard-status-context';
 import { hasCompletedSetup } from '@/features/protection/setup';
 import { shouldShowCustomizePrompt } from '@/features/protection/setup-policy';
@@ -23,12 +25,16 @@ import { colors } from '@/theme/colors';
 
 export default function FeedsScreen() {
   const { setup } = useLocalSearchParams<{ setup?: string }>();
-  const { status, loading, readError, refresh } = useSharedGuardStatus();
+  const { read: statusRead, refresh } = useSharedGuardStatus();
+  const status = readValue(statusRead);
+  const loading = isReading(statusRead);
+  const readError = statusRead.kind === 'failed' ? statusRead.message : '';
+  const [setupRead, setSetupRead] = useState<ReadState<boolean>>({ kind: 'loading' });
   const [lock, setLock] = useState<LockState | null>(null);
-  const [error, setError] = useState('');
+  const [action, setAction] = useState<ActionState>(IDLE_ACTION);
   const [drawer, setDrawer] = useState<FeedDrawer | null>(null);
   const [siteDrawerOpen, setSiteDrawerOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const busy = action.kind === 'running';
   const busyRef = useRef(false);
 
   useFocusEffect(useCallback(() => {
@@ -43,12 +49,12 @@ export default function FeedsScreen() {
     };
     void hasCompletedSetup().then((complete) => {
       if (!active) return;
+      setSetupRead({ kind: 'ready', value: complete, refreshing: false });
       if (!complete) router.replace('/setup');
       else void read();
     }).catch(() => {
-      if (active) setError('Could not read setup. Open Settings or try again.');
+      if (active) setSetupRead({ kind: 'failed', message: 'Could not read setup. Open Settings or try again.' });
     });
-    // Only the visible overview needs a current lock countdown.
     const timer = setInterval(() => void read(), 60_000);
     return () => { active = false; clearInterval(timer); };
   }, []));
@@ -56,11 +62,11 @@ export default function FeedsScreen() {
   const runAction = (task: () => Promise<void>) => {
     if (busyRef.current) return;
     busyRef.current = true;
-    setBusy(true);
-    setError('');
-    void task().catch((cause: unknown) => {
-      setError(cause instanceof Error ? cause.message : 'The action could not finish. Try again.');
-    }).finally(() => { busyRef.current = false; setBusy(false); });
+    setAction(RUNNING_ACTION);
+    void task().then(
+      () => setAction(IDLE_ACTION),
+      (cause: unknown) => setAction(actionFailure(cause, 'The action could not finish. Try again.')),
+    ).finally(() => { busyRef.current = false; });
   };
 
   const state = getFeedStatus(status);
@@ -99,8 +105,7 @@ export default function FeedsScreen() {
           <PrimaryButton title={busy ? 'Working…' : nextAction.title} disabled={busy || loading} onPress={() => runAction(nextAction.run)} />
         </View>
       ) : null}
-      <ErrorNote message={readError} />
-      <ErrorNote message={error} />
+      <GuardNotes reads={[statusRead, setupRead]} action={action} />
 
       <RowGroup>
         <Row icon={Play} label="YouTube" detail={`Home: ${getFeedPresentation(status, 'youtubeHome', loading).statusLabel} · Shorts: ${getFeedPresentation(status, 'shorts', loading).statusLabel}`} onPress={() => setDrawer('youtube')} disabled={!editable} />

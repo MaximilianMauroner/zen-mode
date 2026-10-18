@@ -653,9 +653,7 @@ class AppRuleTimerServiceTest {
     ZenGuardPreferences(context).protectionEnabled = false
     advance(Duration.ofSeconds(1))
     assertNull(overlay().requestedPackage())
-    val handler = controller.get().javaClass.getDeclaredMethod("getAppRuleHandler").apply { isAccessible = true }.invoke(controller.get()) as android.os.Handler
-    val callback = controller.get().privateField<Runnable>("appRuleRefresh")
-    assertFalse(handler.hasCallbacks(callback))
+    assertFalse(hasPendingAppRuleRefresh())
   }
 
   @Test fun `Settings while screen-off clears a card and rejects its queued Start`() {
@@ -697,15 +695,90 @@ class AppRuleTimerServiceTest {
   @Test fun `an early timed deadline still blocks at the actual grant expiry`() {
     startTimedVisit()
     advance(Duration.ofMillis(59_999L))
-    val deadline = controller.get().privateField<Runnable>("intentDeadlineCheck")
-    val handler = controller.get().javaClass.getDeclaredMethod("getAppRuleHandler").apply { isAccessible = true }
-      .invoke(controller.get()) as android.os.Handler
+    val deadline = visitDeadline()
+    val post = deadline.privateField<Runnable>("current")
     // Model the platform dispatching and consuming the deadline one millisecond early.
-    handler.removeCallbacks(deadline)
-    deadline.run()
+    deadline.privateField<android.os.Handler>("handler").removeCallbacks(post)
+    post.run()
+    assertNull(overlay().requestedPackage())
+    assertTrue(deadline.isPending)
     advance(Duration.ofMillis(20L))
     assertEquals(AppRuleOverlayMode.COOLDOWN, overlay().mode)
     assertTrue(texts().contains("Available again in 1:00"))
+  }
+
+  @Test fun `a timed visit survives Settings and interruption then ends on time after an event-free return`() {
+    advance(Duration.ofSeconds(7))
+    startTimedVisit()
+    openSystemSettings()
+    controller.get().onInterrupt()
+    assertNull(overlay().requestedPackage())
+    assertFalse(hasPendingAppRuleRefresh())
+    assertTrue(visitDeadline().isPending)
+
+    advance(Duration.ofSeconds(55))
+    showAppWindows(APP)
+    advance(Duration.ofSeconds(2))
+    assertNull(overlay().requestedPackage())
+    assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
+    assertTrue(visitDeadline().isPending)
+
+    advance(Duration.ofSeconds(4))
+    assertEquals("The retained post ends the visit before the next usage tick", AppRuleOverlayMode.COOLDOWN, overlay().mode)
+    assertTrue(overlay().isShowing())
+    assertFalse(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
+    assertTrue(IntentAppStore(context).cooldownRemainingMs(APP, wallNow()) > 0L)
+    assertFalse(visitDeadline().isPending)
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+  }
+
+  @Test fun `a timed visit expiring in Settings is consumed and the next usage tick ends it`() {
+    advance(Duration.ofSeconds(7))
+    startTimedVisit()
+    openSystemSettings()
+
+    advance(Duration.ofSeconds(61))
+    assertFalse(visitDeadline().isPending)
+    assertNull(overlay().requestedPackage())
+    assertEquals(0L, IntentAppStore(context).cooldownRemainingMs(APP, wallNow()))
+
+    showAppWindows(APP)
+    advance(Duration.ofSeconds(2))
+    assertFalse(visitDeadline().isPending)
+    assertNull(overlay().requestedPackage())
+
+    advance(Duration.ofSeconds(6))
+    assertEquals(AppRuleOverlayMode.COOLDOWN, overlay().mode)
+    val cooldownMs = IntentAppStore(context).cooldownRemainingMs(APP, wallNow())
+    assertTrue("The visit end uses the completion time, not the missed expiry: $cooldownMs", cooldownMs > 55_000L)
+  }
+
+  @Test fun `a timed deadline acts on the app in front when it runs`() {
+    advance(Duration.ofSeconds(7))
+    startTimedVisit()
+    showAppWindows(OTHER_APP)
+    windowEvent(OTHER_APP)
+    assertTrue(visitDeadline().isPending)
+
+    advance(Duration.ofSeconds(61))
+    assertNull(overlay().requestedPackage())
+    assertFalse(visitDeadline().isPending)
+    assertEquals(0L, IntentAppStore(context).cooldownRemainingMs(APP, wallNow()))
+
+    showAppWindows(APP)
+    windowEvent(APP)
+    advance(Duration.ofMillis(20))
+    assertEquals(AppRuleOverlayMode.COOLDOWN, overlay().mode)
+    val cooldownMs = IntentAppStore(context).cooldownRemainingMs(APP, wallNow())
+    assertTrue("The visit ends when its app returns: $cooldownMs", cooldownMs > 59_500L)
+  }
+
+  @Test fun `global pause cancels a pending timed visit`() {
+    startTimedVisit()
+    ZenGuardPreferences(context).protectionEnabled = false
+    advance(Duration.ofSeconds(2))
+    assertFalse(visitDeadline().isPending)
+    assertFalse(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
   }
 
   @Test fun `a combined card predicts the cooldown that starts before its budget clears`() {
@@ -891,14 +964,23 @@ class AppRuleTimerServiceTest {
     IntentAppStore(context).setIntent(APP, 1, 1)
     openApp(APP)
     showOverlayWindow(APP)
-    val handler = controller.get().javaClass.getDeclaredMethod("getAppRuleHandler").apply { isAccessible = true }.invoke(controller.get()) as android.os.Handler
-    val callback = controller.get().privateField<Runnable>("appRuleRefresh")
     controller.destroy()
     destroyed = true
     assertNull(overlay().requestedPackage())
-    assertFalse(handler.hasCallbacks(callback))
+    assertFalse(hasPendingAppRuleRefresh())
     advance(Duration.ofSeconds(2))
     assertNull(overlay().requestedPackage())
+  }
+
+  @Test fun `service teardown cancels a pending timed visit`() {
+    startTimedVisit()
+    assertTrue(visitDeadline().isPending)
+    controller.destroy()
+    destroyed = true
+    assertFalse(visitDeadline().isPending)
+    advance(Duration.ofSeconds(61))
+    assertNull(overlay().requestedPackage())
+    assertEquals(0L, IntentAppStore(context).cooldownRemainingMs(APP, wallNow()))
   }
 
   private fun startTimedVisit() {
@@ -1010,11 +1092,19 @@ class AppRuleTimerServiceTest {
     shadowOf(Looper.getMainLooper()).idle()
   }
 
-  private fun hasPendingAppRuleRefresh(): Boolean {
-    val handler = controller.get().javaClass.getDeclaredMethod("getAppRuleHandler").apply { isAccessible = true }
-      .invoke(controller.get()) as android.os.Handler
-    return handler.hasCallbacks(controller.get().privateField<Runnable>("appRuleRefresh"))
+  private fun openSystemSettings() {
+    controller.get().javaClass.getDeclaredField("appRuleSafety").apply { isAccessible = true }
+      .set(controller.get(), AppRuleSafety.fromPackages(context.packageName, setOf(SETTINGS)))
+    showAppWindows(SETTINGS)
+    windowEvent(SETTINGS)
   }
+
+  private fun hasPendingAppRuleRefresh(): Boolean = deadlineTask("getAppCardRefresh").isPending
+
+  private fun visitDeadline(): DeadlineTask = deadlineTask("getVisitDeadline")
+
+  private fun deadlineTask(getter: String): DeadlineTask =
+    controller.get().javaClass.getDeclaredMethod(getter).apply { isAccessible = true }.invoke(controller.get()) as DeadlineTask
 
   /** The fixture exposes real page metadata and records the native Home-tab action. */
   private fun youtubeRoot(rowIndex: Int?): Pair<AccessibilityNodeInfo, AccessibilityNodeInfo> {
@@ -1126,5 +1216,6 @@ class AppRuleTimerServiceTest {
     const val CHROME = "com.android.chrome"
     const val FIREFOX = "org.mozilla.firefox"
     const val YOUTUBE = "com.google.android.youtube"
+    const val SETTINGS = "com.android.settings"
   }
 }

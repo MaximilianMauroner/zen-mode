@@ -8,12 +8,10 @@ import org.junit.Test
 
 class ZenGuardAccessibilityServiceStatsTest {
   @Test
-  fun `failed actions and detector observations never reach the ledger`() {
+  fun `failed actions and unattached overlays never reach the ledger`() {
     val fixture = fixture()
     val service = fixture.service
 
-    assertFalse(service.recordYouTubeShortsStats(1, EnforcementStatsOutcome.OBSERVED))
-    assertFalse(service.recordYouTubeShortsStats(1, EnforcementStatsOutcome.FAILED))
     assertFalse(service.recordXVideoStats("failed-node-action", EnforcementStatsOutcome.FAILED))
     assertFalse(service.recordXHomeStats(false, false, EnforcementStatsOutcome.SUCCESS))
     assertFalse(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.FAILED))
@@ -40,13 +38,10 @@ class ZenGuardAccessibilityServiceStatsTest {
   }
 
   @Test
-  fun `production path hooks cover YouTube X and app limits`() {
+  fun `production path hooks cover X and app limits`() {
     val fixture = fixture()
     val service = fixture.service
 
-    assertTrue(service.recordYouTubeShortsStats(1, EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordYouTubeShortsStats(1, EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordYouTubeShortsStats(2, EnforcementStatsOutcome.SUCCESS))
     assertTrue(
       service.recordXHomeStats(
         wasShowing = false,
@@ -68,8 +63,7 @@ class ZenGuardAccessibilityServiceStatsTest {
     assertTrue(service.recordAppLimitStats("app.two", EnforcementStatsOutcome.SUCCESS))
 
     val snapshot = fixture.store.snapshot()
-    assertEquals(6L, snapshot.total)
-    assertEquals(2L, snapshot.counts[EnforcementReason.YOUTUBE_SHORTS.key])
+    assertEquals(4L, snapshot.total)
     assertEquals(1L, snapshot.counts[EnforcementReason.X_HOME.key])
     assertEquals(1L, snapshot.counts[EnforcementReason.X_VIDEOS.key])
     assertEquals(2L, snapshot.counts[EnforcementReason.APP_LIMIT.key])
@@ -91,20 +85,6 @@ class ZenGuardAccessibilityServiceStatsTest {
     assertEquals(4L, snapshot.total)
     assertEquals(2L, snapshot.counts[EnforcementReason.ROLLING_LIMIT.key])
     assertEquals(2L, snapshot.counts[EnforcementReason.TIMED_VISIT.key])
-  }
-
-  @Test
-  fun `an observed Shorts callback does not poison the later successful action`() {
-    val fixture = fixture()
-    val service = fixture.service
-
-    assertFalse(service.recordYouTubeShortsStats(7, EnforcementStatsOutcome.OBSERVED))
-    assertTrue(service.recordYouTubeShortsStats(7, EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordYouTubeShortsStats(7, EnforcementStatsOutcome.SUCCESS))
-
-    val snapshot = fixture.store.snapshot()
-    assertEquals(1L, snapshot.total)
-    assertEquals(1L, snapshot.counts[EnforcementReason.YOUTUBE_SHORTS.key])
   }
 
   @Test

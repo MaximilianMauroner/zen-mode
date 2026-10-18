@@ -92,6 +92,30 @@ class YouTubeShortsServiceTest {
     assertEquals(0L, EnforcementStatsStore(context).snapshot().counts[EnforcementReason.YOUTUBE_SHORTS.key] ?: 0L)
   }
 
+  @Test fun `reconnecting the same service preserves a partial pager advance without counting an exit`() {
+    val tree = shortsTree()
+    showRoot(tree.root)
+    val service = controller.get()
+    assertNull(tree.page.collectionItemInfo)
+
+    service.onAccessibilityEvent(event(TYPE_VIEW_SCROLLED, tree.pager, 6, 6, 0))
+    service.onAccessibilityEvent(event(TYPE_VIEW_SCROLLED, tree.pager, 6, 7, 1))
+    assertTrue(shadowOf(tree.home).performedActions.isEmpty())
+
+    ZenGuardAccessibilityService::class.java.getDeclaredMethod("onServiceConnected").apply {
+      isAccessible = true
+    }.invoke(service)
+    assertTrue(shadowOf(tree.home).performedActions.isEmpty())
+    service.onAccessibilityEvent(event(TYPE_VIEW_SCROLLED, tree.pager, 7, 7, 1))
+
+    assertNull(tree.page.collectionItemInfo)
+    assertEquals(listOf(ACTION_CLICK), shadowOf(tree.home).performedActions)
+    assertTrue(shadowOf(service).globalActionsPerformed.isEmpty())
+    val snapshot = EnforcementStatsStore(context).snapshot()
+    assertEquals(0L, snapshot.total)
+    assertEquals(0L, snapshot.counts[EnforcementReason.YOUTUBE_SHORTS.key] ?: 0L)
+  }
+
   @Test fun `content changes cannot prime a pager advance`() {
     val tree = shortsTree()
     showRoot(tree.root)

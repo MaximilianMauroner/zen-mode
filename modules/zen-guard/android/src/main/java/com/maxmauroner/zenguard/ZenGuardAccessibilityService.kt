@@ -20,14 +20,11 @@ import java.util.ArrayDeque
 class ZenGuardAccessibilityService() : AccessibilityService() {
   /** JVM tests can supply the same local ledger without starting Android service callbacks. */
   internal constructor(statsStore: EnforcementStatsStore) : this() {
-    enforcementStats = statsStore
+    stats = InterventionStats(statsStore)
   }
 
   private lateinit var preferences: ZenGuardPreferences
-  private var enforcementStats: EnforcementStatsStore? = null
-  private var statsActionSequence = 0L
-  // Dedupe keys are in-memory lifecycle markers only. They are never persisted.
-  private val statsDedupeKeys = mutableMapOf<EnforcementReason, String>()
+  private lateinit var stats: InterventionStats
   private val stateMachine = EnforcementStateMachine()
   private val youtubeShortsPager = YouTubeShortsPager()
   private val youtubeShortsExitResult = YouTubeShortsExitResult()
@@ -109,11 +106,13 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   override fun onServiceConnected() {
     super.onServiceConnected()
     preferences = ZenGuardPreferences(this)
-    enforcementStats = try {
-      EnforcementStatsStore(this)
-    } catch (_: RuntimeException) {
-      null
-    }
+    stats = InterventionStats(
+      try {
+        EnforcementStatsStore(this)
+      } catch (_: RuntimeException) {
+        null
+      },
+    )
     appLimits = AppLimitStore(this)
     dailyTally = DailyTally(this)
     intentStore = IntentAppStore(this)
@@ -126,7 +125,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       service = this,
       canEnforce = ::canRunEnforcementAction,
       isEnabled = { adultSiteStore.enabled },
-      recordAttachment = { recordEnforcement(EnforcementReason.BLOCKED_SITE) },
+      recordAttachment = { stats.record(EnforcementReason.BLOCKED_SITE, EnforcementStatsOutcome.SUCCESS) },
       recheck = { handleBrowserEvent(it) },
     )
     youtubeShortsResultOverlay = YouTubeShortsResultOverlay(this)
@@ -172,7 +171,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       if (canRunEnforcementAction()) {
         xStateMachine.leaveBlockedSurface()
         xOverlay.hide()
-        resetStatsDedupe(EnforcementReason.X_HOME)
+        stats.reset(EnforcementReason.X_HOME)
         performGlobalAction(GLOBAL_ACTION_HOME)
       }
     }
@@ -184,7 +183,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       recordStop = { dailyTally.recordStop(System.currentTimeMillis()) },
       recordAttachment = { reason ->
         reelsDeadline.cancel()
-        recordEnforcement(reason)
+        stats.record(reason, EnforcementStatsOutcome.SUCCESS)
       },
       leave = { reason ->
         instagramStateMachine.leaveBlockedSurface()
@@ -296,9 +295,9 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       // A keyboard or system window is not a switch away from the app under our overlay.
       packageName = foregroundAppPackage() ?: return
     }
-    if (statsDedupeKeys[EnforcementReason.APP_LIMIT] != packageName) resetStatsDedupe(EnforcementReason.APP_LIMIT)
-    if (statsDedupeKeys[EnforcementReason.ROLLING_LIMIT] != packageName) resetStatsDedupe(EnforcementReason.ROLLING_LIMIT)
-    if (statsDedupeKeys[EnforcementReason.TIMED_VISIT] != packageName) resetStatsDedupe(EnforcementReason.TIMED_VISIT)
+    stats.clearKeyIfDifferent(EnforcementReason.APP_LIMIT, packageName)
+    stats.clearKeyIfDifferent(EnforcementReason.ROLLING_LIMIT, packageName)
+    stats.clearKeyIfDifferent(EnforcementReason.TIMED_VISIT, packageName)
     if (appRuleOverlay.requestedPackage() == null) {
       usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())?.let(::bankUsage)
     }
@@ -335,8 +334,8 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     val wallNow = appRuleWallClock()
     val dailyAt = appLimits.availableAgainAt(packageName, wallNow)
     val rollingAt = rollingLimits.availableAgainAt(packageName, wallNow)
-    if (dailyAt == null) resetStatsDedupe(EnforcementReason.APP_LIMIT)
-    if (rollingAt == null) resetStatsDedupe(EnforcementReason.ROLLING_LIMIT)
+    if (dailyAt == null) stats.reset(EnforcementReason.APP_LIMIT)
+    if (rollingAt == null) stats.reset(EnforcementReason.ROLLING_LIMIT)
     if (dailyAt == null && rollingAt == null) return false
 
     endExpiredIntentSession(packageName)
@@ -394,9 +393,11 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private fun closeAppRuleOverlay() {
     if (::appRuleOverlay.isInitialized) appRuleOverlay.hide()
     appCardRefresh.cancel()
-    resetStatsDedupe(EnforcementReason.APP_LIMIT)
-    resetStatsDedupe(EnforcementReason.ROLLING_LIMIT)
-    resetStatsDedupe(EnforcementReason.TIMED_VISIT)
+    if (::stats.isInitialized) {
+      stats.reset(EnforcementReason.APP_LIMIT)
+      stats.reset(EnforcementReason.ROLLING_LIMIT)
+      stats.reset(EnforcementReason.TIMED_VISIT)
+    }
   }
 
   /** Apply content rules to the verified app beneath the card before exposing it again. */
@@ -501,7 +502,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     if (intentSessions.isActive(packageName, SystemClock.elapsedRealtime())) return
     if (intentSessions.end(packageName)) {
       intentStore.recordSessionEnd(packageName, appRuleWallClock())
-      resetStatsDedupe(EnforcementReason.TIMED_VISIT)
+      stats.reset(EnforcementReason.TIMED_VISIT)
     }
   }
 
@@ -543,7 +544,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     }
     if (!intentSessions.end(packageName)) return
     intentStore.recordSessionEnd(packageName, appRuleWallClock())
-    resetStatsDedupe(EnforcementReason.TIMED_VISIT)
+    stats.reset(EnforcementReason.TIMED_VISIT)
     if (!enforceAppLimits(packageName)) handleIntentForeground(packageName)
   }
 
@@ -573,13 +574,13 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       }
       stateMachine.reset()
       youtubeShortsPager.reset()
-      resetStatsDedupe(EnforcementReason.YOUTUBE_SHORTS)
+      stats.reset(EnforcementReason.YOUTUBE_SHORTS)
       return
     }
     preferences.recordDetection(nowMs, result.reason)
     if (preferences.observationMode || !preferences.shortsEnabled) {
       resetYouTubeEnforcement()
-      resetStatsDedupe(EnforcementReason.YOUTUBE_SHORTS)
+      stats.reset(EnforcementReason.YOUTUBE_SHORTS)
       return
     }
     // The pager's collection row stays constant during playback and changes with the video.
@@ -622,8 +623,10 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       xStateMachine.reset()
       xHomeUsageState = if (xStorageAvailable) HomeFeedUsageState.PAUSED else HomeFeedUsageState.UNKNOWN
     }
-    resetStatsDedupe(EnforcementReason.X_HOME)
-    resetStatsDedupe(EnforcementReason.X_VIDEOS)
+    if (::stats.isInitialized) {
+      stats.reset(EnforcementReason.X_HOME)
+      stats.reset(EnforcementReason.X_VIDEOS)
+    }
     if (::xOverlay.isInitialized) xOverlay.hide()
     publishXHomeStatus()
   }
@@ -725,7 +728,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       }
       XAction.NONE -> if (surface != XSurface.UNKNOWN) {
         xOverlay.hide()
-        resetStatsDedupe(EnforcementReason.X_HOME)
+        stats.reset(EnforcementReason.X_HOME)
       }
     }
     publishXHomeStatus(showUnavailableOnFailure = surface == XSurface.HOME && settings.homeEnabled)
@@ -918,7 +921,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     browserIntervention?.end()
     clearXEnforcement(preserveHomeLockout = true)
     resetYouTubeEnforcement()
-    clearStatsDedupeState()
+    if (::stats.isInitialized) stats.clear()
     clearInstagramEnforcement(preserveHomeSession = true)
   }
 
@@ -949,7 +952,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     usageHandler.removeCallbacksAndMessages(null)
     closeAppRuleOverlay()
     clearInstagramEnforcement(preserveHomeSession = hasActiveProtection())
-    clearStatsDedupeState()
+    if (::stats.isInitialized) stats.clear()
     if (screenReceiverRegistered) {
       unregisterReceiver(screenStateReceiver)
       screenReceiverRegistered = false
@@ -1042,26 +1045,9 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private fun hasActiveProtection(): Boolean =
     ::preferences.isInitialized && preferences.hasCurrentConsent && preferences.protectionEnabled
 
-  /**
-   * Service-level stats gate. Only a completed action reaches the ledger, and a stable in-memory
-   * key prevents repeated callbacks from invoking recordEnforcement twice. The persisted action key
-   * remains fresh for each accepted event; deduplication belongs to this service lifecycle state.
-   */
-  internal fun recordStatsAction(
-    reason: EnforcementReason,
-    outcome: EnforcementStatsOutcome,
-    dedupeKey: String? = null,
-    durableActionKey: String? = null,
-  ): Boolean {
-    if (outcome != EnforcementStatsOutcome.SUCCESS) return false
-    if (dedupeKey != null && statsDedupeKeys[reason] == dedupeKey) return false
-    if (dedupeKey != null) statsDedupeKeys[reason] = dedupeKey
-    return recordEnforcement(reason, durableActionKey)
-  }
-
   internal fun recordYouTubeShortsStats(pageIndex: Int?, outcome: EnforcementStatsOutcome): Boolean {
     if (pageIndex == null) return false
-    return recordStatsAction(EnforcementReason.YOUTUBE_SHORTS, outcome, "page:$pageIndex")
+    return stats.record(EnforcementReason.YOUTUBE_SHORTS, outcome, "page:$pageIndex")
   }
 
   internal fun recordXHomeStats(
@@ -1072,41 +1058,26 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   ): Boolean {
     if (wasShowing || !overlayAttached) return false
     val durableKey = lockoutDeadlineElapsedMs?.takeIf { it >= 0L }?.let { "x_home_lockout:$it" }
-    return recordStatsAction(EnforcementReason.X_HOME, outcome, "overlay", durableKey)
+    return stats.record(EnforcementReason.X_HOME, outcome, "overlay", durableKey)
   }
 
   internal fun recordXVideoStats(callbackKey: String, outcome: EnforcementStatsOutcome): Boolean =
-    recordStatsAction(EnforcementReason.X_VIDEOS, outcome, callbackKey)
+    stats.record(EnforcementReason.X_VIDEOS, outcome, callbackKey)
 
   internal fun recordAppLimitStats(packageName: String, outcome: EnforcementStatsOutcome): Boolean =
-    recordStatsAction(EnforcementReason.APP_LIMIT, outcome, packageName)
+    stats.record(EnforcementReason.APP_LIMIT, outcome, packageName)
 
   internal fun recordRollingLimitStats(packageName: String, outcome: EnforcementStatsOutcome): Boolean =
-    recordStatsAction(EnforcementReason.ROLLING_LIMIT, outcome, packageName)
+    stats.record(EnforcementReason.ROLLING_LIMIT, outcome, packageName)
 
   internal fun recordTimedVisitStats(packageName: String, outcome: EnforcementStatsOutcome): Boolean =
-    recordStatsAction(EnforcementReason.TIMED_VISIT, outcome, packageName)
-
-  private fun resetStatsDedupe(reason: EnforcementReason) {
-    statsDedupeKeys.remove(reason)
-  }
-
-  private fun clearStatsDedupeState() {
-    statsDedupeKeys.clear()
-  }
-
-  private fun recordEnforcement(reason: EnforcementReason, durableActionKey: String? = null): Boolean {
-    val store = enforcementStats ?: return false
-    statsActionSequence = if (statsActionSequence == Long.MAX_VALUE) 1L else statsActionSequence + 1L
-    val nowMs = System.currentTimeMillis()
-    return store.record(reason, durableActionKey ?: "${reason.key}:$nowMs:$statsActionSequence", nowMs)
-  }
+    stats.record(EnforcementReason.TIMED_VISIT, outcome, packageName)
 
   /** Clear every in-memory action path without inspecting another app's screen. */
   private fun clearInactiveProtection() {
     browserIntervention?.end()
     resetYouTubeEnforcement()
-    clearStatsDedupeState()
+    if (::stats.isInitialized) stats.clear()
     clearXEnforcement()
     usageTracker.reset()
     currentForegroundPackage = null
@@ -1125,7 +1096,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private fun enterSystemSettings() {
     browserIntervention?.end()
     resetYouTubeEnforcement()
-    clearStatsDedupeState()
+    if (::stats.isInitialized) stats.clear()
     clearXEnforcement(preserveHomeLockout = true)
     usageTracker.reset()
     currentForegroundPackage = null

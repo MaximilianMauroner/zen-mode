@@ -573,7 +573,7 @@ class AppRuleTimerServiceTest {
 
     assertNull(overlay().requestedPackage())
     assertTrue(shadowOf(advanced.second).performedActions.contains(AccessibilityNodeInfo.ACTION_CLICK))
-    assertEquals(1, controller.get().privateField<EnforcementStateMachine>("stateMachine").pendingExitPageIndex())
+    assertEquals(1, controller.get().privateField<YouTubeOwner>("youtube").privateField<EnforcementStateMachine>("policy").pendingExitPageIndex())
   }
 
   @Test fun `idle handoff cannot invent a Shorts advance when collection metadata is absent`() {
@@ -588,7 +588,7 @@ class AppRuleTimerServiceTest {
 
     assertNull(overlay().requestedPackage())
     assertTrue(shadowOf(unknownPage.second).performedActions.isEmpty())
-    assertNull(controller.get().privateField<EnforcementStateMachine>("stateMachine").pendingExitPageIndex())
+    assertNull(controller.get().privateField<YouTubeOwner>("youtube").privateField<EnforcementStateMachine>("policy").pendingExitPageIndex())
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
   }
 

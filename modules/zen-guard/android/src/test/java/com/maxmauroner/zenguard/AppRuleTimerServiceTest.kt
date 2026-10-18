@@ -8,6 +8,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -34,7 +35,9 @@ import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.annotation.LooperMode
 import org.robolectric.annotation.RealObject
+import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowAccessibilityNodeInfo
+import org.robolectric.shadows.ShadowWindowManagerImpl
 
 /** Exercise the actual service with its own overlay above the guarded app. */
 @RunWith(RobolectricTestRunner::class)
@@ -267,11 +270,9 @@ class AppRuleTimerServiceTest {
       advance(Duration.ofSeconds(6))
 
       assertNull(overlay().requestedPackage())
-      val sites = controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay")
-      assertEquals(browser, sites.shownPackage())
-      assertTrue(sites.isShowing)
+      assertTrue(siteBoundaryShowing())
       assertEquals(stopsBefore + 1L, count(EnforcementReason.BLOCKED_SITE))
-      sites.hide()
+      siteButton(R.string.zen_guard_go_home)!!.performClick()
     }
   }
 
@@ -293,8 +294,7 @@ class AppRuleTimerServiceTest {
     assertFalse(daily.isOverBudget(CHROME, wallNow()))
     assertEquals(0L, daily.usageToday(wallNow())[CHROME] ?: 0L)
     assertEquals(0L, count(EnforcementReason.BLOCKED_SITE))
-    val sites = controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay")
-    assertFalse(sites.isShowing)
+    assertFalse(siteBoundaryShowing())
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
 
     shadowOf(context.getSystemService(PowerManager::class.java)).setIsInteractive(true)
@@ -302,8 +302,7 @@ class AppRuleTimerServiceTest {
 
     assertNull(overlay().requestedPackage())
     assertFalse(hasPendingAppRuleRefresh())
-    assertEquals(CHROME, sites.shownPackage())
-    assertTrue(sites.isShowing)
+    assertTrue(siteBoundaryShowing())
     assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
   }
 
@@ -324,8 +323,7 @@ class AppRuleTimerServiceTest {
     assertFalse(rolling.isOver(FIREFOX, wallNow()))
     assertEquals(usageAfterBudgetExpiry, rolling.usedMs(FIREFOX, wallNow()))
     assertEquals(0L, count(EnforcementReason.BLOCKED_SITE))
-    val sites = controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay")
-    assertFalse(sites.isShowing)
+    assertFalse(siteBoundaryShowing())
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
 
     shadowOf(context.getSystemService(PowerManager::class.java)).setIsInteractive(true)
@@ -333,8 +331,7 @@ class AppRuleTimerServiceTest {
 
     assertNull(overlay().requestedPackage())
     assertFalse(hasPendingAppRuleRefresh())
-    assertEquals(FIREFOX, sites.shownPackage())
-    assertTrue(sites.isShowing)
+    assertTrue(siteBoundaryShowing())
     assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
   }
 
@@ -348,7 +345,7 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofMillis(20))
 
     assertNull(overlay().requestedPackage())
-    assertEquals(CHROME, controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay").shownPackage())
+    assertTrue(siteBoundaryShowing())
     assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
     assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(CHROME, SystemClock.elapsedRealtime()))
   }
@@ -369,7 +366,7 @@ class AppRuleTimerServiceTest {
     assertTrue(hasPendingAppRuleRefresh())
     assertFalse(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(CHROME, SystemClock.elapsedRealtime()))
     assertEquals(0L, count(EnforcementReason.BLOCKED_SITE))
-    assertFalse(controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay").isShowing)
+    assertFalse(siteBoundaryShowing())
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
 
     shadowOf(context.getSystemService(PowerManager::class.java)).setIsInteractive(true)
@@ -377,7 +374,7 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofMillis(20))
 
     assertNull(overlay().requestedPackage())
-    assertEquals(CHROME, controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay").shownPackage())
+    assertTrue(siteBoundaryShowing())
     assertTrue(controller.get().privateField<IntentSessionTracker>("intentSessions").isActive(CHROME, SystemClock.elapsedRealtime()))
   }
 
@@ -419,7 +416,7 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofMillis(1_020))
 
     assertNull(overlay().requestedPackage())
-    assertEquals(CHROME, controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay").shownPackage())
+    assertTrue(siteBoundaryShowing())
     assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
   }
 
@@ -439,7 +436,7 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofMillis(1_020))
 
     assertNull(overlay().requestedPackage())
-    assertEquals(CHROME, controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay").shownPackage())
+    assertTrue(siteBoundaryShowing())
     assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
   }
 
@@ -558,7 +555,7 @@ class AppRuleTimerServiceTest {
 
     assertNull(overlay().requestedPackage())
     assertEquals(0L, count(EnforcementReason.BLOCKED_SITE))
-    assertFalse(controller.get().privateField<AdultSiteBlockerOverlay>("adultSiteOverlay").isShowing)
+    assertFalse(siteBoundaryShowing())
   }
 
   @Test fun `idle handoff exits a Short only when the actual collection row proves an advance`() {
@@ -1093,6 +1090,16 @@ class AppRuleTimerServiceTest {
   private fun window(type: Int, root: AccessibilityNodeInfo) = AccessibilityWindowInfo().also {
     shadowOf(it).setType(type)
     shadowOf(it).setRoot(root)
+  }
+
+  private fun siteBoundaryShowing() = siteButton(R.string.zen_guard_site_go_back)?.isAttachedToWindow == true
+
+  private fun siteButton(label: Int): Button? {
+    val windows = Shadow.extract<ShadowWindowManagerImpl>(controller.get().getSystemService(WindowManager::class.java))
+    val matches = ArrayList<View>()
+    windows.views.forEach { it.findViewsWithText(matches, context.getString(label), View.FIND_VIEWS_WITH_TEXT) }
+    val buttons = matches.filterIsInstance<Button>()
+    return if (buttons.isEmpty()) null else buttons.single()
   }
 
   private fun count(reason: EnforcementReason) = EnforcementStatsStore(context).snapshot().counts[reason.key] ?: 0L

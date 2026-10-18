@@ -35,16 +35,8 @@ jobs:
           key: pr-npm-v1-${{ runner.os }}-${{ runner.arch }}-node24-${{ hashFiles('package-lock.json') }}
       - name: Install app dependencies
         run: npm ci
-      - name: Run app and preparation tests
-        run: npm test
-      - name: Run nightly release regression tests
-        run: npm run test:nightly
-      - name: Check TypeScript
-        run: npx tsc --noEmit
-      - name: Lint app source
-        run: npm run lint
-      - name: Export web preview
-        run: npx expo export --platform web --max-workers 2
+      - name: Verify app
+        run: npm run verify:app
 
   native:
     name: Zen Mode native checks
@@ -81,4 +73,4 @@ jobs:
       - name: Install Android SDK 36
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" "platforms;android-36" "build-tools;36.0.0"'
       - name: Compile and run native tests
-        run: npm run test:native -- --no-daemon --no-parallel --max-workers=2
+        run: npm run verify:native

@@ -64,7 +64,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       DeadlineDecision.Complete
     }
   }
-  private lateinit var adultSiteStore: AdultSiteRuleStore
   private var browserIntervention: BrowserIntervention? = null
   private lateinit var homeFeedStatusStore: HomeFeedStatusStore
   private val usageTracker = AppUsageTracker()
@@ -116,14 +115,11 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     rollingLimits = RollingLimitStore(this)
     appRuleSafety = AppRuleSafety.resolve(this)
     appRuleOverlay = AppRuleOverlay(this)
-    adultSiteStore = AdultSiteRuleStore(this)
     browserIntervention?.end()
     browserIntervention = BrowserIntervention(
       service = this,
+      stats = stats,
       canEnforce = ::canRunEnforcementAction,
-      isEnabled = { adultSiteStore.enabled },
-      recordAttachment = { stats.record(EnforcementReason.BLOCKED_SITE, EnforcementStatsOutcome.SUCCESS) },
-      recheck = { handleBrowserEvent(it) },
     )
     youtube.onServiceConnected(preferences)
     homeFeedStatusStore = HomeFeedStatusStore(this)
@@ -252,7 +248,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       return
     }
     if (BrowserUrlDetector.supports(eventPackage)) {
-      handleBrowserEvent(eventPackage!!)
+      browserIntervention?.observe(eventPackage!!)
     } else if ((event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
         event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) &&
       windows.none { BrowserUrlDetector.supports(it.root?.packageName?.toString()) }
@@ -404,7 +400,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     val root = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }?.root
       ?.takeIf { it.packageName?.toString() == packageName } ?: return false
     when {
-      BrowserUrlDetector.supports(packageName) -> handleBrowserEvent(packageName, root)
+      BrowserUrlDetector.supports(packageName) -> browserIntervention?.observe(packageName, root)
       packageName == INSTAGRAM_PACKAGE -> handleInstagramEvent(null, root)
       packageName == YOUTUBE_PACKAGE -> youtube.observe(null, root)
     }
@@ -1055,50 +1051,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     return true
   }
 
-  /** Reads text and descriptions only from exact address-bar nodes; page text is never copied. */
-  private fun handleBrowserEvent(browserPackage: String, observedRoot: AccessibilityNodeInfo? = null) {
-    val intervention = browserIntervention ?: return
-    if (!canRunEnforcementAction()) return
-    if (!adultSiteStore.enabled) {
-      intervention.end()
-      return
-    }
-    val root = observedRoot ?: browserRoot(browserPackage) ?: return
-    if (root.packageName?.toString() != browserPackage) return
-    val detection = BrowserUrlDetector.detect(browserPackage, browserAddressBars(root, browserPackage)) ?: return
-    adultSiteStore.recordBrowserSignal(detection.browserMask)
-    intervention.observe(
-      browserPackage,
-      blocked = AdultSitePolicy.isBlocked(detection.host, adultSiteStore.customHosts()),
-    )
-  }
-
-  private fun browserRoot(browserPackage: String): AccessibilityNodeInfo? =
-    windows.firstNotNullOfOrNull { window ->
-      window.root?.takeIf { it.packageName?.toString() == browserPackage }
-    } ?: rootInActiveWindow?.takeIf { it.packageName?.toString() == browserPackage }
-
-  private fun browserAddressBars(root: AccessibilityNodeInfo, browserPackage: String): List<BrowserNodeSignal> {
-    data class Pending(val node: AccessibilityNodeInfo, val depth: Int)
-    val pending = ArrayDeque<Pending>()
-    val result = ArrayList<BrowserNodeSignal>(2)
-    pending.add(Pending(root, 0))
-    var visited = 0
-    while (pending.isNotEmpty() && visited++ < MAX_BROWSER_NODES) {
-      val (node, depth) = pending.removeFirst()
-      if (!node.isVisibleToUser) continue
-      val viewId = node.viewIdResourceName.orEmpty()
-      if (BrowserUrlDetector.isAddressBar(browserPackage, viewId)) {
-        result.add(
-          BrowserNodeSignal(viewId, node.text?.toString().orEmpty(), true, node.contentDescription?.toString().orEmpty()),
-        )
-      }
-      if (depth >= MAX_BROWSER_DEPTH) continue
-      for (index in 0 until node.childCount) node.getChild(index)?.let { pending.add(Pending(it, depth + 1)) }
-    }
-    return result
-  }
-
   /**
    * A DM tab or inbox visit is not provenance. Accept only a click whose source is a likely thread
    * row/control and whose tree also contains independent DM structure.
@@ -1244,8 +1196,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     private const val USAGE_TICK_MS = 15_000L
     private const val APP_RULE_REFRESH_MS = 1_000L
     private const val INSTAGRAM_REELS_DEADLINE_RETRY_MS = 1_000L
-    private const val MAX_BROWSER_NODES = 180
-    private const val MAX_BROWSER_DEPTH = 18
 
     private val INBOX_ID_FRAGMENTS = listOf(
       "direct_inbox",

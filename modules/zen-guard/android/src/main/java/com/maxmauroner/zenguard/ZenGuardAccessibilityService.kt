@@ -14,7 +14,6 @@ import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
-import android.widget.Toast
 import java.util.ArrayDeque
 
 class ZenGuardAccessibilityService() : AccessibilityService() {
@@ -26,22 +25,8 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private lateinit var preferences: ZenGuardPreferences
   private val stats = InterventionStats(null)
   private val youtube = YouTubeOwner(this, stats)
-  private val xStateMachine = XGuardStateMachine()
-  private var xHomeUsageState = HomeFeedUsageState.PAUSED
-  private var xStorageAvailable = true
+  private val x = XOwner(this, stats, canEnforce = ::canRunEnforcementAction)
   private var instagramStorageAvailable = true
-  private lateinit var xOverlay: XBreakOverlay
-  private val xHandler by lazy { Handler(Looper.getMainLooper()) }
-  private val xTicker = object : Runnable {
-    override fun run() {
-      if (hasActiveProtection()) {
-        handleXEvent(null)
-      } else if (::preferences.isInitialized) {
-        clearInactiveProtection()
-      }
-      xHandler.postDelayed(this, 1_000L)
-    }
-  }
   private val instagramStateMachine = InstagramGuardStateMachine()
   private val instagramDebugTrace = if (BuildConfig.DEBUG) InstagramDebugTrace() else null
   private val navigationHandler by lazy { Handler(Looper.getMainLooper()) }
@@ -64,7 +49,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       DeadlineDecision.Complete
     }
   }
-  private lateinit var adultSiteStore: AdultSiteRuleStore
   private var browserIntervention: BrowserIntervention? = null
   private lateinit var homeFeedStatusStore: HomeFeedStatusStore
   private val usageTracker = AppUsageTracker()
@@ -75,11 +59,10 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     override fun onReceive(context: Context?, intent: Intent?) {
       if (intent?.action != Intent.ACTION_SCREEN_OFF || !hasActiveProtection()) return
       val nowMs = SystemClock.elapsedRealtime()
-      xStateMachine.pause(nowMs, xSettings())
-      if (xHomeUsageState != HomeFeedUsageState.UNKNOWN) xHomeUsageState = HomeFeedUsageState.PAUSED
+      x.screenOff(nowMs)
       reelsDeadline.cancel()
       instagramStateMachine.onAppBackground(nowMs, preferences.instagramSettings())
-      publishXHomeStatus()
+      x.publishHomeStatus()
       publishInstagramHomeStatus()
     }
   }
@@ -116,14 +99,11 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     rollingLimits = RollingLimitStore(this)
     appRuleSafety = AppRuleSafety.resolve(this)
     appRuleOverlay = AppRuleOverlay(this)
-    adultSiteStore = AdultSiteRuleStore(this)
     browserIntervention?.end()
     browserIntervention = BrowserIntervention(
       service = this,
+      stats = stats,
       canEnforce = ::canRunEnforcementAction,
-      isEnabled = { adultSiteStore.enabled },
-      recordAttachment = { stats.record(EnforcementReason.BLOCKED_SITE, EnforcementStatsOutcome.SUCCESS) },
-      recheck = { handleBrowserEvent(it) },
     )
     youtube.onServiceConnected(preferences)
     homeFeedStatusStore = HomeFeedStatusStore(this)
@@ -140,20 +120,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
         capturedAtElapsedMs = nowElapsedMs,
       ),
     )
-    val storedX = homeFeedStatusStore.x(nowElapsedMs)
-    xStorageAvailable = storedX.storageState == HomeFeedStorageState.AVAILABLE
-    xHomeUsageState = if (xStorageAvailable) storedX.usageState else HomeFeedUsageState.UNKNOWN
-    xStateMachine.restore(
-      HomeFeedRuntimeState(
-        usedMs = storedX.usedMs,
-        blockedUntilElapsedMs = storedX.blockedUntilElapsedMs,
-        usageState = storedX.usageState,
-        lockoutState = storedX.lockoutState,
-        storageState = storedX.storageState,
-        capturedAtElapsedMs = nowElapsedMs,
-      ),
-    )
-    if (xStorageAvailable) publishXHomeStatus()
+    x.restore(preferences, homeFeedStatusStore, nowElapsedMs)
     publishInstagramHomeStatus()
     val screenFilter = IntentFilter(Intent.ACTION_SCREEN_OFF)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -164,15 +131,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     }
     screenReceiverRegistered = true
     usageHandler.postDelayed(usageTicker, USAGE_TICK_MS)
-    xOverlay = XBreakOverlay(this) {
-      if (canRunEnforcementAction()) {
-        xStateMachine.leaveBlockedSurface()
-        xOverlay.hide()
-        stats.reset(EnforcementReason.X_HOME)
-        performGlobalAction(GLOBAL_ACTION_HOME)
-      }
-    }
-    xHandler.postDelayed(xTicker, 1_000L)
+    x.start()
     instagramIntervention = InstagramIntervention(
       service = this,
       readStats = ::instagramBlockerStats,
@@ -240,7 +199,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
           youtube.reset()
         }
         if (windows.none { it.root?.packageName?.toString() == X_PACKAGE }) {
-          clearXEnforcement(preserveHomeLockout = true)
+          x.pause()
         }
         if (windows.none { it.root?.packageName?.toString() == INSTAGRAM_PACKAGE }) {
           clearInstagramEnforcement(preserveHomeSession = true)
@@ -252,7 +211,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       return
     }
     if (BrowserUrlDetector.supports(eventPackage)) {
-      handleBrowserEvent(eventPackage!!)
+      browserIntervention?.observe(eventPackage!!)
     } else if ((event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
         event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) &&
       windows.none { BrowserUrlDetector.supports(it.root?.packageName?.toString()) }
@@ -260,7 +219,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       browserIntervention?.end()
     }
     if (eventPackage != X_PACKAGE && event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-      windows.none { it.root?.packageName?.toString() == X_PACKAGE }) clearXEnforcement(preserveHomeLockout = true)
+      windows.none { it.root?.packageName?.toString() == X_PACKAGE }) x.pause()
 
     when (eventPackage) {
       YOUTUBE_PACKAGE -> {
@@ -271,7 +230,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       INSTAGRAM_PACKAGE -> handleInstagramEvent(event)
       X_PACKAGE -> {
         clearInstagramEnforcement(preserveHomeSession = true)
-        handleXEvent(event)
+        x.observe(event)
       }
       else -> handleNonInstagramEvent(event)
     }
@@ -404,7 +363,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     val root = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }?.root
       ?.takeIf { it.packageName?.toString() == packageName } ?: return false
     when {
-      BrowserUrlDetector.supports(packageName) -> handleBrowserEvent(packageName, root)
+      BrowserUrlDetector.supports(packageName) -> browserIntervention?.observe(packageName, root)
       packageName == INSTAGRAM_PACKAGE -> handleInstagramEvent(null, root)
       packageName == YOUTUBE_PACKAGE -> youtube.observe(null, root)
     }
@@ -548,155 +507,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     packageManager.getApplicationLabel(packageManager.getApplicationInfo(packageName, 0)).toString()
   } catch (_: PackageManager.NameNotFoundException) {
     packageName
-  }
-
-  private fun clearXEnforcement(preserveHomeLockout: Boolean = false) {
-    if (preserveHomeLockout && xStorageAvailable) {
-      xStateMachine.pause(SystemClock.elapsedRealtime(), xSettings())
-      xHomeUsageState = if (xStateMachine.requiresFreshHomeObservation()) {
-        HomeFeedUsageState.UNKNOWN
-      } else {
-        HomeFeedUsageState.PAUSED
-      }
-    } else {
-      xStateMachine.reset()
-      xHomeUsageState = if (xStorageAvailable) HomeFeedUsageState.PAUSED else HomeFeedUsageState.UNKNOWN
-    }
-    stats.reset(EnforcementReason.X_HOME)
-    stats.reset(EnforcementReason.X_VIDEOS)
-    if (::xOverlay.isInitialized) xOverlay.hide()
-    publishXHomeStatus()
-  }
-
-  /** One-second ticks count a still Home feed; events identify only the full-screen video pager. */
-  private fun handleXEvent(event: AccessibilityEvent?) {
-    if (!canRunEnforcementAction()) return
-    val nowMs = SystemClock.elapsedRealtime()
-    var settings = xSettings()
-    if (!isScreenInteractive) {
-      xStateMachine.pause(nowMs, settings)
-      xHomeUsageState = if (xStateMachine.requiresFreshHomeObservation()) {
-        HomeFeedUsageState.UNKNOWN
-      } else {
-        HomeFeedUsageState.PAUSED
-      }
-      publishXHomeStatus()
-      return
-    }
-    val root = rootInActiveWindow ?: run {
-      xStateMachine.markUnverifiableGap(nowMs, settings)
-      xHomeUsageState = HomeFeedUsageState.UNKNOWN
-      publishXHomeStatus()
-      return
-    }
-    if (root.packageName?.toString() != X_PACKAGE) {
-      if (xOverlay.isShowing && windows.any { it.root?.packageName?.toString() == X_PACKAGE }) return
-      xStateMachine.pause(nowMs, settings)
-      xHomeUsageState = if (xStateMachine.requiresFreshHomeObservation()) {
-        HomeFeedUsageState.UNKNOWN
-      } else {
-        HomeFeedUsageState.PAUSED
-      }
-      publishXHomeStatus()
-      return
-    }
-    val surface = XDetector.detect(snapshotNodeSignals(root))
-    val pager = if (surface == XSurface.VIDEO) findXNode(root) { isXVideoPager(it) } else null
-    if (surface == XSurface.HOME) preferences.recordXSignal(ZenGuardPreferences.X_HOME_SIGNAL)
-    if (pager != null) preferences.recordXSignal(ZenGuardPreferences.X_VIDEO_SIGNAL)
-    if (preferences.xObservationMode) { clearXEnforcement(); return }
-    settings = xSettings()
-    if (!xStorageAvailable && surface == XSurface.HOME && settings.homeEnabled && event != null) {
-      if (homeFeedStatusStore.recoverX(nowMs)) {
-        xStorageAvailable = true
-        xStateMachine.recoverStorage(nowMs)
-      }
-    }
-    val source = event?.source
-    val advanced = pager != null && event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED &&
-      source != null && XVideoAdvanceDetector.isAdvance(
-        XVideoScrollSignal(
-          sourceIsPager = isXVideoPager(source),
-          sourceOwnedByPager = isXVideoPagerOrDescendant(source),
-          scrollY = event.scrollY,
-          fromIndex = event.fromIndex,
-          toIndex = event.toIndex,
-        ),
-      )
-    val action = xStateMachine.next(surface, nowMs, settings, advanced)
-    xHomeUsageState = when {
-      action == XAction.HOME_UNAVAILABLE || surface == XSurface.UNKNOWN -> HomeFeedUsageState.UNKNOWN
-      surface == XSurface.HOME && settings.homeEnabled && !xStateMachine.requiresFreshHomeObservation() -> HomeFeedUsageState.ACTIVE
-      xStateMachine.requiresFreshHomeObservation() -> HomeFeedUsageState.UNKNOWN
-      else -> HomeFeedUsageState.PAUSED
-    }
-    when (action) {
-      XAction.HOME_BREAK -> {
-        val wasShowing = xOverlay.isShowing
-        xHomeUsageState = HomeFeedUsageState.PAUSED
-        xOverlay.show(preferences.xHomeMinutes)
-        val lockoutDeadline = xStateMachine.homeRuntimeState(nowMs).blockedUntilElapsedMs
-        recordXHomeStats(wasShowing, xOverlay.isShowing, EnforcementStatsOutcome.SUCCESS, lockoutDeadline)
-      }
-      XAction.HOME_UNAVAILABLE -> {
-        xHomeUsageState = HomeFeedUsageState.UNKNOWN
-        xOverlay.showUnavailable()
-      }
-      XAction.LEAVE_VIDEO -> {
-        xOverlay.hide()
-        // X's own Back control closes its viewer without docking playback into PiP.
-        val back = findXNode(root) { it.contentDescription?.toString() == "Back" }
-        var target = back
-        var leftVideo = false
-        var attempts = 0
-        while (target != null && attempts++ < MAX_PARENT_CHAIN) {
-          val candidate = target ?: break
-          if (candidate.isClickable && candidate.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            leftVideo = true
-            break
-          }
-          target = candidate.parent
-        }
-        if (leftVideo) {
-          val callbackKey = event?.eventTime?.toString() ?: SystemClock.elapsedRealtime().toString()
-          recordXVideoStats(callbackKey, EnforcementStatsOutcome.SUCCESS)
-          Toast.makeText(this, R.string.zen_guard_x_video_blocked, Toast.LENGTH_SHORT).show()
-        }
-      }
-      XAction.NONE -> if (surface != XSurface.UNKNOWN) {
-        xOverlay.hide()
-        stats.reset(EnforcementReason.X_HOME)
-      }
-    }
-    publishXHomeStatus(showUnavailableOnFailure = surface == XSurface.HOME && settings.homeEnabled)
-  }
-
-  /** X's observed pager is the full-screen scroll node two levels under VideoTab. */
-  private fun isXVideoPager(node: AccessibilityNodeInfo): Boolean =
-    node.isVisibleToUser && node.isScrollable && node.parent?.parent?.viewIdResourceName == "VideoTab"
-
-  /** X can emit the pager's scroll event from one of its descendants. */
-  private fun isXVideoPagerOrDescendant(node: AccessibilityNodeInfo): Boolean {
-    var candidate: AccessibilityNodeInfo? = node
-    var depth = 0
-    while (candidate != null && depth++ <= MAX_PARENT_CHAIN) {
-      if (isXVideoPager(candidate)) return true
-      candidate = candidate.parent
-    }
-    return false
-  }
-
-  private fun findXNode(root: AccessibilityNodeInfo, matches: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
-    val queue = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
-    queue.add(root to 0)
-    var visited = 0
-    while (queue.isNotEmpty() && visited++ < MAX_NODES) {
-      val (node, depth) = queue.removeFirst()
-      if (!node.isVisibleToUser) continue
-      if (matches(node)) return node
-      if (depth < MAX_DEPTH) for (index in 0 until node.childCount) node.getChild(index)?.let { queue.add(it to depth + 1) }
-    }
-    return null
   }
 
   /**
@@ -856,7 +666,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   override fun onInterrupt() {
     closeAppRuleOverlay()
     browserIntervention?.end()
-    clearXEnforcement(preserveHomeLockout = true)
+    x.pause()
     youtube.reset()
     stats.clear()
     clearInstagramEnforcement(preserveHomeSession = true)
@@ -876,15 +686,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     visitDeadline.cancel()
     browserIntervention?.end()
     youtube.reset()
-    xHandler.removeCallbacksAndMessages(null)
-    if (::preferences.isInitialized && hasActiveProtection()) {
-      // Keep the last durable X boundary so a reconnect can reconcile the time
-      // spent while this service instance was gone. A disabled guard is cleared
-      // normally and must not retain a stale session.
-      publishXHomeStatus()
-    } else {
-      clearXEnforcement()
-    }
+    x.destroy(hasActiveProtection())
     navigationHandler.removeCallbacksAndMessages(null)
     usageHandler.removeCallbacksAndMessages(null)
     closeAppRuleOverlay()
@@ -954,47 +756,8 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     instagramStateMachine.markStorageUnavailable()
   }
 
-  private fun publishXHomeStatus(showUnavailableOnFailure: Boolean = false) {
-    if (!::homeFeedStatusStore.isInitialized || !xStorageAvailable) return
-    val nowElapsedMs = SystemClock.elapsedRealtime()
-    val runtime = xStateMachine.homeRuntimeState(nowElapsedMs)
-    if (homeFeedStatusStore.recordX(runtime.copy(usageState = xHomeUsageState))) return
-
-    // Once a durable boundary cannot be confirmed, continuing to expose X would let process death
-    // replay an older allowance. Stop the Home rule and keep the UI explicitly unavailable.
-    xStorageAvailable = false
-    xHomeUsageState = HomeFeedUsageState.UNKNOWN
-    xStateMachine.markStorageUnavailable()
-    if (showUnavailableOnFailure && ::xOverlay.isInitialized) xOverlay.showUnavailable()
-  }
-
-  /**
-   * Each X feed enforces only on a surface the service has already seen. A feed
-   * switched on later therefore starts on its own signal, and never pauses a
-   * feed that is already running.
-   */
-  private fun xSettings() = XSettings(
-    homeEnabled = preferences.xHomeEnabled && preferences.hasXSignal(ZenGuardPreferences.X_HOME_SIGNAL),
-    videosEnabled = preferences.xVideosEnabled && preferences.hasXSignal(ZenGuardPreferences.X_VIDEO_SIGNAL),
-    homeAllowanceMs = preferences.xHomeMinutes * 60_000L,
-  )
-
   private fun hasActiveProtection(): Boolean =
     ::preferences.isInitialized && preferences.hasCurrentConsent && preferences.protectionEnabled
-
-  internal fun recordXHomeStats(
-    wasShowing: Boolean,
-    overlayAttached: Boolean,
-    outcome: EnforcementStatsOutcome,
-    lockoutDeadlineElapsedMs: Long? = null,
-  ): Boolean {
-    if (wasShowing || !overlayAttached) return false
-    val durableKey = lockoutDeadlineElapsedMs?.takeIf { it >= 0L }?.let { "x_home_lockout:$it" }
-    return stats.record(EnforcementReason.X_HOME, outcome, "overlay", durableKey)
-  }
-
-  internal fun recordXVideoStats(callbackKey: String, outcome: EnforcementStatsOutcome): Boolean =
-    stats.record(EnforcementReason.X_VIDEOS, outcome, callbackKey)
 
   internal fun recordAppLimitStats(packageName: String, outcome: EnforcementStatsOutcome): Boolean =
     stats.record(EnforcementReason.APP_LIMIT, outcome, packageName)
@@ -1010,7 +773,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     browserIntervention?.end()
     youtube.reset()
     stats.clear()
-    clearXEnforcement()
+    x.disable()
     usageTracker.reset()
     currentForegroundPackage = null
     intentSessions.reset()
@@ -1029,7 +792,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     browserIntervention?.end()
     youtube.reset()
     stats.clear()
-    clearXEnforcement(preserveHomeLockout = true)
+    x.pause()
     usageTracker.reset()
     currentForegroundPackage = null
     closeAppRuleOverlay()
@@ -1053,50 +816,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       return false
     }
     return true
-  }
-
-  /** Reads text and descriptions only from exact address-bar nodes; page text is never copied. */
-  private fun handleBrowserEvent(browserPackage: String, observedRoot: AccessibilityNodeInfo? = null) {
-    val intervention = browserIntervention ?: return
-    if (!canRunEnforcementAction()) return
-    if (!adultSiteStore.enabled) {
-      intervention.end()
-      return
-    }
-    val root = observedRoot ?: browserRoot(browserPackage) ?: return
-    if (root.packageName?.toString() != browserPackage) return
-    val detection = BrowserUrlDetector.detect(browserPackage, browserAddressBars(root, browserPackage)) ?: return
-    adultSiteStore.recordBrowserSignal(detection.browserMask)
-    intervention.observe(
-      browserPackage,
-      blocked = AdultSitePolicy.isBlocked(detection.host, adultSiteStore.customHosts()),
-    )
-  }
-
-  private fun browserRoot(browserPackage: String): AccessibilityNodeInfo? =
-    windows.firstNotNullOfOrNull { window ->
-      window.root?.takeIf { it.packageName?.toString() == browserPackage }
-    } ?: rootInActiveWindow?.takeIf { it.packageName?.toString() == browserPackage }
-
-  private fun browserAddressBars(root: AccessibilityNodeInfo, browserPackage: String): List<BrowserNodeSignal> {
-    data class Pending(val node: AccessibilityNodeInfo, val depth: Int)
-    val pending = ArrayDeque<Pending>()
-    val result = ArrayList<BrowserNodeSignal>(2)
-    pending.add(Pending(root, 0))
-    var visited = 0
-    while (pending.isNotEmpty() && visited++ < MAX_BROWSER_NODES) {
-      val (node, depth) = pending.removeFirst()
-      if (!node.isVisibleToUser) continue
-      val viewId = node.viewIdResourceName.orEmpty()
-      if (BrowserUrlDetector.isAddressBar(browserPackage, viewId)) {
-        result.add(
-          BrowserNodeSignal(viewId, node.text?.toString().orEmpty(), true, node.contentDescription?.toString().orEmpty()),
-        )
-      }
-      if (depth >= MAX_BROWSER_DEPTH) continue
-      for (index in 0 until node.childCount) node.getChild(index)?.let { pending.add(Pending(it, depth + 1)) }
-    }
-    return result
   }
 
   /**
@@ -1234,7 +953,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     private const val X_PACKAGE = "com.twitter.android"
     private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
     private const val INSTAGRAM_PACKAGE = "com.instagram.android"
-    private const val MAX_NODES = 500
     private const val MAX_DEPTH = 36
     private const val MAX_PARENT_CHAIN = 8
     private const val NAVIGATION_RETRY_MS = 250L
@@ -1244,8 +962,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     private const val USAGE_TICK_MS = 15_000L
     private const val APP_RULE_REFRESH_MS = 1_000L
     private const val INSTAGRAM_REELS_DEADLINE_RETRY_MS = 1_000L
-    private const val MAX_BROWSER_NODES = 180
-    private const val MAX_BROWSER_DEPTH = 18
 
     private val INBOX_ID_FRAGMENTS = listOf(
       "direct_inbox",

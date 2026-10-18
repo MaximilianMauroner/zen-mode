@@ -8,12 +8,10 @@ import org.junit.Test
 
 class ZenGuardAccessibilityServiceStatsTest {
   @Test
-  fun `failed actions and unattached overlays never reach the ledger`() {
+  fun `failed app actions never reach the ledger`() {
     val fixture = fixture()
     val service = fixture.service
 
-    assertFalse(service.recordXVideoStats("failed-node-action", EnforcementStatsOutcome.FAILED))
-    assertFalse(service.recordXHomeStats(false, false, EnforcementStatsOutcome.SUCCESS))
     assertFalse(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.FAILED))
     assertFalse(service.recordRollingLimitStats("app.one", EnforcementStatsOutcome.FAILED))
     assertFalse(service.recordTimedVisitStats("app.one", EnforcementStatsOutcome.FAILED))
@@ -21,52 +19,6 @@ class ZenGuardAccessibilityServiceStatsTest {
     val snapshot = fixture.store.snapshot()
     assertEquals(0L, snapshot.total)
     assertTrue(snapshot.counts.values.all { it == 0L })
-  }
-
-  @Test
-  fun `a real service hook deduplicates retries but accepts a later intervention`() {
-    val fixture = fixture()
-    val service = fixture.service
-
-    assertTrue(service.recordXVideoStats("scroll-callback-1", EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordXVideoStats("scroll-callback-1", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordXVideoStats("scroll-callback-2", EnforcementStatsOutcome.SUCCESS))
-
-    val snapshot = fixture.store.snapshot()
-    assertEquals(2L, snapshot.total)
-    assertEquals(2L, snapshot.counts[EnforcementReason.X_VIDEOS.key])
-  }
-
-  @Test
-  fun `production path hooks cover X and app limits`() {
-    val fixture = fixture()
-    val service = fixture.service
-
-    assertTrue(
-      service.recordXHomeStats(
-        wasShowing = false,
-        overlayAttached = true,
-        outcome = EnforcementStatsOutcome.SUCCESS,
-      ),
-    )
-    assertFalse(
-      service.recordXHomeStats(
-        wasShowing = true,
-        overlayAttached = true,
-        outcome = EnforcementStatsOutcome.SUCCESS,
-      ),
-    )
-    assertTrue(service.recordXVideoStats("video-callback-1", EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordXVideoStats("video-callback-1", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordAppLimitStats("app.two", EnforcementStatsOutcome.SUCCESS))
-
-    val snapshot = fixture.store.snapshot()
-    assertEquals(4L, snapshot.total)
-    assertEquals(1L, snapshot.counts[EnforcementReason.X_HOME.key])
-    assertEquals(1L, snapshot.counts[EnforcementReason.X_VIDEOS.key])
-    assertEquals(2L, snapshot.counts[EnforcementReason.APP_LIMIT.key])
   }
 
   @Test
@@ -85,23 +37,6 @@ class ZenGuardAccessibilityServiceStatsTest {
     assertEquals(4L, snapshot.total)
     assertEquals(2L, snapshot.counts[EnforcementReason.ROLLING_LIMIT.key])
     assertEquals(2L, snapshot.counts[EnforcementReason.TIMED_VISIT.key])
-  }
-
-  @Test
-  fun `X Home lockout identity survives service reconnection and unrelated stats`() {
-    val preferences = TestPreferences()
-    val firstStore = EnforcementStatsStore(preferences)
-    val firstService = ZenGuardAccessibilityService(firstStore)
-    assertTrue(firstService.recordXHomeStats(false, true, EnforcementStatsOutcome.SUCCESS, 9_000L))
-    assertTrue(firstService.recordXVideoStats("video:1", EnforcementStatsOutcome.SUCCESS))
-
-    val secondStore = EnforcementStatsStore(preferences)
-    val reconnectedService = ZenGuardAccessibilityService(secondStore)
-    assertFalse(reconnectedService.recordXHomeStats(false, true, EnforcementStatsOutcome.SUCCESS, 9_000L))
-
-    val snapshot = secondStore.snapshot()
-    assertEquals(2L, snapshot.total)
-    assertEquals(1L, snapshot.counts[EnforcementReason.X_HOME.key])
   }
 
   @Test

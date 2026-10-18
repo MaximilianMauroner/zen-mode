@@ -124,6 +124,50 @@ class ZenGuardAccessibilityServiceStatsTest {
     assertEquals(1L, snapshot.counts[EnforcementReason.X_HOME.key])
   }
 
+  @Test
+  fun `conditional key clearing preserves a match and does not remember the new key`() {
+    val store = EnforcementStatsStore(TestPreferences())
+    val stats = InterventionStats(store)
+
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertTrue(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+
+    stats.clearKeyIfDifferent(EnforcementReason.APP_LIMIT, "app.one")
+    assertFalse(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+
+    stats.clearKeyIfDifferent(EnforcementReason.APP_LIMIT, "app.two")
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.two"))
+    assertFalse(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+
+    val snapshot = store.snapshot()
+    assertEquals(3L, snapshot.total)
+    assertEquals(2L, snapshot.counts[EnforcementReason.APP_LIMIT.key])
+    assertEquals(1L, snapshot.counts[EnforcementReason.TIMED_VISIT.key])
+  }
+
+  @Test
+  fun `reset clears one reason and clear permits later interventions without erasing totals`() {
+    val store = EnforcementStatsStore(TestPreferences())
+    val stats = InterventionStats(store)
+
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertTrue(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+
+    stats.reset(EnforcementReason.APP_LIMIT)
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertFalse(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertEquals(3L, store.snapshot().total)
+
+    stats.clear()
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertTrue(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+
+    val snapshot = store.snapshot()
+    assertEquals(5L, snapshot.total)
+    assertEquals(3L, snapshot.counts[EnforcementReason.APP_LIMIT.key])
+    assertEquals(2L, snapshot.counts[EnforcementReason.TIMED_VISIT.key])
+  }
+
   private data class Fixture(
     val service: ZenGuardAccessibilityService,
     val store: EnforcementStatsStore,

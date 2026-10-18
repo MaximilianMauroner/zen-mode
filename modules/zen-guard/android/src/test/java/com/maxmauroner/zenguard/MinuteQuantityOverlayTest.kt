@@ -30,23 +30,26 @@ import org.robolectric.shadows.ShadowWindowManagerImpl
 class MinuteQuantityOverlayTest {
   private lateinit var controller: ServiceController<ZenGuardAccessibilityService>
   private lateinit var appOverlay: AppRuleOverlay
-  private lateinit var instagramOverlay: InstagramBlockerOverlay
+  private lateinit var instagramIntervention: InstagramIntervention
 
   @Before fun setUp() {
     controller = Robolectric.buildService(ZenGuardAccessibilityService::class.java).create()
     appOverlay = AppRuleOverlay(controller.get())
-    instagramOverlay = InstagramBlockerOverlay(
+    instagramIntervention = InstagramIntervention(
       service = controller.get(),
-      onLeave = {},
-      onOpenMessages = {},
-      onContinue = { false },
       readStats = { InstagramBlockerStats(HomeFeedRuntimeState(0L, null), 5, 0, 0, 60_000L) },
+      canEnforce = { true },
+      recordStop = {},
+      recordAttachment = {},
+      leave = {},
+      openMessages = {},
+      continueReels = { false },
     )
   }
 
   @After fun tearDown() {
     appOverlay.hide()
-    instagramOverlay.hide()
+    instagramIntervention.end()
     controller.destroy()
   }
 
@@ -76,14 +79,13 @@ class MinuteQuantityOverlayTest {
   }
 
   private fun assertReelsAction(minutes: Int, expectedLabel: String) {
-    instagramOverlay.show(
+    instagramIntervention.observe(
       InstagramGuardAction.ShowBlocker(InstagramBlockReason.REELS_SWIPE, SystemClock.elapsedRealtime() + 1_000L),
       minutes,
       debugInfo = null,
-      onAttached = {},
     )
     shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1_250))
-    assertTrue(instagramOverlay.isShowing)
+    assertTrue(instagramIntervention.isShowing)
     val continueButton = views().filterIsInstance<Button>().single { it.text.startsWith("Continue for") }
     assertTrue(continueButton.isEnabled)
     assertEquals(expectedLabel, continueButton.text.toString())

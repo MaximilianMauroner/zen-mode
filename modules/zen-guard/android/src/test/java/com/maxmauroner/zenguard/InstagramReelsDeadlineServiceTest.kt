@@ -2,7 +2,6 @@ package com.maxmauroner.zenguard
 
 import android.content.Context
 import android.content.Intent
-import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
@@ -75,6 +74,30 @@ class InstagramReelsDeadlineServiceTest {
 
     advance(Duration.ofSeconds(5))
     assertFalse(hasPendingDeadline())
+    assertEquals(1L, expiryCount())
+  }
+
+  @Test fun `an early Reels deadline still pauses at the actual Continue expiry`() {
+    val policy = grantOneMinuteWindow()
+    val remainingMs = requireNotNull(policy.reelsWindowRemainingMs(SystemClock.elapsedRealtime()))
+    advance(Duration.ofMillis(remainingMs - 1L))
+    assertEquals(1L, policy.reelsWindowRemainingMs(SystemClock.elapsedRealtime()))
+
+    val deadline = reelsDeadline()
+    val post = deadline.privateField<Runnable>("current")
+    deadline.privateField<android.os.Handler>("handler").removeCallbacks(post)
+    post.run()
+
+    assertNull(policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertFalse(overlay().isShowing)
+    assertTrue(deadline.isPending)
+    assertEquals(0L, expiryCount())
+
+    advance(Duration.ofMillis(20L))
+
+    assertEquals(InstagramBlockReason.REELS_WINDOW_EXPIRED, policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
+    assertTrue(overlay().isShowing)
+    assertFalse(deadline.isPending)
     assertEquals(1L, expiryCount())
   }
 
@@ -161,8 +184,12 @@ class InstagramReelsDeadlineServiceTest {
     shadowOf(controller.get()).setRootInActiveWindow(null)
     advance(Duration.ofSeconds(61))
     assertTrue(hasPendingDeadline())
+    val safety = AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings"))
     controller.get().javaClass.getDeclaredField("appRuleSafety").apply { isAccessible = true }
-      .set(controller.get(), AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings")))
+      .set(controller.get(), safety)
+    val wholeApp = controller.get().privateField<WholeAppOwner>("wholeApp")
+    wholeApp.javaClass.getDeclaredField("appRuleSafety").apply { isAccessible = true }
+      .set(wholeApp, safety)
     showRoot("com.android.settings", "com.android.settings:id/content")
 
     advance(Duration.ofSeconds(2))
@@ -304,10 +331,9 @@ class InstagramReelsDeadlineServiceTest {
     assertEquals(1L, expiryCount())
   }
 
-  /** Opens a Reel from a DM thread, swipes to the pause, waits, and taps Continue. */
   private fun grantOneMinuteWindow(): InstagramGuardStateMachine {
-    val service = controller.get()
-    val policy = service.privateField<InstagramGuardStateMachine>("instagramStateMachine")
+    val instagram = controller.get().privateField<InstagramOwner>("instagram")
+    val policy = instagram.privateField<InstagramGuardStateMachine>("policy")
     val settings = ZenGuardPreferences(context).instagramSettings()
     showRoot("com.instagram.android", "com.instagram.android:id/clips_viewer_view_pager")
     val start = SystemClock.elapsedRealtime()
@@ -326,9 +352,9 @@ class InstagramReelsDeadlineServiceTest {
     assertEquals(InstagramBlockReason.REELS_SWIPE, (swipe as InstagramGuardAction.ShowBlocker).reason)
     advance(Duration.ofSeconds(30))
 
-    val onContinue = service.privateField<InstagramBlockerOverlay>("instagramOverlay")
-      .privateField<() -> Boolean>("onContinue")
-    assertTrue(onContinue())
+    val continueReels = instagram.privateField<InstagramIntervention>("intervention")
+      .privateField<() -> Boolean>("continueReels")
+    assertTrue(continueReels())
     assertEquals(60_000L, policy.debugState(SystemClock.elapsedRealtime()).reelsWindowRemainingMs)
     return policy
   }
@@ -352,13 +378,15 @@ class InstagramReelsDeadlineServiceTest {
     })
   }
 
-  private fun overlay(): InstagramBlockerOverlay = controller.get().privateField("instagramOverlay")
+  private fun overlay(): InstagramIntervention = controller.get().privateField<InstagramOwner>("instagram").privateField("intervention")
 
-  private fun hasPendingDeadline(): Boolean {
-    val handler = controller.get().javaClass.getDeclaredMethod("getInstagramDeadlineHandler").apply {
+  private fun hasPendingDeadline(): Boolean = reelsDeadline().isPending
+
+  private fun reelsDeadline(): DeadlineTask {
+    val instagram = controller.get().privateField<InstagramOwner>("instagram")
+    return instagram.javaClass.getDeclaredMethod("getReelsDeadline").apply {
       isAccessible = true
-    }.invoke(controller.get()) as Handler
-    return handler.hasCallbacks(controller.get().privateField<Runnable>("instagramReelsDeadlineCheck"))
+    }.invoke(instagram) as DeadlineTask
   }
 
   private fun expiryCount(): Long =

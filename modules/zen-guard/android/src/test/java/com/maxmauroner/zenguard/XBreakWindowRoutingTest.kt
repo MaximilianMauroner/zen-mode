@@ -147,9 +147,9 @@ class XBreakWindowRoutingTest {
     shadowOf(Looper.getMainLooper()).idleFor(duration)
   }
 
-  private fun overlay(): XBreakOverlay = controller.get().privateField("xOverlay")
+  private fun overlay(): XBreakOverlay = controller.get().privateField<XOwner>("x").privateField("overlay")
 
-  private fun xPolicy(): XGuardStateMachine = controller.get().privateField("xStateMachine")
+  private fun xPolicy(): XGuardStateMachine = controller.get().privateField<XOwner>("x").privateField("policy")
 
   @Suppress("UNCHECKED_CAST")
   private fun <T> Any.privateField(name: String): T =

@@ -32,6 +32,7 @@ Run the checks that cover the change:
 
 ```bash
 npm test
+npm run test:nightly
 npx tsc --noEmit
 npm run lint
 npx expo export --platform web
@@ -48,6 +49,15 @@ folder through `expo prebuild` when it is missing.
 
 For Android native changes, also build and test on an Android device or
 emulator with `npm run android`. State any check you could not run.
+
+## Rule enforcement
+
+| Residual rule | Enforcer |
+| --- | --- |
+| Check the proposed merge before landing. | `pr-checks.yml` runs `Zen Mode app checks` and `Zen Mode native checks` on the PR merge ref. Max must require both checks with strict up-to-date protection and administrator enforcement. |
+| Compile native source and tests together after native changes. | `npm run test:native` runs the Kotlin compiler and unit tests in the native PR job. Device checks remain a separate gate. |
+| Do not treat a negative observation as acceptance. | `tests/real-app-qa-cli.test.mjs` runs the actual QA CLI through `npm test`. Real-device acceptance remains manual. |
+| Check fresh-runner prerequisites before release actions. | `tests/prepare-nightly-tools.test.mjs` and `tests/nightly-finalization.test.mjs` cover SDK discovery and failed dependency installation through `npm test`. Each PR job runs its own `npm ci`. |
 
 ## Prompting guidance
 

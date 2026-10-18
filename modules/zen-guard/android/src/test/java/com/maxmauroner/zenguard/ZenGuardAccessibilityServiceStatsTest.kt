@@ -10,11 +10,11 @@ class ZenGuardAccessibilityServiceStatsTest {
   @Test
   fun `failed app actions never reach the ledger`() {
     val fixture = fixture()
-    val service = fixture.service
+    val stats = fixture.stats
 
-    assertFalse(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.FAILED))
-    assertFalse(service.recordRollingLimitStats("app.one", EnforcementStatsOutcome.FAILED))
-    assertFalse(service.recordTimedVisitStats("app.one", EnforcementStatsOutcome.FAILED))
+    assertFalse(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.FAILED, "app.one"))
+    assertFalse(stats.record(EnforcementReason.ROLLING_LIMIT, EnforcementStatsOutcome.FAILED, "app.one"))
+    assertFalse(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.FAILED, "app.one"))
 
     val snapshot = fixture.store.snapshot()
     assertEquals(0L, snapshot.total)
@@ -24,14 +24,14 @@ class ZenGuardAccessibilityServiceStatsTest {
   @Test
   fun `rolling limits and timed visits count distinct successful interventions`() {
     val fixture = fixture()
-    val service = fixture.service
+    val stats = fixture.stats
 
-    assertTrue(service.recordRollingLimitStats("app.one", EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordRollingLimitStats("app.one", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordRollingLimitStats("app.two", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordTimedVisitStats("app.one", EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordTimedVisitStats("app.one", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordTimedVisitStats("app.two", EnforcementStatsOutcome.SUCCESS))
+    assertTrue(stats.record(EnforcementReason.ROLLING_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertFalse(stats.record(EnforcementReason.ROLLING_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertTrue(stats.record(EnforcementReason.ROLLING_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.two"))
+    assertTrue(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertFalse(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertTrue(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.two"))
 
     val snapshot = fixture.store.snapshot()
     assertEquals(4L, snapshot.total)
@@ -84,13 +84,13 @@ class ZenGuardAccessibilityServiceStatsTest {
   }
 
   private data class Fixture(
-    val service: ZenGuardAccessibilityService,
+    val stats: InterventionStats,
     val store: EnforcementStatsStore,
   )
 
   private fun fixture(): Fixture {
     val store = EnforcementStatsStore(TestPreferences())
-    return Fixture(ZenGuardAccessibilityService(store), store)
+    return Fixture(InterventionStats(store), store)
   }
 
   private class TestPreferences : SharedPreferences {

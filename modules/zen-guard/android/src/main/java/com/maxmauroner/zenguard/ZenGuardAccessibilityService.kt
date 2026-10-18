@@ -26,17 +26,10 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   private val stats = InterventionStats(null)
   private val youtube = YouTubeOwner(this, stats)
   private val x = XOwner(this, stats, canEnforce = ::canRunEnforcementAction)
-  private var instagramStorageAvailable = true
-  private val instagramStateMachine = InstagramGuardStateMachine()
-  private val instagramDebugTrace = if (BuildConfig.DEBUG) InstagramDebugTrace() else null
-  private val navigationHandler by lazy { Handler(Looper.getMainLooper()) }
-  private val reelsDeadline by lazy { DeadlineTask(Handler(Looper.getMainLooper()), decide = ::checkInstagramReelsDeadline) }
-  private lateinit var instagramIntervention: InstagramIntervention
-  private var instagramNavigationSuppressedUntilMs = 0L
+  private val instagram = InstagramOwner(this, stats, canEnforce = ::canRunEnforcementAction)
   /** Wall-clock injection keeps daily and rolling service tests independent of host time. */
   internal var appRuleWallClock: () -> Long = System::currentTimeMillis
   private lateinit var appLimits: AppLimitStore
-  private lateinit var dailyTally: DailyTally
   private lateinit var intentStore: IntentAppStore
   private lateinit var rollingLimits: RollingLimitStore
   private lateinit var appRuleSafety: AppRuleSafety
@@ -51,7 +44,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
   }
   private lateinit var adultSiteStore: AdultSiteRuleStore
   private var browserIntervention: BrowserIntervention? = null
-  private lateinit var homeFeedStatusStore: HomeFeedStatusStore
   private val usageTracker = AppUsageTracker()
   private val usageHandler by lazy { Handler(Looper.getMainLooper()) }
   private var currentForegroundPackage: String? = null
@@ -61,10 +53,9 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       if (intent?.action != Intent.ACTION_SCREEN_OFF || !hasActiveProtection()) return
       val nowMs = SystemClock.elapsedRealtime()
       x.screenOff(nowMs)
-      reelsDeadline.cancel()
-      instagramStateMachine.onAppBackground(nowMs, preferences.instagramSettings())
+      instagram.screenOff(nowMs)
       x.publishHomeStatus()
-      publishInstagramHomeStatus()
+      instagram.publishHomeStatus()
     }
   }
 
@@ -95,7 +86,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       },
     )
     appLimits = AppLimitStore(this)
-    dailyTally = DailyTally(this)
+    instagram.createTally()
     intentStore = IntentAppStore(this)
     rollingLimits = RollingLimitStore(this)
     appRuleSafety = AppRuleSafety.resolve(this)
@@ -110,22 +101,11 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       recheck = { handleBrowserEvent(it) },
     )
     youtube.onServiceConnected(preferences)
-    homeFeedStatusStore = HomeFeedStatusStore(this)
+    val homeFeedStatusStore = HomeFeedStatusStore(this)
     val nowElapsedMs = SystemClock.elapsedRealtime()
-    val storedInstagram = homeFeedStatusStore.instagram(nowElapsedMs)
-    instagramStorageAvailable = storedInstagram.storageState == HomeFeedStorageState.AVAILABLE
-    instagramStateMachine.restore(
-      HomeFeedRuntimeState(
-        usedMs = storedInstagram.usedMs,
-        blockedUntilElapsedMs = storedInstagram.blockedUntilElapsedMs,
-        usageState = storedInstagram.usageState,
-        lockoutState = storedInstagram.lockoutState,
-        storageState = storedInstagram.storageState,
-        capturedAtElapsedMs = nowElapsedMs,
-      ),
-    )
+    instagram.restore(preferences, homeFeedStatusStore, nowElapsedMs)
     x.restore(preferences, homeFeedStatusStore, nowElapsedMs)
-    publishInstagramHomeStatus()
+    instagram.publishHomeStatus()
     val screenFilter = IntentFilter(Intent.ACTION_SCREEN_OFF)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       registerReceiver(screenStateReceiver, screenFilter, Context.RECEIVER_NOT_EXPORTED)
@@ -136,39 +116,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     screenReceiverRegistered = true
     usageHandler.postDelayed(usageTicker, USAGE_TICK_MS)
     x.start()
-    instagramIntervention = InstagramIntervention(
-      service = this,
-      readStats = ::instagramBlockerStats,
-      canEnforce = ::canRunEnforcementAction,
-      recordStop = { dailyTally.recordStop(System.currentTimeMillis()) },
-      recordAttachment = { reason ->
-        reelsDeadline.cancel()
-        stats.record(reason, EnforcementStatsOutcome.SUCCESS)
-      },
-      leave = { reason ->
-        instagramStateMachine.leaveBlockedSurface()
-        when (reason) {
-          InstagramBlockReason.HOME_LIMIT -> performGlobalAction(GLOBAL_ACTION_HOME)
-          InstagramBlockReason.EXPLORE,
-          InstagramBlockReason.REELS_ENTRY,
-          InstagramBlockReason.REELS_SWIPE,
-          InstagramBlockReason.REELS_WINDOW_EXPIRED,
-          -> openInstagramMessages()
-        }
-      },
-      openMessages = {
-        instagramStateMachine.leaveBlockedSurface()
-        openInstagramMessages()
-      },
-      continueReels = {
-        instagramStateMachine.continueReels(SystemClock.elapsedRealtime(), preferences.instagramSettings()).also { continued ->
-          if (continued) {
-            dailyTally.recordContinue(System.currentTimeMillis())
-            scheduleInstagramReelsDeadline()
-          }
-        }
-      },
-    )
+    instagram.start()
   }
 
   override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -206,7 +154,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
           x.pause()
         }
         if (windows.none { it.root?.packageName?.toString() == INSTAGRAM_PACKAGE }) {
-          clearInstagramEnforcement(preserveHomeSession = true)
+          instagram.pause()
         }
       }
       if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
@@ -227,16 +175,15 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
 
     when (eventPackage) {
       YOUTUBE_PACKAGE -> {
-        instagramNavigationSuppressedUntilMs = 0L
-        clearInstagramEnforcement(preserveHomeSession = true)
+        instagram.pause(InstagramPause.DEPARTED)
         youtube.observe(event)
       }
-      INSTAGRAM_PACKAGE -> handleInstagramEvent(event)
+      INSTAGRAM_PACKAGE -> instagram.observe(event)
       X_PACKAGE -> {
-        clearInstagramEnforcement(preserveHomeSession = true)
+        instagram.pause()
         x.observe(event)
       }
-      else -> handleNonInstagramEvent(event)
+      else -> instagram.observeOtherApp(event)
     }
   }
 
@@ -342,7 +289,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
 
   private fun pauseAppRuleUsage() {
     usageTracker.onForeground(null, SystemClock.elapsedRealtime())?.let(::bankUsage)
-    clearInstagramEnforcement(preserveHomeSession = true)
+    instagram.pause()
   }
 
   private fun prepareAppRuleOverlay(packageName: String, mode: AppRuleOverlayMode) {
@@ -368,7 +315,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
       ?.takeIf { it.packageName?.toString() == packageName } ?: return false
     when {
       BrowserUrlDetector.supports(packageName) -> handleBrowserEvent(packageName, root)
-      packageName == INSTAGRAM_PACKAGE -> handleInstagramEvent(null, root)
+      packageName == INSTAGRAM_PACKAGE -> instagram.observe(null, root)
       packageName == YOUTUBE_PACKAGE -> youtube.observe(null, root)
     }
     closeAppRuleOverlay()
@@ -513,177 +460,13 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     packageName
   }
 
-  /**
-   * Keyboard, system-bar, and other transient windows also emit accessibility events while
-   * Instagram stays in the foreground. Do not treat those events as an app switch. Clear the
-   * guard only after a window event confirms that no Instagram window remains visible.
-   */
-  private fun handleNonInstagramEvent(event: AccessibilityEvent) {
-    if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-      event.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED
-    ) {
-      return
-    }
-
-    val instagramWindowVisible = windows.any { window ->
-      window.root?.packageName?.toString() == INSTAGRAM_PACKAGE
-    }
-    if (!instagramWindowVisible) {
-      instagramNavigationSuppressedUntilMs = 0L
-      clearInstagramEnforcement(preserveHomeSession = true)
-    }
-  }
-
-  /** Null [event] re-reads a deadline or card handoff without inventing a click or scroll. */
-  private fun handleInstagramEvent(event: AccessibilityEvent?, observedRoot: AccessibilityNodeInfo? = rootInActiveWindow) {
-    val root = observedRoot ?: return
-    // While our accessibility overlay is attached, Android can still deliver queued Instagram
-    // events even though rootInActiveWindow points at the overlay (or another transient window).
-    // Never classify that tree as Instagram UNKNOWN and erase the DM provenance underneath it.
-    if (root.packageName?.toString() != INSTAGRAM_PACKAGE) return
-    val nodes = snapshotNodeSignals(root)
-    val detection = InstagramDetector.detect(nodes)
-    if (detection.surface == InstagramSurface.UNKNOWN) {
-      instagramDebugTrace?.record(
-        event = event,
-        nodes = nodes,
-        detection = detection,
-        observationMode = preferences.instagramObservationMode,
-        exploreBlocked = preferences.instagramExploreBlocked,
-        action = null,
-      )
-      instagramStateMachine.onTransientSurfaceLost(SystemClock.elapsedRealtime())
-      return
-    }
-
-    preferences.recordInstagramDetection(System.currentTimeMillis(), detection)
-
-    val nowMs = SystemClock.elapsedRealtime()
-    if (nowMs < instagramNavigationSuppressedUntilMs) {
-      if (detection.surface == InstagramSurface.DIRECT_MESSAGES && isMessagesInbox(nodes)) {
-        instagramNavigationSuppressedUntilMs = 0L
-        instagramIntervention.end()
-      }
-      instagramDebugTrace?.record(
-        event = event,
-        nodes = nodes,
-        detection = detection,
-        observationMode = preferences.instagramObservationMode,
-        exploreBlocked = preferences.instagramExploreBlocked,
-        action = InstagramGuardAction.None,
-      )
-      return
-    }
-
-    if (preferences.instagramObservationMode) {
-      instagramDebugTrace?.record(
-        event = event,
-        nodes = nodes,
-        detection = detection,
-        observationMode = true,
-        exploreBlocked = preferences.instagramExploreBlocked,
-        action = InstagramGuardAction.None,
-      )
-      return
-    }
-
-    if (shouldRecoverInstagramStorage(
-        storageAvailable = instagramStorageAvailable,
-        surface = detection.surface,
-        isForeground = isScreenInteractive,
-      )
-    ) {
-      if (homeFeedStatusStore.recoverInstagram(nowMs)) {
-        instagramStorageAvailable = true
-        instagramStateMachine.recoverStorage(nowMs)
-      }
-    }
-
-    val reelPagerVisible = hasReelPager(nodes)
-    val dmThreadClicked = event != null && isDmThreadClick(event, nodes)
-    val guardInput = InstagramGuardInput(
-      surface = detection.surface,
-      nowMs = nowMs,
-      isForeground = isScreenInteractive,
-      dmThreadClicked = dmThreadClicked,
-      dmThreadVisible = isDmThreadVisible(nodes),
-      reelPagerVisible = reelPagerVisible,
-      reelPagerScrolled = event != null && isReelPagerScroll(event, nodes, reelPagerVisible),
-    )
-    val action = instagramStateMachine.next(guardInput, preferences.instagramSettings())
-    instagramDebugTrace?.record(
-      event = event,
-      nodes = nodes,
-      detection = detection,
-      observationMode = false,
-      exploreBlocked = preferences.instagramExploreBlocked,
-      action = action,
-      input = guardInput,
-    )
-
-    when (action) {
-      is InstagramGuardAction.ShowBlocker -> {
-        instagramIntervention.observe(
-          action = action,
-          reelsMinutes = preferences.instagramReelsMinutes,
-          debugInfo = if (BuildConfig.DEBUG) {
-            val debugState = instagramStateMachine.debugState(nowMs)
-            InstagramBlockerDebugInfo(
-              surface = detection.surface,
-              reason = action.reason,
-              event = event?.let { AccessibilityEvent.eventTypeToString(it.eventType) } ?: "deadline",
-              eventPackage = event?.packageName?.toString().orEmpty().ifEmpty { "none" },
-              rootPackage = root.packageName?.toString().orEmpty().ifEmpty { "none" },
-              source = event?.source?.viewIdResourceName?.substringAfterLast('/').orEmpty().ifEmpty { "none" },
-              limits = "home=${preferences.instagramHomeMinutes}m reels=${preferences.instagramReelsMinutes}m wait=${preferences.instagramWaitSeconds}s",
-              dmThreadVisible = guardInput.dmThreadVisible,
-              dmThreadClicked = guardInput.dmThreadClicked,
-              reelPagerVisible = guardInput.reelPagerVisible,
-              reelPagerScrolled = guardInput.reelPagerScrolled,
-              dmProvenanceAgeMs = debugState.dmProvenanceAgeMs,
-              dmThreadActive = debugState.dmThreadActive,
-              homeElapsedMs = debugState.homeElapsedMs,
-              reelsWindowRemainingMs = debugState.reelsWindowRemainingMs,
-            )
-          } else {
-            null
-          },
-        )
-      }
-      InstagramGuardAction.None -> instagramIntervention.end()
-    }
-    publishInstagramHomeStatus()
-  }
-
-  private fun instagramBlockerStats(): InstagramBlockerStats {
-    val wallNow = System.currentTimeMillis()
-    val tally = dailyTally.counts(wallNow)
-    return InstagramBlockerStats(
-      home = instagramStateMachine.homeRuntimeState(SystemClock.elapsedRealtime()),
-      homeAllowanceMinutes = preferences.instagramHomeMinutes,
-      stoppedToday = tally.stopped,
-      continuedToday = tally.continued,
-      dailyCountsResetInMs = millisUntilLocalMidnight(wallNow),
-    )
-  }
-
   override fun onInterrupt() {
     closeAppRuleOverlay()
     browserIntervention?.end()
     x.pause()
     youtube.reset()
     stats.clear()
-    clearInstagramEnforcement(preserveHomeSession = true)
-  }
-
-  private fun openInstagramMessages() {
-    if (!canRunEnforcementAction()) return
-    navigationHandler.removeCallbacksAndMessages(null)
-    instagramNavigationSuppressedUntilMs =
-      SystemClock.elapsedRealtime() + NAVIGATION_SUPPRESSION_MS
-    val movedBack = performGlobalAction(GLOBAL_ACTION_BACK)
-    if (!movedBack) InstagramIntentHelper.openMain(this)
-    navigationHandler.postDelayed({ ensureMessagesVisible(0) }, NAVIGATION_RETRY_MS)
+    instagram.pause()
   }
 
   override fun onDestroy() {
@@ -691,10 +474,10 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     browserIntervention?.end()
     youtube.reset()
     x.destroy(hasActiveProtection())
-    navigationHandler.removeCallbacksAndMessages(null)
+    instagram.cancelNavigation()
     usageHandler.removeCallbacksAndMessages(null)
     closeAppRuleOverlay()
-    clearInstagramEnforcement(preserveHomeSession = hasActiveProtection())
+    instagram.destroy(hasActiveProtection())
     stats.clear()
     if (screenReceiverRegistered) {
       unregisterReceiver(screenStateReceiver)
@@ -705,60 +488,6 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
 
   private val isScreenInteractive: Boolean
     get() = getSystemService(PowerManager::class.java)?.isInteractive == true
-
-  /**
-   * An untouched Reel emits no accessibility events, so the window granted by Continue would
-   * otherwise end only at the next swipe. Recheck the live tree when the window ends.
-   */
-  private fun scheduleInstagramReelsDeadline() {
-    val nowMs = SystemClock.elapsedRealtime()
-    val remainingMs = instagramStateMachine.reelsWindowRemainingMs(nowMs)
-    if (remainingMs == null) reelsDeadline.cancel() else reelsDeadline.scheduleAt(nowMs + remainingMs)
-  }
-
-  /**
-   * Acts only while the policy still holds the ended window. Leaving Reels, the app, or the
-   * screen clears that window, so a stale callback cannot block another surface. Retry transient
-   * trees until a blocker attaches or the policy clears the window. The normal handler still
-   * requires a live Instagram root and a visible Reels pager.
-   */
-  private fun checkInstagramReelsDeadline(): DeadlineDecision {
-    if (instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) == null) return DeadlineDecision.Cancel
-    if (!canRunEnforcementAction() || preferences.instagramObservationMode || !isScreenInteractive) {
-      return DeadlineDecision.Cancel
-    }
-    if (!instagramIntervention.isShowing) handleInstagramEvent(null)
-    return when {
-      instagramIntervention.isShowing -> DeadlineDecision.Complete
-      instagramStateMachine.reelsWindowRemainingMs(SystemClock.elapsedRealtime()) == 0L ->
-        DeadlineDecision.RetryAfter(INSTAGRAM_REELS_DEADLINE_RETRY_MS)
-      else -> DeadlineDecision.Cancel
-    }
-  }
-
-  private fun clearInstagramEnforcement(preserveHomeSession: Boolean = false) {
-    reelsDeadline.cancel()
-    if (preserveHomeSession) {
-      instagramStateMachine.onAppBackground(SystemClock.elapsedRealtime(), preferences.instagramSettings())
-    } else {
-      instagramStateMachine.onSurfaceLost()
-    }
-    if (::instagramIntervention.isInitialized) instagramIntervention.end()
-    publishInstagramHomeStatus()
-  }
-
-  private fun publishInstagramHomeStatus() {
-    if (!::homeFeedStatusStore.isInitialized) return
-    val nowElapsedMs = SystemClock.elapsedRealtime()
-    val runtime = instagramStateMachine.homeRuntimeState(nowElapsedMs)
-    if (homeFeedStatusStore.recordInstagram(runtime)) return
-
-    // Do not continue a confident in-memory Home allowance after the durable boundary failed.
-    // The state machine keeps Instagram's existing blocking semantics while the UI observes the
-    // store's explicit unavailable state.
-    instagramStorageAvailable = false
-    instagramStateMachine.markStorageUnavailable()
-  }
 
   private fun hasActiveProtection(): Boolean =
     ::preferences.isInitialized && preferences.hasCurrentConsent && preferences.protectionEnabled
@@ -783,9 +512,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     intentSessions.reset()
     visitDeadline.cancel()
     closeAppRuleOverlay()
-    navigationHandler.removeCallbacksAndMessages(null)
-    instagramNavigationSuppressedUntilMs = 0L
-    clearInstagramEnforcement()
+    instagram.disable()
   }
 
   /**
@@ -800,9 +527,7 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     usageTracker.reset()
     currentForegroundPackage = null
     closeAppRuleOverlay()
-    navigationHandler.removeCallbacksAndMessages(null)
-    instagramNavigationSuppressedUntilMs = 0L
-    clearInstagramEnforcement(preserveHomeSession = true)
+    instagram.enterSettings()
   }
 
   /** Re-check the live windows at execution time so queued callbacks cannot eject Settings. */
@@ -866,199 +591,13 @@ class ZenGuardAccessibilityService() : AccessibilityService() {
     return result
   }
 
-  /**
-   * A DM tab or inbox visit is not provenance. Accept only a click whose source is a likely thread
-   * row/control and whose tree also contains independent DM structure.
-   */
-  private fun isDmThreadClick(event: AccessibilityEvent, nodes: List<NodeSignal>): Boolean {
-    if (event.eventType != AccessibilityEvent.TYPE_VIEW_CLICKED) return false
-    val source = event.source ?: return false
-    if (!source.isVisibleToUser || !source.isClickable) return false
-
-    val sourceSignals = nodeSignalsAlongParentChain(source)
-    val sourceIsThreadTarget = sourceSignals.any { signal ->
-      signal.containsAny(DM_THREAD_CLICK_TARGETS)
-    }
-    if (!sourceIsThreadTarget) return false
-
-    val treeIds = nodes.map { it.viewId.lowercase() }
-    val hasDmContainer = treeIds.any { it.containsAny(DM_CONTAINER_IDS) }
-    val hasThreadContext = treeIds.any { it.containsAny(DM_THREAD_CONTEXT_IDS) }
-    return hasDmContainer && hasThreadContext
-  }
-
-  /** Detects an open conversation even when Instagram omits the media-tile click event. */
-  private fun isDmThreadVisible(nodes: List<NodeSignal>): Boolean {
-    val ids = nodes.map { it.viewId.lowercase() }
-    val hasThreadContent = ids.any { it.containsAny(DM_THREAD_CONTENT_IDS) }
-    val hasThreadChrome = ids.any { it.containsAny(DM_THREAD_CHROME_IDS) }
-    return hasThreadContent && hasThreadChrome
-  }
-
-  /**
-   * Returns to the Messages tab after a blocker. Instagram's direct-inbox deep link is accepted
-   * by some releases but ignored by others, so use Android Back first and click the visible tab
-   * after a package launch when the deep link did not produce the requested surface.
-   */
-  private fun ensureMessagesVisible(attempt: Int) {
-    if (!canRunEnforcementAction()) return
-    if (!isScreenInteractive || attempt > MAX_NAVIGATION_ATTEMPTS) return
-
-    val root = rootInActiveWindow
-    val rootIsInstagram = root?.packageName?.toString() == INSTAGRAM_PACKAGE
-    if (rootIsInstagram) {
-      val nodes = snapshotNodeSignals(root)
-      val detection = InstagramDetector.detect(nodes)
-      if (detection.surface == InstagramSurface.DIRECT_MESSAGES && isMessagesInbox(nodes)) {
-        instagramNavigationSuppressedUntilMs = 0L
-        return
-      }
-      if (clickDirectTab(root)) {
-        navigationHandler.postDelayed({ ensureMessagesVisible(attempt + 1) }, NAVIGATION_RETRY_MS)
-        return
-      }
-
-      // Back out of an open conversation or the full-screen Reel viewer before trying the tab.
-      // A single Back from a Reel opened in a DM usually lands in the thread, not the inbox.
-      if (detection.surface == InstagramSurface.DIRECT_MESSAGES && isDmThreadVisible(nodes) ||
-        detection.surface == InstagramSurface.REELS_VIEWER
-      ) {
-        if (performGlobalAction(GLOBAL_ACTION_BACK)) {
-          navigationHandler.postDelayed({ ensureMessagesVisible(attempt + 1) }, NAVIGATION_RETRY_MS)
-          return
-        }
-      }
-    }
-
-    if (attempt == MAIN_LAUNCH_ATTEMPT) {
-      InstagramIntentHelper.openMain(this)
-    }
-    navigationHandler.postDelayed({ ensureMessagesVisible(attempt + 1) }, NAVIGATION_RETRY_MS)
-  }
-
-  /** A direct-message thread and the Messages inbox share the same coarse surface signal. */
-  private fun isMessagesInbox(nodes: List<NodeSignal>): Boolean {
-    val ids = nodes.map { it.viewId.lowercase() }
-    return ids.any { id -> INBOX_ID_FRAGMENTS.any(id::contains) }
-  }
-
-  private fun clickDirectTab(root: AccessibilityNodeInfo): Boolean {
-    data class PendingNode(val node: AccessibilityNodeInfo, val depth: Int)
-
-    val queue = ArrayDeque<PendingNode>()
-    queue.add(PendingNode(root, 0))
-    while (queue.isNotEmpty()) {
-      val (node, depth) = queue.removeFirst()
-      if (!node.isVisibleToUser) continue
-      val viewId = node.viewIdResourceName?.lowercase().orEmpty()
-      if (viewId.substringAfterLast('/') == "direct_tab") {
-        var target: AccessibilityNodeInfo? = node
-        repeat(MAX_PARENT_CHAIN) {
-          val candidate = target ?: return@repeat
-          if (candidate.isClickable && candidate.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
-          target = candidate.parent
-        }
-      }
-
-      if (depth >= MAX_DEPTH) continue
-      for (index in 0 until node.childCount) {
-        node.getChild(index)?.let { queue.add(PendingNode(it, depth + 1)) }
-      }
-    }
-    return false
-  }
-
-  /** A scroll counts only when the event source itself is the full-screen Reel pager. */
-  private fun isReelPagerScroll(
-    event: AccessibilityEvent,
-    nodes: List<NodeSignal>,
-    pagerVisible: Boolean,
-  ): Boolean {
-    if (!pagerVisible || event.eventType != AccessibilityEvent.TYPE_VIEW_SCROLLED) return false
-    val sourceId = event.source?.viewIdResourceName?.lowercase().orEmpty()
-    if (sourceId.isBlank()) return false
-    return nodes.any { node ->
-      node.viewId.lowercase() == sourceId && InstagramDetector.isReelsPager(sourceId)
-    }
-  }
-
-  private fun hasReelPager(nodes: List<NodeSignal>): Boolean = nodes.any { node ->
-    InstagramDetector.isReelsPager(node.viewId.lowercase())
-  }
-
-  private fun nodeSignalsAlongParentChain(source: AccessibilityNodeInfo): List<String> {
-    val signals = ArrayList<String>(MAX_PARENT_CHAIN)
-    var current: AccessibilityNodeInfo? = source
-    repeat(MAX_PARENT_CHAIN) {
-      val node = current ?: return@repeat
-      signals += node.viewIdResourceName.orEmpty().lowercase()
-      current = node.parent
-    }
-    return signals
-  }
-
   companion object {
     private const val X_PACKAGE = "com.twitter.android"
     private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
     private const val INSTAGRAM_PACKAGE = "com.instagram.android"
-    private const val MAX_DEPTH = 36
-    private const val MAX_PARENT_CHAIN = 8
-    private const val NAVIGATION_RETRY_MS = 250L
-    private const val NAVIGATION_SUPPRESSION_MS = 3_000L
-    private const val MAIN_LAUNCH_ATTEMPT = 3
-    private const val MAX_NAVIGATION_ATTEMPTS = 12
     private const val USAGE_TICK_MS = 15_000L
     private const val APP_RULE_REFRESH_MS = 1_000L
-    private const val INSTAGRAM_REELS_DEADLINE_RETRY_MS = 1_000L
     private const val MAX_BROWSER_NODES = 180
     private const val MAX_BROWSER_DEPTH = 18
-
-    private val INBOX_ID_FRAGMENTS = listOf(
-      "direct_inbox",
-      "inbox_refreshable_thread_list_recyclerview",
-      "direct_inbox_action_bar",
-    )
-
-    private val DM_THREAD_CLICK_TARGETS = listOf(
-      "message_list",
-      "message_content",
-      "message_group",
-      "portrait_xma_container",
-      "generic_xma_container",
-    )
-
-    private val DM_CONTAINER_IDS = listOf(
-      "direct_inbox",
-      "inbox_refreshable_thread_list_recyclerview",
-      "message_list",
-    )
-
-    private val DM_THREAD_CONTEXT_IDS = listOf(
-      "row_inbox",
-      "thread_row",
-      "direct_thread",
-      "inbox_thread",
-      "message_thread",
-      "thread_header",
-      "thread_composer",
-      "message_composer",
-    )
-
-    private val DM_THREAD_CONTENT_IDS = listOf(
-      "thread_fragment_container",
-      "message_list",
-      "message_content",
-      "message_content_portrait_xma_container",
-    )
-
-    private val DM_THREAD_CHROME_IDS = listOf(
-      "header_title",
-      "header_subtitle",
-      "message_composer",
-      "thread_composer",
-      "row_thread_composer",
-    )
   }
 }
-
-private fun String.containsAny(fragments: List<String>): Boolean = fragments.any(::contains)

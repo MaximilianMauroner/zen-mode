@@ -8,17 +8,13 @@ import org.junit.Test
 
 class ZenGuardAccessibilityServiceStatsTest {
   @Test
-  fun `failed actions and detector observations never reach the ledger`() {
+  fun `failed app actions never reach the ledger`() {
     val fixture = fixture()
-    val service = fixture.service
+    val stats = fixture.stats
 
-    assertFalse(service.recordYouTubeShortsStats(1, EnforcementStatsOutcome.OBSERVED))
-    assertFalse(service.recordYouTubeShortsStats(1, EnforcementStatsOutcome.FAILED))
-    assertFalse(service.recordXVideoStats("failed-node-action", EnforcementStatsOutcome.FAILED))
-    assertFalse(service.recordXHomeStats(false, false, EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.FAILED))
-    assertFalse(service.recordRollingLimitStats("app.one", EnforcementStatsOutcome.FAILED))
-    assertFalse(service.recordTimedVisitStats("app.one", EnforcementStatsOutcome.FAILED))
+    assertFalse(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.FAILED, "app.one"))
+    assertFalse(stats.record(EnforcementReason.ROLLING_LIMIT, EnforcementStatsOutcome.FAILED, "app.one"))
+    assertFalse(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.FAILED, "app.one"))
 
     val snapshot = fixture.store.snapshot()
     assertEquals(0L, snapshot.total)
@@ -26,73 +22,16 @@ class ZenGuardAccessibilityServiceStatsTest {
   }
 
   @Test
-  fun `a real service hook deduplicates retries but accepts a later intervention`() {
-    val fixture = fixture()
-    val service = fixture.service
-
-    assertTrue(service.recordXVideoStats("scroll-callback-1", EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordXVideoStats("scroll-callback-1", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordXVideoStats("scroll-callback-2", EnforcementStatsOutcome.SUCCESS))
-
-    val snapshot = fixture.store.snapshot()
-    assertEquals(2L, snapshot.total)
-    assertEquals(2L, snapshot.counts[EnforcementReason.X_VIDEOS.key])
-  }
-
-  @Test
-  fun `production path hooks cover YouTube X Instagram and app limits`() {
-    val fixture = fixture()
-    val service = fixture.service
-
-    assertTrue(service.recordYouTubeShortsStats(1, EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordYouTubeShortsStats(1, EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordYouTubeShortsStats(2, EnforcementStatsOutcome.SUCCESS))
-    assertTrue(
-      service.recordXHomeStats(
-        wasShowing = false,
-        overlayAttached = true,
-        outcome = EnforcementStatsOutcome.SUCCESS,
-      ),
-    )
-    assertFalse(
-      service.recordXHomeStats(
-        wasShowing = true,
-        overlayAttached = true,
-        outcome = EnforcementStatsOutcome.SUCCESS,
-      ),
-    )
-    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.REELS_ENTRY, EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.HOME_LIMIT, EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordInstagramBlockStats(InstagramBlockReason.HOME_LIMIT, EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordXVideoStats("video-callback-1", EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordXVideoStats("video-callback-1", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordAppLimitStats("app.one", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordAppLimitStats("app.two", EnforcementStatsOutcome.SUCCESS))
-
-    val snapshot = fixture.store.snapshot()
-    assertEquals(9L, snapshot.total)
-    assertEquals(2L, snapshot.counts[EnforcementReason.YOUTUBE_SHORTS.key])
-    assertEquals(1L, snapshot.counts[EnforcementReason.X_HOME.key])
-    assertEquals(1L, snapshot.counts[EnforcementReason.INSTAGRAM_REELS.key])
-    assertEquals(1L, snapshot.counts[EnforcementReason.INSTAGRAM_HOME.key])
-    assertEquals(1L, snapshot.counts[EnforcementReason.INSTAGRAM_EXPLORE.key])
-    assertEquals(1L, snapshot.counts[EnforcementReason.X_VIDEOS.key])
-    assertEquals(2L, snapshot.counts[EnforcementReason.APP_LIMIT.key])
-  }
-
-  @Test
   fun `rolling limits and timed visits count distinct successful interventions`() {
     val fixture = fixture()
-    val service = fixture.service
+    val stats = fixture.stats
 
-    assertTrue(service.recordRollingLimitStats("app.one", EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordRollingLimitStats("app.one", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordRollingLimitStats("app.two", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordTimedVisitStats("app.one", EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordTimedVisitStats("app.one", EnforcementStatsOutcome.SUCCESS))
-    assertTrue(service.recordTimedVisitStats("app.two", EnforcementStatsOutcome.SUCCESS))
+    assertTrue(stats.record(EnforcementReason.ROLLING_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertFalse(stats.record(EnforcementReason.ROLLING_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertTrue(stats.record(EnforcementReason.ROLLING_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.two"))
+    assertTrue(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertFalse(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertTrue(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.two"))
 
     val snapshot = fixture.store.snapshot()
     assertEquals(4L, snapshot.total)
@@ -101,57 +40,57 @@ class ZenGuardAccessibilityServiceStatsTest {
   }
 
   @Test
-  fun `an observed Shorts callback does not poison the later successful action`() {
-    val fixture = fixture()
-    val service = fixture.service
+  fun `conditional key clearing preserves a match and does not remember the new key`() {
+    val store = EnforcementStatsStore(TestPreferences())
+    val stats = InterventionStats(store)
 
-    assertFalse(service.recordYouTubeShortsStats(7, EnforcementStatsOutcome.OBSERVED))
-    assertTrue(service.recordYouTubeShortsStats(7, EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordYouTubeShortsStats(7, EnforcementStatsOutcome.SUCCESS))
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertTrue(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
 
-    val snapshot = fixture.store.snapshot()
-    assertEquals(1L, snapshot.total)
-    assertEquals(1L, snapshot.counts[EnforcementReason.YOUTUBE_SHORTS.key])
+    stats.clearKeyIfDifferent(EnforcementReason.APP_LIMIT, "app.one")
+    assertFalse(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+
+    stats.clearKeyIfDifferent(EnforcementReason.APP_LIMIT, "app.two")
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.two"))
+    assertFalse(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+
+    val snapshot = store.snapshot()
+    assertEquals(3L, snapshot.total)
+    assertEquals(2L, snapshot.counts[EnforcementReason.APP_LIMIT.key])
+    assertEquals(1L, snapshot.counts[EnforcementReason.TIMED_VISIT.key])
   }
 
   @Test
-  fun `Instagram dismissal resets the matching dedupe identity`() {
-    val fixture = fixture()
-    val service = fixture.service
+  fun `reset clears one reason and clear permits later interventions without erasing totals`() {
+    val store = EnforcementStatsStore(TestPreferences())
+    val stats = InterventionStats(store)
 
-    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, EnforcementStatsOutcome.SUCCESS))
-    assertFalse(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, EnforcementStatsOutcome.SUCCESS))
-    service.resetInstagramStatsDedupe(InstagramBlockReason.EXPLORE)
-    assertTrue(service.recordInstagramBlockStats(InstagramBlockReason.EXPLORE, EnforcementStatsOutcome.SUCCESS))
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertTrue(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
 
-    assertEquals(2L, fixture.store.snapshot().counts[EnforcementReason.INSTAGRAM_EXPLORE.key])
-  }
+    stats.reset(EnforcementReason.APP_LIMIT)
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertFalse(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertEquals(3L, store.snapshot().total)
 
-  @Test
-  fun `X Home lockout identity survives service reconnection and unrelated stats`() {
-    val preferences = TestPreferences()
-    val firstStore = EnforcementStatsStore(preferences)
-    val firstService = ZenGuardAccessibilityService(firstStore)
-    assertTrue(firstService.recordXHomeStats(false, true, EnforcementStatsOutcome.SUCCESS, 9_000L))
-    assertTrue(firstService.recordXVideoStats("video:1", EnforcementStatsOutcome.SUCCESS))
+    stats.clear()
+    assertTrue(stats.record(EnforcementReason.APP_LIMIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
+    assertTrue(stats.record(EnforcementReason.TIMED_VISIT, EnforcementStatsOutcome.SUCCESS, "app.one"))
 
-    val secondStore = EnforcementStatsStore(preferences)
-    val reconnectedService = ZenGuardAccessibilityService(secondStore)
-    assertFalse(reconnectedService.recordXHomeStats(false, true, EnforcementStatsOutcome.SUCCESS, 9_000L))
-
-    val snapshot = secondStore.snapshot()
-    assertEquals(2L, snapshot.total)
-    assertEquals(1L, snapshot.counts[EnforcementReason.X_HOME.key])
+    val snapshot = store.snapshot()
+    assertEquals(5L, snapshot.total)
+    assertEquals(3L, snapshot.counts[EnforcementReason.APP_LIMIT.key])
+    assertEquals(2L, snapshot.counts[EnforcementReason.TIMED_VISIT.key])
   }
 
   private data class Fixture(
-    val service: ZenGuardAccessibilityService,
+    val stats: InterventionStats,
     val store: EnforcementStatsStore,
   )
 
   private fun fixture(): Fixture {
     val store = EnforcementStatsStore(TestPreferences())
-    return Fixture(ZenGuardAccessibilityService(store), store)
+    return Fixture(InterventionStats(store), store)
   }
 
   private class TestPreferences : SharedPreferences {

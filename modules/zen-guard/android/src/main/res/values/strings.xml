@@ -6,6 +6,7 @@
   <string name="zen_guard_app_limit_detail">%1$s has used its daily budget. Access returns when the local day resets.</string>
   <string name="zen_guard_rolling_limit_detail">%1$s has used its rolling allowance. Access returns as earlier use leaves the window.</string>
   <string name="zen_guard_app_limits_eyebrow">APP LIMIT</string>
+  <string name="zen_guard_x_available_again">Home available again in %1$s</string>
   <string name="zen_guard_app_limit_reached">Daily limit reached</string>
   <string name="zen_guard_rolling_limit_reached">Limit reached, refills over time</string>
   <string name="zen_guard_shorts_result_title">One Short limit reached</string>
@@ -86,7 +87,7 @@
   <string name="zen_guard_intent_cooldown_detail">%1$s opens again when the downtime ends. Until then, do the other thing.</string>
   <string name="zen_guard_intent_cooldown_leave">Back home</string>
   <string name="zen_guard_x_home_title">Time to leave the feed.</string>
-  <string name="zen_guard_x_home_unavailable_detail">Usage could not be verified. Leave X and return after Zen Mode reconnects.</string>
+  <string name="zen_guard_x_home_unavailable_detail">Home availability could not be verified. Keep Zen Mode connected, leave X, and try again later.</string>
   <plurals name="zen_guard_x_home_detail">
     <item quantity="one">You’ve spent %1$d minute in X Home.</item>
     <item quantity="other">You’ve spent %1$d minutes in X Home.</item>

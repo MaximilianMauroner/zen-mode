@@ -1,11 +1,7 @@
 package com.maxmauroner.zenguard
 
 import android.accessibilityservice.AccessibilityService
-import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Paint
 import android.graphics.PixelFormat
-import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioAttributes
@@ -57,107 +53,86 @@ internal data class InstagramBlockerDebugInfo(
   val reelsWindowRemainingMs: Long?,
 )
 
-/**
- * Still concentric mark for phase one. Deliberately static: no animator, no
- * invalidation, one draw and done. Replaces the breathing orb that repainted
- * every frame for the whole block.
- */
-internal class ZenStillMarkView(context: Context) : View(context) {
-  private val outerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-    style = Paint.Style.STROKE
-    strokeWidth = dp(1.5f)
+internal class InstagramIntervention(
+  service: AccessibilityService,
+  readStats: () -> InstagramBlockerStats,
+  private val canEnforce: () -> Boolean,
+  private val recordStop: () -> Unit,
+  private val recordAttachment: (EnforcementReason) -> Unit,
+  private val leave: (InstagramBlockReason) -> Unit,
+  private val openMessages: () -> Unit,
+  private val continueReels: () -> Boolean,
+) {
+  private class Session(val action: InstagramGuardAction.ShowBlocker)
+
+  private val renderer = InstagramBlockerOverlay(
+    service = service,
+    onLeave = ::leaveSurface,
+    onOpenMessages = ::leaveForMessages,
+    onContinue = ::continueReelsWindow,
+    readStats = readStats,
+  )
+  private var active: Session? = null
+
+  val isShowing: Boolean get() = renderer.isShowing
+
+  fun observe(action: InstagramGuardAction.ShowBlocker, reelsMinutes: Int, debugInfo: InstagramBlockerDebugInfo?) {
+    val session = active ?: Session(action).also {
+      active = it
+      recordStop()
+    }
+    if (renderer.hasView) return
+    renderer.show(session.action, reelsMinutes, debugInfo, onAttached = { attached(session) })
   }
 
-  private val middlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-    style = Paint.Style.STROKE
-    strokeWidth = dp(1.5f)
+  fun end() {
+    if (active == null) return
+    active = null
+    renderer.hide()
   }
 
-  private val innerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-    style = Paint.Style.FILL
+  private fun attached(session: Session) {
+    if (active !== session) return
+    if (!canEnforce()) {
+      end()
+      return
+    }
+    recordAttachment(
+      when (session.action.reason) {
+        InstagramBlockReason.REELS_ENTRY,
+        InstagramBlockReason.REELS_SWIPE,
+        InstagramBlockReason.REELS_WINDOW_EXPIRED,
+        -> EnforcementReason.INSTAGRAM_REELS
+        InstagramBlockReason.HOME_LIMIT -> EnforcementReason.INSTAGRAM_HOME
+        InstagramBlockReason.EXPLORE -> EnforcementReason.INSTAGRAM_EXPLORE
+      },
+    )
   }
 
-  private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-    style = Paint.Style.FILL
+  private fun leaveSurface() {
+    val session = active ?: return
+    if (!canEnforce()) return
+    end()
+    leave(session.action.reason)
   }
 
-  override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-    val size = dp(132f).toInt()
-    setMeasuredDimension(size, size)
+  private fun leaveForMessages() {
+    if (active == null || !canEnforce()) return
+    end()
+    openMessages()
   }
 
-  override fun onDraw(canvas: Canvas) {
-    super.onDraw(canvas)
-    val accent = context.getColor(R.color.zen_accent)
-    val cx = width / 2f
-    val cy = height / 2f
-
-    outerPaint.color = accent
-    outerPaint.alpha = 45
-    canvas.drawCircle(cx, cy, dp(60f), outerPaint)
-
-    middlePaint.color = accent
-    middlePaint.alpha = 80
-    canvas.drawCircle(cx, cy, dp(42f), middlePaint)
-
-    innerPaint.color = accent
-    innerPaint.alpha = 22
-    canvas.drawCircle(cx, cy, dp(26f), innerPaint)
-
-    dotPaint.color = accent
-    dotPaint.alpha = 230
-    canvas.drawCircle(cx, cy, dp(7f), dotPaint)
+  private fun continueReelsWindow() {
+    if (active == null || !canEnforce()) return
+    if (continueReels()) end()
   }
-
-  private fun dp(value: Float): Float = value * resources.displayMetrics.density
 }
 
-/**
- * Compact circular progress indicator for the mindful pause countdown.
- * Only invalidated by the 300ms tick, never by a frame animator.
- */
-internal class ZenProgressRingView(context: Context) : View(context) {
-  private var progressRatio = 0f
-
-  private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-    style = Paint.Style.STROKE
-    strokeWidth = dp(2.8f)
-    color = context.getColor(R.color.zen_track)
-  }
-
-  private val progressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-    style = Paint.Style.STROKE
-    strokeWidth = dp(2.8f)
-    strokeCap = Paint.Cap.ROUND
-    color = context.getColor(R.color.zen_accent)
-  }
-
-  fun setProgress(ratio: Float) {
-    progressRatio = ratio.coerceIn(0f, 1f)
-    invalidate()
-  }
-
-  override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-    val size = dp(22f).toInt()
-    setMeasuredDimension(size, size)
-  }
-
-  override fun onDraw(canvas: Canvas) {
-    super.onDraw(canvas)
-    val strokeHalf = dp(1.4f)
-    val rect = RectF(strokeHalf, strokeHalf, width - strokeHalf, height - strokeHalf)
-    canvas.drawOval(rect, trackPaint)
-    canvas.drawArc(rect, -90f, 360f * progressRatio, false, progressPaint)
-  }
-
-  private fun dp(value: Float): Float = value * resources.displayMetrics.density
-}
-
-internal class InstagramBlockerOverlay(
+private class InstagramBlockerOverlay(
   private val service: AccessibilityService,
   private val onLeave: () -> Unit,
   private val onOpenMessages: () -> Unit,
-  private val onContinue: () -> Boolean,
+  private val onContinue: () -> Unit,
   private val readStats: () -> InstagramBlockerStats,
 ) {
   private val handler = Handler(Looper.getMainLooper())
@@ -199,6 +174,8 @@ internal class InstagramBlockerOverlay(
 
   val isShowing: Boolean get() = root?.isAttachedToWindow == true
 
+  val hasView: Boolean get() = root != null
+
   private val tick = object : Runnable {
     override fun run() {
       updateCountdown()
@@ -219,10 +196,6 @@ internal class InstagramBlockerOverlay(
     debugInfo: InstagramBlockerDebugInfo?,
     onAttached: () -> Unit,
   ) {
-    root?.let {
-      if (it.isAttachedToWindow) return
-      hide()
-    }
     continueAt = action.continueAvailableAt
     this.reelsMinutes = reelsMinutes
     blockReason = action.reason
@@ -442,9 +415,7 @@ internal class InstagramBlockerOverlay(
     if (hasPause) {
       continueButton = actionButton("", primary = false).apply {
         tag = reelsMinutes
-        setOnClickListener {
-          if (onContinue()) hide()
-        }
+        setOnClickListener { onContinue() }
       }
       actions.addView(continueButton, matchWrap(topMargin = dp(10)))
     }
@@ -470,7 +441,7 @@ internal class InstagramBlockerOverlay(
       PixelFormat.TRANSLUCENT,
     )
     root = container
-    container.doOnFirstAttach { if (root === container) onAttached() }
+    container.doOnFirstAttach(onAttached)
     val nextStatsUpdateMs = updateStats()
     try {
       windowManager.addView(container, params)

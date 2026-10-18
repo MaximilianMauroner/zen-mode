@@ -9,28 +9,38 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import java.util.ArrayDeque
 import kotlin.math.roundToInt
 
 internal class BrowserIntervention(
   private val service: AccessibilityService,
+  private val stats: InterventionStats,
   private val canEnforce: () -> Boolean,
-  private val isEnabled: () -> Boolean,
-  private val recordAttachment: () -> Unit,
-  private val recheck: (String) -> Unit,
 ) {
   private class Session(val browserPackage: String)
 
+  private val adultSiteStore = AdultSiteRuleStore(service)
   private val renderer = Renderer(service)
   private val handler = Handler(Looper.getMainLooper())
   private var active: Session? = null
 
-  fun observe(browserPackage: String, blocked: Boolean) {
-    if (!blocked) {
+  fun observe(browserPackage: String, observedRoot: AccessibilityNodeInfo? = null) {
+    if (!canEnforce()) return
+    if (!adultSiteStore.enabled) {
+      end()
+      return
+    }
+    val root = observedRoot ?: browserRoot(browserPackage) ?: return
+    if (root.packageName?.toString() != browserPackage) return
+    val detection = BrowserUrlDetector.detect(browserPackage, browserAddressBars(root, browserPackage)) ?: return
+    adultSiteStore.recordBrowserSignal(detection.browserMask)
+    if (!AdultSitePolicy.isBlocked(detection.host, adultSiteStore.customHosts())) {
       if (active?.browserPackage == browserPackage) end()
       return
     }
@@ -54,16 +64,16 @@ internal class BrowserIntervention(
 
   private fun attached(session: Session) {
     if (active !== session) return
-    if (!canEnforce() || !isEnabled()) {
+    if (!canEnforce() || !adultSiteStore.enabled) {
       end()
       return
     }
-    recordAttachment()
+    stats.record(EnforcementReason.BLOCKED_SITE, EnforcementStatsOutcome.SUCCESS)
   }
 
   private fun back(session: Session) {
     if (active !== session || !renderer.isShowing) return
-    if (!canEnforce() || !isEnabled()) {
+    if (!canEnforce() || !adultSiteStore.enabled) {
       end()
       return
     }
@@ -71,7 +81,7 @@ internal class BrowserIntervention(
     handler.removeCallbacksAndMessages(null)
     handler.postDelayed({
       if (active === session && renderer.isShowing) {
-        recheck(session.browserPackage)
+        observe(session.browserPackage)
       } else if (active === session) {
         end()
       }
@@ -82,6 +92,32 @@ internal class BrowserIntervention(
     if (active !== session) return
     end()
     if (canEnforce()) service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+  }
+
+  private fun browserRoot(browserPackage: String): AccessibilityNodeInfo? =
+    service.windows.firstNotNullOfOrNull { window ->
+      window.root?.takeIf { it.packageName?.toString() == browserPackage }
+    } ?: service.rootInActiveWindow?.takeIf { it.packageName?.toString() == browserPackage }
+
+  private fun browserAddressBars(root: AccessibilityNodeInfo, browserPackage: String): List<BrowserNodeSignal> {
+    data class Pending(val node: AccessibilityNodeInfo, val depth: Int)
+    val pending = ArrayDeque<Pending>()
+    val result = ArrayList<BrowserNodeSignal>(2)
+    pending.add(Pending(root, 0))
+    var visited = 0
+    while (pending.isNotEmpty() && visited++ < MAX_BROWSER_NODES) {
+      val (node, depth) = pending.removeFirst()
+      if (!node.isVisibleToUser) continue
+      val viewId = node.viewIdResourceName.orEmpty()
+      if (BrowserUrlDetector.isAddressBar(browserPackage, viewId)) {
+        result.add(
+          BrowserNodeSignal(viewId, node.text?.toString().orEmpty(), true, node.contentDescription?.toString().orEmpty()),
+        )
+      }
+      if (depth >= MAX_BROWSER_DEPTH) continue
+      for (index in 0 until node.childCount) node.getChild(index)?.let { pending.add(Pending(it, depth + 1)) }
+    }
+    return result
   }
 
   private class Renderer(private val service: AccessibilityService) {
@@ -242,5 +278,7 @@ internal class BrowserIntervention(
 
   private companion object {
     const val BACK_RECHECK_DELAY_MS = 350L
+    const val MAX_BROWSER_NODES = 180
+    const val MAX_BROWSER_DEPTH = 18
   }
 }

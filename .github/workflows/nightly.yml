@@ -31,6 +31,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '24'
@@ -38,7 +39,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      # Only the credential-free checks job saves SDK and npm downloads.
+      # Only the credential-free checks job saves SDK and package downloads.
       - name: Cache Android tool downloads
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -46,11 +47,16 @@ jobs:
             ${{ env.NIGHTLY_ANDROID_SDK_ROOT }}/platforms/android-36
             ${{ env.NIGHTLY_ANDROID_SDK_ROOT }}/build-tools/36.0.0
           key: nightly-sdk-v1-ubuntu24-${{ runner.arch }}-${{ hashFiles('scripts/prepare-nightly-tools.sh') }}
-      - name: Cache npm package content
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Cache package content
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: ~/.npm/_cacache
-          key: nightly-npm-v1-ubuntu24-${{ runner.arch }}-node24-${{ hashFiles('package-lock.json', 'scripts/prepare-nightly-tools.sh') }}
+          path: |
+            ~/.npm/_cacache
+            ${{ steps.pnpm-store.outputs.path }}
+          key: nightly-pnpm-v1-ubuntu24-${{ runner.arch }}-node24-${{ hashFiles('pnpm-lock.yaml', 'scripts/prepare-nightly-tools.sh') }}
       - name: Prepare tools without release credentials
         run: bash scripts/prepare-nightly-tools.sh eas
       - name: Check source without user secrets or write permissions
@@ -139,6 +145,7 @@ jobs:
         with:
           ref: ${{ needs.checks.outputs.sha }}
           persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '24'
@@ -153,11 +160,16 @@ jobs:
             ${{ env.NIGHTLY_ANDROID_SDK_ROOT }}/platforms/android-36
             ${{ env.NIGHTLY_ANDROID_SDK_ROOT }}/build-tools/36.0.0
           key: nightly-sdk-v1-ubuntu24-${{ runner.arch }}-${{ hashFiles('scripts/prepare-nightly-tools.sh') }}
-      - name: Restore npm package content
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore package content
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: ~/.npm/_cacache
-          key: nightly-npm-v1-ubuntu24-${{ runner.arch }}-node24-${{ hashFiles('package-lock.json', 'scripts/prepare-nightly-tools.sh') }}
+          path: |
+            ~/.npm/_cacache
+            ${{ steps.pnpm-store.outputs.path }}
+          key: nightly-pnpm-v1-ubuntu24-${{ runner.arch }}-node24-${{ hashFiles('pnpm-lock.yaml', 'scripts/prepare-nightly-tools.sh') }}
       # Exclude build/configuration caches, daemon logs, properties, and signing files.
       - name: Cache Gradle dependency downloads and wrapper
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -165,14 +177,14 @@ jobs:
           path: |
             ~/.gradle/caches/modules-2/files-2.1
             ~/.gradle/wrapper/dists
-          key: nightly-gradle-v1-ubuntu24-${{ runner.arch }}-java17-${{ hashFiles('package-lock.json', 'eas.json', 'modules/zen-guard/android/build.gradle', 'patches/**') }}
+          key: nightly-gradle-v1-ubuntu24-${{ runner.arch }}-java17-${{ hashFiles('pnpm-lock.yaml', 'eas.json', 'modules/zen-guard/android/build.gradle', 'patches/**') }}
       - name: Prepare tools without release credentials
         run: bash scripts/prepare-nightly-tools.sh eas
       - name: Install app dependencies without release credentials
         id: dependencies
         # Let the guarded build phase record an install failure for finalization.
         continue-on-error: true
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Retrieve confirmed nonsecret reservation
         # Let the guarded phase report a terminal failure before any EAS or Play call.
         continue-on-error: true

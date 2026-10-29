@@ -128,12 +128,12 @@ async function buildRelease() {
       run('bun', ['run', 'typecheck'], sourceRoot);
       run('bun', ['run', 'verify:android-release-config'], sourceRoot);
     } else {
-      run('npm', ['ci'], sourceRoot);
-      run('npm', ['test'], sourceRoot);
-      run('npm', ['run', 'test:nightly'], sourceRoot);
-      run('npm', ['run', 'lint'], sourceRoot);
-      run('npx', ['tsc', '--noEmit'], sourceRoot);
-      run('npx', ['expo', 'export', '--platform', 'web', '--max-workers', '2'], sourceRoot);
+      run('pnpm', ['install', '--frozen-lockfile'], sourceRoot);
+      run('pnpm', ['test'], sourceRoot);
+      run('pnpm', ['run', 'test:nightly'], sourceRoot);
+      run('pnpm', ['run', 'lint'], sourceRoot);
+      run('pnpm', ['exec', 'tsc', '--noEmit'], sourceRoot);
+      run('pnpm', ['exec', 'expo', 'export', '--platform', 'web', '--max-workers', '2'], sourceRoot);
     }
     assertProfiles(sourceRoot);
     preflightRelease(sourceRoot, localChildEnvironment(process.env, 'checks'));

@@ -5,7 +5,7 @@
  * The Gradle project lives in the `android/` folder that `expo prebuild`
  * generates, and that folder is not checked in. Generate it when it is
  * missing, then hand over to Gradle. Extra arguments go to Gradle, so
- * `npm run test:native -- --tests '*AdultSitePolicyTest*'` narrows a run.
+ * `pnpm run test:native --tests '*AdultSitePolicyTest*'` narrows a run.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -28,7 +28,7 @@ function run(program, args, cwd) {
 
 if (!existsSync(join(android, 'gradlew'))) {
   console.log('No android/ folder. Generating it with expo prebuild.');
-  run('npx', ['expo', 'prebuild', '--platform', 'android', '--no-install'], root);
+  run('pnpm', ['exec', 'expo', 'prebuild', '--platform', 'android', '--no-install'], root);
 }
 
 run(process.platform === 'win32' ? 'gradlew.bat' : './gradlew', [':zen-guard:test', ...process.argv.slice(2)], android);

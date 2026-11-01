@@ -35,11 +35,11 @@
     "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
+    "@babel/parser": "^7.29.8",
     "@types/react": "~19.2.2",
     "babel-preset-expo": "^57.0.9",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.2",
-    "patch-package": "^8.0.1",
     "prettier-plugin-tailwindcss": "^0.5.14",
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.3"
@@ -52,10 +52,9 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "verify:app": "npm test && npm run test:nightly && tsc --noEmit && npm run lint && expo export --platform web --max-workers 2",
-    "verify:native": "npm run test:native -- --no-daemon --no-parallel --max-workers=2",
-    "verify": "npm run verify:app && npm run verify:native",
-    "postinstall": "patch-package",
+    "verify:app": "pnpm test && pnpm run test:nightly && tsc --noEmit && pnpm run lint && expo export --platform web --max-workers 2",
+    "verify:native": "pnpm run test:native --no-daemon --no-parallel --max-workers=2",
+    "verify": "pnpm run verify:app && pnpm run verify:native",
     "test": "node --test tests/*.test.mjs",
     "test:native": "node scripts/run-native-tests.mjs",
     "test:android-fabric-startup": "node scripts/android-fabric-cold-start-regression.mjs",
@@ -65,5 +64,6 @@
     "release:status": "node scripts/nightly-release.mjs status",
     "test:nightly": "node --test tests/release-environment.test.mjs tests/nightly-finalization.test.mjs tests/nightly-version.test.mjs tests/upload-play-internal.test.mjs && python3 tests/nightly-ledger.test.py"
   },
-  "private": true
+  "private": true,
+  "packageManager": "pnpm@11.16.0"
 }

@@ -28,7 +28,7 @@ terminal output into an issue.
 
 ## Build and verify
 
-Use `npm run release:internal` from the synced release checkout. The shared
+Use `pnpm run release:internal` from the synced release checkout. The shared
 ledger reserves one patch version and Android version code for both artifacts.
 EAS local builds use the existing remote credential with `--freeze-credentials`.
 The release runner checks the APK and AAB package, version, signatures, and

@@ -129,7 +129,7 @@ async function build(options) {
   const abi = options.abi ?? 'arm64-v8a';
   if (!['arm64-v8a', 'x86_64'].includes(abi)) throw new Error('--abi must be arm64-v8a or x86_64');
   const expoCli = join(root, 'node_modules/expo/bin/cli');
-  if (!existsSync(expoCli)) throw new Error('Dependencies are missing. Run npm ci first.');
+  if (!existsSync(expoCli)) throw new Error('Dependencies are missing. Run pnpm install first.');
   sdkRoot();
   const java = javaHome();
   const env = buildEnvironment(java);

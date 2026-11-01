@@ -8,7 +8,6 @@ const require = createRequire(import.meta.url);
 test('Android application ID and accessibility settings activity stay aligned', () => {
   const appConfig = JSON.parse(readFileSync(new URL('../app.json', import.meta.url), 'utf8'));
   const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-  const packageLock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
   const easConfig = JSON.parse(readFileSync(new URL('../eas.json', import.meta.url), 'utf8'));
   const settingsScreen = readFileSync(new URL('../src/app/settings.tsx', import.meta.url), 'utf8');
   const playReadiness = readFileSync(new URL('../docs/google-play-readiness.md', import.meta.url), 'utf8');
@@ -27,8 +26,6 @@ test('Android application ID and accessibility settings activity stay aligned', 
   assert.equal(easConfig.build.production.android.buildType, 'app-bundle');
   assert.equal(easConfig.build['production-apk'].android.buildType, 'apk');
   assert.equal(packageJson.version, appConfig.expo.version);
-  assert.equal(packageLock.version, appConfig.expo.version);
-  assert.equal(packageLock.packages[''].version, appConfig.expo.version);
   assert.ok(appConfig.expo.plugins.includes('./plugins/with-android-release-signing'));
   assert.match(settingsScreen, /Constants\.expoConfig\?\.version/);
   assert.match(accessibilityConfig, /android:settingsActivity="com\.lab4code\.zenmode\.MainActivity"/);

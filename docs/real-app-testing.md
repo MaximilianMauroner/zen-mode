@@ -31,7 +31,7 @@ pass `--allow-physical`.
   Set `ANDROID_HOME`.
 - JDK 21. When `JAVA_HOME` is not set on macOS, the build uses
   `/usr/libexec/java_home -v 21`. A set `JAVA_HOME` must run `java`.
-- Node 22.13 or later and `npm ci` in this checkout.
+- Node 22.13 or later and `pnpm install --frozen-lockfile` in this checkout.
 
 ```bash
 export ANDROID_HOME="$HOME/Library/Android/sdk"
@@ -43,7 +43,7 @@ QA="node /absolute/path/to/tool-checkout/scripts/real-app-qa/cli.mjs"
 
 Use each layer for what it can prove:
 
-1. Kotlin policy and parser fixtures (`npm run test:native`) cover edge cases,
+1. Kotlin policy and parser fixtures (`pnpm run test:native`) cover edge cases,
    such as unknown trees, deadlines and window order. They do not prove that
    current app versions send those signals.
 2. Real apps on an owned API 36 Play Store emulator, with the real
@@ -118,7 +118,7 @@ The build refuses uncommitted or untracked changes. It also refuses an ID that
 already has an output directory, so the evidence of every attempt stays. Use a
 new ID for each attempt. To test a PR, use a separate checkout of its exact
 head, for example `git worktree add --detach ../zen-pr77 origin/<branch>`, run
-`npm ci` there, and build from it. Build each PR separately for per-head
+`pnpm install --frozen-lockfile` there, and build from it. Build each PR separately for per-head
 evidence. A local merge of several PRs is faster, but its evidence
 covers only that combination.
 

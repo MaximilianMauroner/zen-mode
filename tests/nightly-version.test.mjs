@@ -18,7 +18,6 @@ test('one reserved identity stamps app config and dependency metadata without ch
   try {
     writeFileSync(join(root, 'app.json'), JSON.stringify({ expo: { version: '0.1.5', android: { package: 'com.lab4code.test', versionCode: 7 } } }));
     writeFileSync(join(root, 'package.json'), JSON.stringify({ version: '0.1.5', dependencies: { expo: '57.0.23' } }));
-    writeFileSync(join(root, 'package-lock.json'), JSON.stringify({ version: '0.1.5', packages: { '': { version: '0.1.5' }, 'node_modules/expo': { version: '57.0.23' } } }));
     stampRelease(root, '0.1.6', 8);
     const app = JSON.parse(readFileSync(join(root, 'app.json'), 'utf8')).expo;
     assert.equal(app.version, '0.1.6');
@@ -27,9 +26,6 @@ test('one reserved identity stamps app config and dependency metadata without ch
     const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
     assert.deepEqual(manifest.dependencies, { expo: '57.0.23' });
     assert.equal(manifest.version, '0.1.6');
-    const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
-    assert.equal(lock.packages[''].version, '0.1.6');
-    assert.equal(lock.packages['node_modules/expo'].version, '57.0.23');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

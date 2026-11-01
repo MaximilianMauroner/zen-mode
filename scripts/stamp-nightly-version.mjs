@@ -21,16 +21,6 @@ export function stampRelease(root, version, versionCode) {
   const manifest = JSON.parse(readFileSync(packagePath, 'utf8'));
   manifest.version = reserved.version;
   writeFileSync(packagePath, `${JSON.stringify(manifest, null, 2)}\n`);
-  // npm ci verifies the root version recorded in the lockfile as well.
-  const lockPath = resolve(root, 'package-lock.json');
-  try {
-    const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
-    lock.version = reserved.version;
-    if (lock.packages?.['']) lock.packages[''].version = reserved.version;
-    writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-  }
   return reserved;
 }
 

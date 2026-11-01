@@ -15,9 +15,9 @@ Record revision, device/API level, installed build, starting permissions and rul
 Check active work, host memory, load and device ownership before commands.
 Select only journeys affected by work in the requested audit window.
 
-Install with `npm ci`. Run `npm run verify` for supporting code checks.
+Install with `pnpm install --frozen-lockfile`. Run `pnpm run verify` for supporting code checks.
 The shared command includes nightly tests. These checks do not prove
-accessibility behavior. For the requested audit, `npm run android` installs
+accessibility behavior. For the requested audit, `pnpm run android` installs
 the native build.
 Confirm the app opens before enabling its service in Android Accessibility.
 Do not use release/internal upload commands. Expo Go and web cannot enforce rules.
@@ -32,7 +32,7 @@ trigger enforcement. Record action, visible outcome and overlay/Home effect.
 Reset owned rules between rows. If enforcement surprises you, recheck the service,
 app build and observed signal, then reset before one targeted retry.
 
-For web interface checks, use `npm run web -- --port 43132`, confirm HTTP readiness,
+For web interface checks, use `pnpm run web --port 43132`, confirm HTTP readiness,
 then T3 preview status/open/navigation. A preview navigation failure blocks browser
 proof; it does not permit replacing Android enforcement with web evidence.
 

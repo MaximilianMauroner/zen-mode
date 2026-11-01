@@ -100,7 +100,7 @@ settings-lock bypass.
 
 ## Debug preview versus Play upload
 
-`npm run android` installs a local native development build. Historical local
+`pnpm run android` installs a local native development build. Historical local
 release-mode APKs were signed with the default debug key; they remain test
 artifacts and are not Play upload candidates. Release configuration must never
 fall back to that certificate.
@@ -184,7 +184,7 @@ test data needs manual migration or retention.
       ```bash
       ZEN_GUARD_TEST_SERIAL=emulator-5554 \
         ZEN_GUARD_ALLOW_TASK_DATA_RESET=clear-com.lab4code.zenmode-on-moodqa \
-        npm run test:android-settings-safety
+        pnpm run test:android-settings-safety
       ```
 
       The harness clears only `com.lab4code.zenmode` data, seeds its private rule

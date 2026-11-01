@@ -49,35 +49,35 @@ and the [store listing](docs/store-listing.md).
 Install dependencies with the lockfile:
 
 ```bash
-npm ci
+pnpm install --frozen-lockfile
 ```
 
 Start the interface preview:
 
 ```bash
-npm run web
+pnpm run web
 ```
 
 Build and install the Android native app on an emulator or connected device:
 
 ```bash
-npm run android
+pnpm run android
 ```
 
 Then enable Zen Mode in Android Accessibility settings and complete the
-in-app setup. `npm run phone:mirror` mirrors exactly one ADB-connected Android
+in-app setup. `pnpm run phone:mirror` mirrors exactly one ADB-connected Android
 device. It uses `scrcpy` when available.
 
 ## Check changes
 
 ```bash
-npm test
-npx tsc --noEmit
-npm run lint
-npx expo export --platform web
+pnpm test
+pnpm exec tsc --noEmit
+pnpm run lint
+pnpm exec expo export --platform web
 ```
 
-Run `npm run android` after a change to `modules/zen-guard/` or Android app
+Run `pnpm run android` after a change to `modules/zen-guard/` or Android app
 configuration. Test the affected rule on a real device when accessibility
 events or overlays change.
 
@@ -86,7 +86,7 @@ events or overlays change.
 Web export checks routing and the interface. It cannot enforce Android app or
 feed limits. iOS is not a supported protection target.
 
-Expo Go cannot include this project's local Android module. Use `npm run
+Expo Go cannot include this project's local Android module. Use `pnpm run
 android` for native development and testing. The scheduled nightly build to
 the Play Internal track is described in [nightly](docs/nightly.md).
 
@@ -95,7 +95,7 @@ the Play Internal track is described in [nightly](docs/nightly.md).
 This local build requires the Android SDK and a JDK.
 
 ```bash
-npx expo prebuild --platform android --no-install
+pnpm exec expo prebuild --platform android --no-install
 cd android
 ./gradlew :app:assembleDebug -PreactNativeArchitectures=arm64-v8a
 ```
@@ -107,7 +107,7 @@ the verified App Bundle workflow.
 
 ## Internal testing releases
 
-Use `npm run release:internal` (Zen Mode) or `bun run release:internal`
+Use `pnpm run release:internal` (Zen Mode) or `bun run release:internal`
 (Moodinator) for a changed, committed `origin/main`. The shared release ledger
 reserves the next patch version and Android version code, builds locally,
 and submits to Google Play Internal testing. Run `release:status` to see

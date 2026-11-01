@@ -1,7 +1,7 @@
-diff --git a/node_modules/react-native-screens/android/src/main/cpp/NativeProxy.cpp b/node_modules/react-native-screens/android/src/main/cpp/NativeProxy.cpp
+diff --git a/android/src/main/cpp/NativeProxy.cpp b/android/src/main/cpp/NativeProxy.cpp
 index 239e03a..3e32c09 100644
---- a/node_modules/react-native-screens/android/src/main/cpp/NativeProxy.cpp
-+++ b/node_modules/react-native-screens/android/src/main/cpp/NativeProxy.cpp
+--- a/android/src/main/cpp/NativeProxy.cpp
++++ b/android/src/main/cpp/NativeProxy.cpp
 @@ -2,6 +2,7 @@
  #include <react/fabric/Binding.h>
  #include <react/renderer/scheduler/Scheduler.h>
@@ -75,10 +75,10 @@ index 239e03a..3e32c09 100644
    javaPart_ = nullptr;
  }
  
-diff --git a/node_modules/react-native-screens/android/src/main/cpp/NativeProxy.h b/node_modules/react-native-screens/android/src/main/cpp/NativeProxy.h
+diff --git a/android/src/main/cpp/NativeProxy.h b/android/src/main/cpp/NativeProxy.h
 index c4dbb12..4361c93 100644
---- a/node_modules/react-native-screens/android/src/main/cpp/NativeProxy.h
-+++ b/node_modules/react-native-screens/android/src/main/cpp/NativeProxy.h
+--- a/android/src/main/cpp/NativeProxy.h
++++ b/android/src/main/cpp/NativeProxy.h
 @@ -4,6 +4,7 @@
  #include <react/fabric/JFabricUIManager.h>
  #include "RNSScreenRemovalListener.h"
@@ -108,10 +108,10 @@ index c4dbb12..4361c93 100644
    explicit NativeProxy(jni::alias_ref<NativeProxy::javaobject> jThis);
  
    void nativeAddMutationsListener(
-diff --git a/node_modules/react-native-screens/cpp/RNSScreenRemovalListener.cpp b/node_modules/react-native-screens/cpp/RNSScreenRemovalListener.cpp
+diff --git a/cpp/RNSScreenRemovalListener.cpp b/cpp/RNSScreenRemovalListener.cpp
 index 50dee1e..13b8545 100644
---- a/node_modules/react-native-screens/cpp/RNSScreenRemovalListener.cpp
-+++ b/node_modules/react-native-screens/cpp/RNSScreenRemovalListener.cpp
+--- a/cpp/RNSScreenRemovalListener.cpp
++++ b/cpp/RNSScreenRemovalListener.cpp
 @@ -1,12 +1,42 @@
  #include "RNSScreenRemovalListener.h"
  #include <react/renderer/mounting/ShadowViewMutation.h>
@@ -164,10 +164,10 @@ index 50dee1e..13b8545 100644
      }
    }
  
-diff --git a/node_modules/react-native-screens/cpp/RNSScreenRemovalListener.h b/node_modules/react-native-screens/cpp/RNSScreenRemovalListener.h
+diff --git a/cpp/RNSScreenRemovalListener.h b/cpp/RNSScreenRemovalListener.h
 index 5bf6629..f1868a3 100644
---- a/node_modules/react-native-screens/cpp/RNSScreenRemovalListener.h
-+++ b/node_modules/react-native-screens/cpp/RNSScreenRemovalListener.h
+--- a/cpp/RNSScreenRemovalListener.h
++++ b/cpp/RNSScreenRemovalListener.h
 @@ -4,12 +4,22 @@
  #include <react/renderer/mounting/MountingOverrideDelegate.h>
  #include <react/renderer/mounting/ShadowView.h>

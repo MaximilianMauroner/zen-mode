@@ -87,12 +87,12 @@ async function checks() {
   try {
     profiles();
     Object.assign(process.env, preflightRelease(root));
-    run('npm', ['ci']);
-    run('npm', ['test']);
-    run('npm', ['run', 'test:nightly']);
-    run('npm', ['run', 'lint']);
-    run('npx', ['tsc', '--noEmit']);
-    run('npx', ['expo', 'export', '--platform', 'web', '--max-workers', '2']);
+    run('pnpm', ['install', '--frozen-lockfile']);
+    run('pnpm', ['test']);
+    run('pnpm', ['run', 'test:nightly']);
+    run('pnpm', ['run', 'lint']);
+    run('pnpm', ['exec', 'tsc', '--noEmit']);
+    run('pnpm', ['exec', 'expo', 'export', '--platform', 'web', '--max-workers', '2']);
     preflightRelease(root);
     if (cancelled) throw new Error('Checks cancelled');
     evidence('checks', sha, 'succeeded');

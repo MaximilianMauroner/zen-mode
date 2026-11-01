@@ -33,7 +33,7 @@ async function phase(command, options = {}) {
     console: { log() {}, error: (error) => errors.push(error) },
     spawnSync(program, args, opts) {
       commands.push({ program, args: Array.from(args), env: opts.env ?? { ...env } });
-      if (program === 'npm' && ((options.failChecks && args[0] === 'test') || (options.failInstall && args[0] === 'ci'))) return { status: 1, stderr: 'private failing detail' };
+      if (program === 'pnpm' && ((options.failChecks && args[0] === 'test') || (options.failInstall && args[0] === 'install'))) return { status: 1, stderr: 'private failing detail' };
       if (program === 'python3' && args[0].endsWith('nightly-ledger.py')) {
         if (options.failReserve && args[2] === 'reserve' || options.failFinish && args[2] === 'finish') return { status: 1 };
         return { status: 0, stdout: JSON.stringify(options.skipRelease ? { build: false } : record) };
@@ -135,7 +135,7 @@ test('reserve persists before exposing identity; lost reserve response exposes n
   const transferred = passed.writes.find(({ path }) => path.endsWith('reservation.json')).record;
   assert.deepEqual(transferred, { ...record, runId: '1234', runAttempt: '1' });
   assert.equal(ledgerCommands(passed)[0].args[2], 'reserve');
-  assert.ok(passed.commands.every(({ program }) => !['npm', 'npx', 'eas'].includes(program)));
+  assert.ok(passed.commands.every(({ program }) => !['pnpm', 'eas'].includes(program)));
   const lost = await phase('reserve', { failReserve: true });
   assert.equal(lost.writes.some(({ path }) => path.endsWith('reservation.json')), false);
   assert.equal(lost.outputs.build, undefined);
@@ -158,7 +158,7 @@ test('build only invokes EAS with Expo, never checks, ledger or Play', async () 
     assert.equal(child.env.PLAY_SERVICE_ACCOUNT_JSON, undefined);
     assert.ok(child.args.includes('--freeze-credentials'));
   }
-  assert.ok(result.commands.every(({ program }) => !['npm', 'npx', 'python3'].includes(program)));
+  assert.ok(result.commands.every(({ program }) => !['pnpm', 'python3'].includes(program)));
   assert.equal(result.uploads, 0);
 });
 
@@ -251,7 +251,7 @@ test('finish rejects ambiguous outcome and does not retry lost completion', asyn
 test('local runner retains manual builds and narrows child authentication', async () => {
   const result = await phase('run', { local: true });
   assert.equal(result.errors.length, 0);
-  const checks = result.commands.filter(({ program }) => ['npm', 'npx'].includes(program));
+  const checks = result.commands.filter(({ program }) => program === 'pnpm');
   assert.ok(checks.length > 0);
   for (const child of checks) assert.ok(!child.env.EXPO_TOKEN && !child.env.GITHUB_TOKEN && !child.env.PLAY_SERVICE_ACCOUNT_KEY_PATH);
   for (const child of result.commands.filter(({ program }) => program === 'eas')) {

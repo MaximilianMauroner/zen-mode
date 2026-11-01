@@ -74,7 +74,7 @@ Hosted releases use five fresh GitHub-hosted runners:
 - `build` checks out that same SHA on a fresh read-only runner. Tool setup has no
   user secrets. The EAS build step receives only Expo access, stamps the confirmed
   identity, and builds with frozen remote signing. A separate step first runs
-  `npm ci` without release credentials so EAS can resolve app config plugins
+  `pnpm install --frozen-lockfile` without release credentials so EAS can resolve app config plugins
   before its local builder starts. An install failure reaches the guarded build
   phase, which records a confirmed failure without starting EAS. EAS also installs
   dependencies inside its build workspace and runs build hooks with Expo access.
@@ -121,7 +121,7 @@ on `main`; this workflow also refuses any ref other than `main`. Cache misses
 run the same setup, checks, and builds. No check is skipped on a cache hit.
 
 The credential-free `checks` job saves only SDK platform 36, build-tools 36.0.0,
-and npm's `_cacache` package content. `build` restores those paths; `upload`
+the pnpm store, and npm's `_cacache` for the global EAS CLI. `build` restores those paths; `upload`
 restores only the SDK paths. The build job separately caches only Gradle's
 downloaded dependency files and wrapper distributions. It excludes Gradle build
 and configuration caches, properties, daemon logs, EAS workspaces, release
@@ -139,8 +139,8 @@ commands remain available:
 ```sh
 node scripts/nightly-release.mjs status
 node scripts/nightly-release.mjs run
-npm run release:status
-npm run release:internal
+pnpm run release:status
+pnpm run release:internal
 ```
 
 Local `status` and manual `finish` use `GH_TOKEN`, `GITHUB_TOKEN`, or a captured
@@ -210,11 +210,11 @@ app installed through Play with its app-signing certificate.
 ## Checks
 
 ```sh
-npm test
-npm run test:nightly
-npx tsc --noEmit
-npm run lint
-npx expo export --platform web
+pnpm test
+pnpm run test:nightly
+pnpm exec tsc --noEmit
+pnpm run lint
+pnpm exec expo export --platform web
 ```
 
 Pure/mocked tests cover transition rules, competing Contents API writers, missing

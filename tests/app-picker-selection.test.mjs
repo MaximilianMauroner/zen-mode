@@ -38,7 +38,7 @@ function localState() {
 function fixture() {
   const screenState = localState();
   const pickerState = localState();
-  let read = { kind: 'ready', refreshing: false, value: { limits: [], intents: [], rolling: [], installedApps: [app] } };
+  let read = { kind: 'ready', refreshing: false, value: { limits: [], intents: [], rolling: [], earn: [], installedApps: [app] } };
   let AppPicker;
   const nativeViews = Object.fromEntries(['FlatList', 'KeyboardAvoidingView', 'Modal', 'Pressable', 'Text', 'TextInput', 'View'].map((name) => [name, name]));
 

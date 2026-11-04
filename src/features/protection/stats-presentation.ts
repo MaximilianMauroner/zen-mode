@@ -11,6 +11,7 @@ export const ENFORCEMENT_STAT_CATEGORIES = [
   { key: 'app_limit', label: 'App limits', detail: 'A daily app limit blocked access.' },
   { key: 'rolling_limit', label: 'Rolling app limits', detail: 'A rolling allowance blocked access.' },
   { key: 'timed_visit', label: 'Timed visits', detail: 'A timed-visit boundary appeared or ended a visit.' },
+  { key: 'earned_time', label: 'Earned time', detail: 'An app stayed closed until its habit app earned it time.' },
 ] as const;
 
 export type EnforcementStatKey = (typeof ENFORCEMENT_STAT_CATEGORIES)[number]['key'];

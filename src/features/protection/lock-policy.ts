@@ -111,11 +111,12 @@ export function formatRemaining(target: number, now: number): string {
   return 'under a minute';
 }
 
-/** One app rule, in whichever of the three shapes the user chose. */
+/** One app rule, in whichever of the four shapes the user chose. */
 export type AppRule =
   | { mode: 'daily'; minutes: number }
   | { mode: 'visit'; sessionMinutes: number; cooldownMinutes: number }
-  | { mode: 'rolling'; allowanceMinutes: number; windowMinutes: number };
+  | { mode: 'rolling'; allowanceMinutes: number; windowMinutes: number }
+  | { mode: 'earn'; habitPackage: string; habitLabel: string; habitMinutes: number; rewardMinutes: number };
 
 /**
  * Why the settings lock refuses to save `proposed` over `stored`, or null when
@@ -138,10 +139,13 @@ export type AppRule =
  * Inside one mode neither problem exists. The rule keeps its own store and its
  * own consumed time, and its parameters are directly comparable at every span:
  * fewer minutes, a smaller allowance in a window no shorter, or a shorter visit
- * with downtime no shorter is tighter everywhere, not just on average.
+ * with downtime no shorter is tighter everywhere, not just on average. An
+ * earned-time rule is tighter only for the same habit app with more habit
+ * minutes or fewer earned minutes. A different habit app is always looser,
+ * because it can be an app the user already opens all day.
  *
- * `stored` is a list because the native stores can hold a daily, visit, and
- * rolling rule for the same app at once. Saving replaces all of them, so a
+ * `stored` is a list because the native stores can hold a daily, visit,
+ * rolling, and earned-time rule for the same app at once. Saving replaces all of them, so a
  * second stored rule is always a guard the save would drop. An app with no rule
  * only gains one, so an empty list is never refused.
  */
@@ -165,6 +169,11 @@ function isLooserInMode(stored: AppRule, proposed: AppRule): boolean {
   }
   if (stored.mode === 'visit' && proposed.mode === 'visit') {
     return proposed.sessionMinutes > stored.sessionMinutes || proposed.cooldownMinutes < stored.cooldownMinutes;
+  }
+  if (stored.mode === 'earn' && proposed.mode === 'earn') {
+    return proposed.habitPackage !== stored.habitPackage ||
+      proposed.habitMinutes < stored.habitMinutes ||
+      proposed.rewardMinutes > stored.rewardMinutes;
   }
   return true;
 }

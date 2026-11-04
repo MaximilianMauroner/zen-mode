@@ -172,6 +172,18 @@ test('a timed visit may shorten its session or lengthen its downtime', () => {
   assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 5, cooldownMinutes: 30 }), false);
 });
 
+test('an earned-time rule may ask for more habit time or give less, for the same habit app only', () => {
+  const earn = (habitPackage, habitMinutes, rewardMinutes) => ({ mode: 'earn', habitPackage, habitLabel: habitPackage, habitMinutes, rewardMinutes });
+  const stored = [earn('books', 30, 5)];
+  assert.equal(refused(stored, earn('books', 15, 5)), true);
+  assert.equal(refused(stored, earn('books', 30, 10)), true);
+  assert.equal(refused(stored, earn('feed', 60, 1)), true);
+  assert.equal(refused(stored, earn('books', 60, 5)), false);
+  assert.equal(refused(stored, earn('books', 30, 2)), false);
+  assert.equal(refused(stored, earn('books', 30, 5)), false);
+  assert.equal(refused([{ mode: 'daily', minutes: 5 }], earn('books', 90, 1)), true);
+});
+
 test('a change of mode is refused however tight the replacement reads', () => {
   // Consumed time does not move between the stores, so any mode change hands
   // back a spent allowance in full. None of these may pass while locked.

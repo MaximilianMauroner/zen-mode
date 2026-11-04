@@ -31,6 +31,7 @@ for (const { mode, rule, expected } of [
   { mode: 'daily', rule: { mode: 'daily', minutes: 1 }, expected: /a daily limit of 1 minute$/ },
   { mode: 'visit', rule: { mode: 'visit', sessionMinutes: 1, cooldownMinutes: 5 }, expected: /a timed visit of 1 minute with a 5-minute cooldown$/ },
   { mode: 'rolling', rule: { mode: 'rolling', allowanceMinutes: 1, windowMinutes: 15 }, expected: /a rolling allowance of 1 minute per 15-minute window$/ },
+  { mode: 'earn', rule: { mode: 'earn', habitPackage: 'books', habitLabel: 'Books', habitMinutes: 30, rewardMinutes: 1 }, expected: /earned time of 1 minute for every 30 minutes in Books$/ },
 ]) {
   test(`${mode} one-minute proposal names its duration and remaining consent parameters`, () => {
     assert.match(getAppRuleChangeAction('Clock', [], rule), expected);

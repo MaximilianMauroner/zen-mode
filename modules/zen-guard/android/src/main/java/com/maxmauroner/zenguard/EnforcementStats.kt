@@ -15,6 +15,7 @@ internal enum class EnforcementReason(val key: String) {
   APP_LIMIT("app_limit"),
   ROLLING_LIMIT("rolling_limit"),
   TIMED_VISIT("timed_visit"),
+  EARNED_TIME("earned_time"),
 }
 
 /** Only a completed enforcement action is eligible for the statistics ledger. */

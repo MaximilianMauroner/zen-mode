@@ -229,6 +229,35 @@ class ZenGuardModule : Module() {
       RollingLimitStore(context).removeRule(packageName)
     }
 
+    /** Each earned-time app with its habit app, exchange rate, and unspent balance. */
+    AsyncFunction("getEarnRules") {
+      val context = requireNotNull(appContext.reactContext)
+      val store = EarnedTimeStore(context)
+      store.rules().map { (packageName, rule) ->
+        mapOf(
+          "packageName" to packageName,
+          "label" to labelFor(context.packageManager, packageName),
+          "habitPackage" to rule.habitPackage,
+          "habitLabel" to labelFor(context.packageManager, rule.habitPackage),
+          "habitMinutes" to rule.habitMinutes,
+          "rewardMinutes" to rule.rewardMinutes,
+          "balanceMs" to store.balanceMs(packageName).toDouble(),
+        )
+      }.sortedBy { (it["label"] as String).lowercase() }
+    }
+
+    AsyncFunction("setEarnRule") { packageName: String, habitPackage: String, habitMinutes: Int, rewardMinutes: Int ->
+      val context = requireNotNull(appContext.reactContext)
+      val safety = AppRuleSafety.resolve(context)
+      require(!safety.isExempt(packageName) && !safety.isExempt(habitPackage)) { RULE_EXEMPT_MESSAGE }
+      EarnedTimeStore(context).setRule(packageName, EarnRule(habitPackage, habitMinutes, rewardMinutes))
+    }
+
+    AsyncFunction("removeEarnRule") { packageName: String ->
+      val context = requireNotNull(appContext.reactContext)
+      EarnedTimeStore(context).removeRule(packageName)
+    }
+
     AsyncFunction("openAccessibilitySettings") {
       val context = requireNotNull(appContext.reactContext)
       val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {

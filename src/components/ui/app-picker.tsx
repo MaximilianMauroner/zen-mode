@@ -18,9 +18,11 @@ type AppPickerProps = {
   configuredPackages: ReadonlySet<string>;
   onClose: () => void;
   onSelect: (app: InstalledApp) => boolean;
+  title?: string;
+  itemAction?: string;
 };
 
-export function AppPicker({ visible, disabled, apps, onRetry, configuredPackages, onClose, onSelect }: AppPickerProps) {
+export function AppPicker({ visible, disabled, apps, onRetry, configuredPackages, onClose, onSelect, title = 'Add app', itemAction = 'Add' }: AppPickerProps) {
   const [query, setQuery] = useState('');
   const reduceMotion = useReducedMotion();
   const filtered = useMemo(() => apps.kind === 'ready' ? apps.value.filter((app) => !configuredPackages.has(app.packageName) && app.label.toLowerCase().includes(query.trim().toLowerCase())) : [], [apps, configuredPackages, query]);
@@ -31,7 +33,7 @@ export function AppPicker({ visible, disabled, apps, onRetry, configuredPackages
         <Pressable accessibilityRole="button" accessibilityLabel="Close app picker" onPress={onClose} className="absolute inset-0" />
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ height: '80%' }}>
           <SafeAreaView edges={['bottom']} className="flex-1 rounded-t-3xl border-t border-line2 bg-panel pt-3">
-            <SheetHeader title="Add app" closeLabel="Close app picker" onClose={onClose} />
+            <SheetHeader title={title} closeLabel="Close app picker" onClose={onClose} />
             <View className="flex-1 px-5">
               <TextInput accessibilityLabel="Search apps" placeholder="Search apps" placeholderTextColor={colors.faint} value={query} onChangeText={setQuery} autoCorrect={false} autoCapitalize="none" className="mb-2 min-h-[48px] rounded-2xl border border-line2 bg-night px-4 py-3 text-item text-copy" />
               <GuardNotes reads={[apps]} action={IDLE_ACTION} />
@@ -45,7 +47,7 @@ export function AppPicker({ visible, disabled, apps, onRetry, configuredPackages
                 windowSize={5}
                 getItemLayout={(_, index) => ({ length: 64, offset: 64 * index, index })}
                 renderItem={({ item }) => (
-                  <Pressable accessibilityRole="button" accessibilityLabel={`Add ${item.label}`} accessibilityState={{ disabled }} disabled={disabled} onPress={() => { if (onSelect(item)) { setQuery(''); onClose(); } }} style={{ height: 64 }} className="flex-row items-center justify-between border-b border-line active:opacity-60">
+                  <Pressable accessibilityRole="button" accessibilityLabel={`${itemAction} ${item.label}`} accessibilityState={{ disabled }} disabled={disabled} onPress={() => { if (onSelect(item)) { setQuery(''); onClose(); } }} style={{ height: 64 }} className="flex-row items-center justify-between border-b border-line active:opacity-60">
                     <Text numberOfLines={1} className="flex-1 pr-3 text-item font-medium text-copy">{item.label}</Text><Plus color={colors.accent} size={20} />
                   </Pressable>
                 )}

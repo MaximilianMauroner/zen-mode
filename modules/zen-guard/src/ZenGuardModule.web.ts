@@ -46,6 +46,9 @@ class ZenGuardModule extends NativeModule<{}> {
     };
   }
 
+  async startXDiagnostics() {}
+  async getXDiagnostics() { return { state: 'empty' as const }; }
+
   async getEnforcementStats(): Promise<EnforcementStats> {
     return { total: 0, counts: {}, lastEventAt: 0 };
   }

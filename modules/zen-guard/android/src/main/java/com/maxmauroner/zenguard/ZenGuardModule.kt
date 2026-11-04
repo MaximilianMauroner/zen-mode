@@ -81,6 +81,15 @@ class ZenGuardModule : Module() {
       )
     }
 
+    AsyncFunction("startXDiagnostics") {
+      val context = requireNotNull(appContext.reactContext)
+      XDiagnostics.start(context, isServiceEnabled(context))
+    }.runOnQueue(Queues.MAIN)
+
+    AsyncFunction("getXDiagnostics") {
+      XDiagnostics.status(requireNotNull(appContext.reactContext))
+    }.runOnQueue(Queues.MAIN)
+
     AsyncFunction("getEnforcementStats") {
       val snapshot = EnforcementStatsStore(requireNotNull(appContext.reactContext)).snapshot()
       mapOf(

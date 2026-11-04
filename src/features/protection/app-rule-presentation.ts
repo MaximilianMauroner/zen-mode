@@ -42,6 +42,8 @@ function describeRule(rule: AppRule): string {
       return `a timed visit of ${describeMinutes(rule.sessionMinutes)} with a ${rule.cooldownMinutes}-minute cooldown`;
     case 'rolling':
       return `a rolling allowance of ${describeMinutes(rule.allowanceMinutes)} per ${rule.windowMinutes}-minute window`;
+    case 'earn':
+      return `earned time of ${describeMinutes(rule.rewardMinutes)} for every ${describeMinutes(rule.habitMinutes)} in ${rule.habitLabel}`;
   }
 }
 

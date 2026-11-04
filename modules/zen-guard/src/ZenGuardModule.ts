@@ -85,6 +85,15 @@ export type RollingLimit = InstalledApp & {
   usedMs: number;
 };
 
+/** An app that opens only on time earned in a habit app, plus its unspent balance. */
+export type EarnRule = InstalledApp & {
+  habitPackage: string;
+  habitLabel: string;
+  habitMinutes: number;
+  rewardMinutes: number;
+  balanceMs: number;
+};
+
 declare class ZenGuardModule extends NativeModule<{}> {
   getStatus(): Promise<ZenGuardStatus>;
   getEnforcementStats(): Promise<EnforcementStats>;
@@ -111,6 +120,9 @@ declare class ZenGuardModule extends NativeModule<{}> {
   getRollingLimits(): Promise<RollingLimit[]>;
   setRollingLimit(packageName: string, allowanceMinutes: number, windowMinutes: number): Promise<void>;
   removeRollingLimit(packageName: string): Promise<void>;
+  getEarnRules(): Promise<EarnRule[]>;
+  setEarnRule(packageName: string, habitPackage: string, habitMinutes: number, rewardMinutes: number): Promise<void>;
+  removeEarnRule(packageName: string): Promise<void>;
   getAdultSiteSettings(): Promise<AdultSiteSettings>;
   setAdultSiteBlockingEnabled(enabled: boolean): Promise<void>;
   addBlockedDomain(input: string): Promise<string>;

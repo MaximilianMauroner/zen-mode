@@ -1,7 +1,7 @@
-import ZenGuardModule, { type AdultSiteSettings, type AppLimit, type EnforcementStats, type InstalledApp, type IntentApp, type RollingLimit, type ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
+import ZenGuardModule, { type AdultSiteSettings, type AppLimit, type EarnRule, type EnforcementStats, type InstalledApp, type IntentApp, type RollingLimit, type ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
 import { getAddDomainErrorMessage } from './site-rule-errors';
 
-export type { AdultSiteSettings, AppLimit, EnforcementStats, InstalledApp, IntentApp, RollingLimit, ZenGuardStatus };
+export type { AdultSiteSettings, AppLimit, EarnRule, EnforcementStats, InstalledApp, IntentApp, RollingLimit, ZenGuardStatus };
 
 export const getZenGuardStatus = () => ZenGuardModule.getStatus();
 export const getEnforcementStats = () => ZenGuardModule.getEnforcementStats();
@@ -32,6 +32,10 @@ export const getRollingLimits = () => ZenGuardModule.getRollingLimits();
 export const setRollingLimit = (packageName: string, allowanceMinutes: number, windowMinutes: number) =>
   ZenGuardModule.setRollingLimit(packageName, allowanceMinutes, windowMinutes);
 export const removeRollingLimit = (packageName: string) => ZenGuardModule.removeRollingLimit(packageName);
+export const getEarnRules = () => ZenGuardModule.getEarnRules();
+export const setEarnRule = (packageName: string, habitPackage: string, habitMinutes: number, rewardMinutes: number) =>
+  ZenGuardModule.setEarnRule(packageName, habitPackage, habitMinutes, rewardMinutes);
+export const removeEarnRule = (packageName: string) => ZenGuardModule.removeEarnRule(packageName);
 
 export const openX = () => ZenGuardModule.openX();
 export const setYouTubeSettings = (shortsEnabled: boolean, homeEnabled: boolean) => ZenGuardModule.setYouTubeSettings(shortsEnabled, homeEnabled);

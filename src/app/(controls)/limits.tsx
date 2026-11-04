@@ -11,17 +11,21 @@ import { authorizeWeakening } from '@/features/protection/authorize-weakening';
 import { appRuleLockRefusal, type AppRule } from '@/features/protection/lock-policy';
 import {
   getAppLimits,
+  getEarnRules,
   getInstalledApps,
   getIntentApps,
   getRollingLimits,
   removeAppLimit,
+  removeEarnRule,
   removeIntentApp,
   removeRollingLimit,
   setAppLimit,
+  setEarnRule,
   setIntentApp,
   setRollingLimit,
   getZenGuardStatus,
   type AppLimit,
+  type EarnRule,
   type InstalledApp,
   type IntentApp,
   type RollingLimit,
@@ -51,12 +55,16 @@ const ROLLING_PREFILLS = [
   { label: '5m / 3h', allowance: 5, window: 180 },
   { label: '30m / day', allowance: 30, window: 1440 },
 ];
-type RuleMode = 'daily' | 'visit' | 'rolling';
+/** Habit minutes that earn one exchange, and the minutes each exchange earns. */
+const HABIT_OPTIONS = [10, 15, 30, 45, 60, 90];
+const REWARD_OPTIONS = [1, 2, 5, 10, 15, 30];
+type RuleMode = 'daily' | 'visit' | 'rolling' | 'earn';
 
 type AppRules = {
   limits: AppLimit[];
   intents: IntentApp[];
   rolling: RollingLimit[];
+  earn: EarnRule[];
   installedApps: InstalledApp[];
 };
 
@@ -66,11 +74,12 @@ type GuardedEntry = {
   limit?: AppLimit;
   intent?: IntentApp;
   rolling?: RollingLimit;
+  earn?: EarnRule;
   availability: 'installed' | 'absent' | 'unknown';
   availabilityDetail: string | null;
 };
 
-const MODE_LABEL: Record<RuleMode, string> = { daily: 'Daily', visit: 'Visit', rolling: 'Rolling' };
+const MODE_LABEL: Record<RuleMode, string> = { daily: 'Daily', visit: 'Visit', rolling: 'Rolling', earn: 'Earn' };
 const WINDOW_LABEL: Record<number, string> = { 30: '30 min', 60: 'hour', 180: '3 hours', 480: '8 hours', 1440: 'day' };
 
 /**
@@ -78,7 +87,7 @@ const WINDOW_LABEL: Record<number, string> = { 30: '30 min', 60: 'hour', 180: '3
  * rather than the rendered list, which can be a refresh behind.
  */
 async function readStoredRules(packageName: string): Promise<AppRule[]> {
-  const [limits, intents, rollingRules] = await Promise.all([getAppLimits(), getIntentApps(), getRollingLimits()]);
+  const [limits, intents, rollingRules, earnRules] = await Promise.all([getAppLimits(), getIntentApps(), getRollingLimits(), getEarnRules()]);
   const stored: AppRule[] = [];
   for (const limit of limits) {
     if (limit.packageName === packageName) stored.push({ mode: 'daily', minutes: limit.minutes });
@@ -93,6 +102,11 @@ async function readStoredRules(packageName: string): Promise<AppRule[]> {
       stored.push({ mode: 'rolling', allowanceMinutes: rule.allowanceMinutes, windowMinutes: rule.windowMinutes });
     }
   }
+  for (const rule of earnRules) {
+    if (rule.packageName === packageName) {
+      stored.push({ mode: 'earn', habitPackage: rule.habitPackage, habitLabel: rule.habitLabel, habitMinutes: rule.habitMinutes, rewardMinutes: rule.rewardMinutes });
+    }
+  }
   return stored;
 }
 
@@ -100,9 +114,9 @@ async function readAppRules(): Promise<ReadResult<AppRules>> {
   if (Platform.OS !== 'android') return { kind: 'android-required' };
   const nativeStatus = await getZenGuardStatus();
   if (getAppLimitsPlatformState(nativeStatus) === 'android-required') return { kind: 'android-required' };
-  const [limits, intents, rolling] = await Promise.all([getAppLimits(), getIntentApps(), getRollingLimits()]);
+  const [limits, intents, rolling, earn] = await Promise.all([getAppLimits(), getIntentApps(), getRollingLimits(), getEarnRules()]);
   const installedApps = await getInstalledApps();
-  return { kind: 'ready', value: { limits, intents, rolling, installedApps } };
+  return { kind: 'ready', value: { limits, intents, rolling, earn, installedApps } };
 }
 
 export default function AppLimitsScreen() {
@@ -118,6 +132,10 @@ export default function AppLimitsScreen() {
   const [cooldown, setCooldown] = useState(5);
   const [allowance, setAllowance] = useState(5);
   const [window, setWindow] = useState(60);
+  const [habit, setHabit] = useState<InstalledApp | null>(null);
+  const [habitMinutes, setHabitMinutes] = useState(30);
+  const [reward, setReward] = useState(5);
+  const [habitPickerOpen, setHabitPickerOpen] = useState(false);
   const [action, setAction] = useState<ActionState>(IDLE_ACTION);
   const busy = action.kind === 'running';
   const busyRef = useRef(false);
@@ -147,7 +165,7 @@ export default function AppLimitsScreen() {
   const controlsDisabled = busy || read.kind !== 'ready' || read.refreshing;
 
   const guardedByPackage = new Map<string, GuardedEntry>();
-  const addGuarded = (packageName: string, storedLabel: string, rule: Pick<GuardedEntry, 'limit' | 'intent' | 'rolling'>) => {
+  const addGuarded = (packageName: string, storedLabel: string, rule: Pick<GuardedEntry, 'limit' | 'intent' | 'rolling' | 'earn'>) => {
     const existing = guardedByPackage.get(packageName);
     const evidence = getConfiguredAppPresentation(storedLabel, packageName, rules?.installedApps ?? null);
     guardedByPackage.set(packageName, {
@@ -166,6 +184,9 @@ export default function AppLimitsScreen() {
   );
   rules?.rolling.forEach((rule) =>
     addGuarded(rule.packageName, rule.label, { rolling: rule }),
+  );
+  rules?.earn.forEach((rule) =>
+    addGuarded(rule.packageName, rule.label, { earn: rule }),
   );
   const guarded = [...guardedByPackage.values()].sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()));
 
@@ -191,6 +212,11 @@ export default function AppLimitsScreen() {
       setMode('rolling');
       setAllowance(entry.rolling.allowanceMinutes);
       setWindow(entry.rolling.windowMinutes);
+    } else if (entry?.earn) {
+      setMode('earn');
+      setHabit({ packageName: entry.earn.habitPackage, label: entry.earn.habitLabel });
+      setHabitMinutes(entry.earn.habitMinutes);
+      setReward(entry.earn.rewardMinutes);
     } else {
       setMode('daily');
       setMinutes(15);
@@ -198,10 +224,26 @@ export default function AppLimitsScreen() {
       setCooldown(5);
       setAllowance(5);
       setWindow(60);
+      setHabit(null);
+      setHabitMinutes(30);
+      setReward(5);
     }
     setAction(IDLE_ACTION);
     setSelected(app);
     return true;
+  };
+
+  const proposedRule = (): AppRule | null => {
+    switch (mode) {
+      case 'daily':
+        return { mode: 'daily', minutes };
+      case 'visit':
+        return { mode: 'visit', sessionMinutes: session, cooldownMinutes: cooldown };
+      case 'rolling':
+        return { mode: 'rolling', allowanceMinutes: allowance, windowMinutes: window };
+      case 'earn':
+        return habit === null ? null : { mode: 'earn', habitPackage: habit.packageName, habitLabel: habit.label, habitMinutes, rewardMinutes: reward };
+    }
   };
 
   // One rule per app keeps enforcement predictable, so saving replaces the rest.
@@ -211,13 +253,12 @@ export default function AppLimitsScreen() {
       setAction({ kind: 'failed', message: 'The allowance must fit inside its window.' });
       return;
     }
+    const proposed = proposedRule();
+    if (proposed === null) {
+      setAction({ kind: 'failed', message: 'Choose the app that earns the time.' });
+      return;
+    }
     const packageName = selected.packageName;
-    const proposed: AppRule =
-      mode === 'daily'
-        ? { mode: 'daily', minutes }
-        : mode === 'visit'
-          ? { mode: 'visit', sessionMinutes: session, cooldownMinutes: cooldown }
-          : { mode: 'rolling', allowanceMinutes: allowance, windowMinutes: window };
 
     runAction(async () => {
       // Read what is stored right now. The cached list can be a refresh behind,
@@ -229,19 +270,14 @@ export default function AppLimitsScreen() {
       if (JSON.stringify(await readStoredRules(packageName)) !== JSON.stringify(stored)) {
         throw new Error('The app rule changed. Review it and try again.');
       }
-      if (mode === 'daily') {
-        await setAppLimit(packageName, minutes);
-        await removeIntentApp(packageName);
-        await removeRollingLimit(packageName);
-      } else if (mode === 'visit') {
-        await setIntentApp(packageName, session, cooldown);
-        await removeAppLimit(packageName);
-        await removeRollingLimit(packageName);
-      } else {
-        await setRollingLimit(packageName, allowance, window);
-        await removeAppLimit(packageName);
-        await removeIntentApp(packageName);
-      }
+      if (proposed.mode === 'daily') await setAppLimit(packageName, proposed.minutes);
+      else await removeAppLimit(packageName);
+      if (proposed.mode === 'visit') await setIntentApp(packageName, proposed.sessionMinutes, proposed.cooldownMinutes);
+      else await removeIntentApp(packageName);
+      if (proposed.mode === 'rolling') await setRollingLimit(packageName, proposed.allowanceMinutes, proposed.windowMinutes);
+      else await removeRollingLimit(packageName);
+      if (proposed.mode === 'earn') await setEarnRule(packageName, proposed.habitPackage, proposed.habitMinutes, proposed.rewardMinutes);
+      else await removeEarnRule(packageName);
       setSelected(null);
       await refresh();
     }, 'That rule could not be saved.');
@@ -260,6 +296,7 @@ export default function AppLimitsScreen() {
       await removeAppLimit(packageName);
       await removeIntentApp(packageName);
       await removeRollingLimit(packageName);
+      await removeEarnRule(packageName);
       if (selected?.packageName === packageName) setSelected(null);
       await refresh();
     }, 'Those rules could not be removed.');
@@ -300,6 +337,25 @@ export default function AppLimitsScreen() {
                 <MinuteRow options={SESSION_OPTIONS} selected={session} disabled={controlsDisabled} onSelect={setSession} />
                 <SectionLabel className="mb-2 mt-4">Downtime</SectionLabel>
                 <CooldownRow selected={cooldown} disabled={controlsDisabled} onSelect={setCooldown} />
+              </Card>
+            </View>
+          ) : mode === 'earn' ? (
+            <View>
+              <SectionLabel className="mb-2">Earn it first</SectionLabel>
+              <Card>
+                <Text className="mb-3 text-support text-muted">
+                  {selected.label} stays closed until you earn time in another app, like a reading or language app. Every minute there counts, and the card shows a button to open it.
+                </Text>
+                <SectionLabel className="mb-2">Earn time in</SectionLabel>
+                <SecondaryButton
+                  title={habit ? `${habit.label} · Change` : 'Choose app'}
+                  disabled={controlsDisabled}
+                  onPress={() => setHabitPickerOpen(true)}
+                />
+                <SectionLabel className="mb-2 mt-4">Every</SectionLabel>
+                <MinuteRow options={HABIT_OPTIONS} selected={habitMinutes} disabled={controlsDisabled} onSelect={setHabitMinutes} />
+                <SectionLabel className="mb-2 mt-4">Earns</SectionLabel>
+                <MinuteRow options={REWARD_OPTIONS} selected={reward} disabled={controlsDisabled} onSelect={setReward} />
               </Card>
             </View>
           ) : (
@@ -352,7 +408,7 @@ export default function AppLimitsScreen() {
             ) : guarded.length === 0 ? (
               <Card>
                 <Text className="text-item font-semibold text-copy">No app limits yet.</Text>
-                <Text className="mt-1 text-support text-muted">Add an app to give it a daily budget, a timed visit, or a rolling allowance.</Text>
+                <Text className="mt-1 text-support text-muted">Add an app to give it a daily budget, a timed visit, a rolling allowance, or time you earn in another app.</Text>
               </Card>
             ) : (
               <RowGroup>
@@ -368,6 +424,17 @@ export default function AppLimitsScreen() {
       )}
 
       <AppPicker visible={pickerOpen} disabled={controlsDisabled} apps={apps} onRetry={() => void refresh()} configuredPackages={new Set(guardedByPackage.keys())} onClose={() => setPickerOpen(false)} onSelect={selectApp} />
+      <AppPicker
+        visible={habitPickerOpen}
+        disabled={controlsDisabled}
+        apps={apps}
+        onRetry={() => void refresh()}
+        configuredPackages={new Set(selected ? [selected.packageName] : [])}
+        onClose={() => setHabitPickerOpen(false)}
+        onSelect={(app) => { setHabit(app); return true; }}
+        title="Earn time in"
+        itemAction="Choose"
+      />
       <GuardNotes reads={[read]} action={action} />
       {action.kind === 'refused' ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
       {read.kind === 'failed' ? <SecondaryButton title="Try again" disabled={busy} onPress={() => void refresh()} /> : null}
@@ -401,6 +468,15 @@ function GuardedRow({ entry, disabled, onEdit }: { entry: GuardedEntry; disabled
     pill = MODE_LABEL.rolling;
     if (entry.rolling.usedMs >= entry.rolling.allowanceMinutes * 60_000) {
       pill = 'Spent';
+      spentTone = 'danger';
+    }
+  }
+  if (entry.earn) {
+    const banked = Math.floor(entry.earn.balanceMs / 60_000);
+    summaries.push(`${entry.earn.habitMinutes}m in ${entry.earn.habitLabel} earns ${entry.earn.rewardMinutes}m · ${banked}m left`);
+    pill = MODE_LABEL.earn;
+    if (entry.earn.balanceMs <= 0) {
+      pill = 'Closed';
       spentTone = 'danger';
     }
   }
@@ -439,6 +515,7 @@ function ModeRow({ selected, disabled, onSelect }: { selected: RuleMode; disable
     { mode: 'daily', title: 'Daily', detail: 'Budget per day' },
     { mode: 'visit', title: 'Visit', detail: 'Ask, then time it' },
     { mode: 'rolling', title: 'Rolling', detail: 'Refills over time' },
+    { mode: 'earn', title: 'Earn', detail: 'Use another app first' },
   ];
   return (
     <View accessibilityRole="radiogroup" accessibilityLabel="Rule type" className="gap-2">

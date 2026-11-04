@@ -86,6 +86,11 @@
   <string name="zen_guard_intent_cooldown_title">Still\nresting.</string>
   <string name="zen_guard_intent_cooldown_detail">%1$s opens again when the downtime ends. Until then, do the other thing.</string>
   <string name="zen_guard_intent_cooldown_leave">Back home</string>
+  <string name="zen_guard_earn_eyebrow">EARN IT FIRST</string>
+  <string name="zen_guard_earn_state">NO TIME LEFT</string>
+  <string name="zen_guard_earn_title">%1$s\nfirst.</string>
+  <string name="zen_guard_earn_detail">Every %1$d min in %2$s earns %3$d min in %4$s. Time you spend there counts as you go.</string>
+  <string name="zen_guard_earn_open">Open %1$s</string>
   <string name="zen_guard_x_home_title">Time to leave the feed.</string>
   <string name="zen_guard_x_home_unavailable_detail">Home availability could not be verified. Keep Zen Mode connected, leave X, and try again later.</string>
   <plurals name="zen_guard_x_home_detail">

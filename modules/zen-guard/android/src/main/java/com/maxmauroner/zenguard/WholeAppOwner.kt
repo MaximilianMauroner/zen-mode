@@ -1,6 +1,8 @@
 package com.maxmauroner.zenguard
 
 import android.accessibilityservice.AccessibilityService
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
@@ -22,6 +24,7 @@ internal class WholeAppOwner(
   private lateinit var appLimits: AppLimitStore
   private lateinit var intentStore: IntentAppStore
   private lateinit var rollingLimits: RollingLimitStore
+  private lateinit var earnedTime: EarnedTimeStore
   private lateinit var appRuleSafety: AppRuleSafety
   private val intentSessions = IntentSessionTracker()
   private lateinit var appRuleOverlay: AppRuleOverlay
@@ -56,9 +59,10 @@ internal class WholeAppOwner(
     appLimits = AppLimitStore(service)
   }
 
-  fun createIntentAndRollingStores() {
+  fun createAppRuleStores() {
     intentStore = IntentAppStore(service)
     rollingLimits = RollingLimitStore(service)
+    earnedTime = EarnedTimeStore(service)
   }
 
   fun onServiceConnected(safety: AppRuleSafety) {
@@ -95,6 +99,7 @@ internal class WholeAppOwner(
     stats.clearKeyIfDifferent(EnforcementReason.APP_LIMIT, packageName)
     stats.clearKeyIfDifferent(EnforcementReason.ROLLING_LIMIT, packageName)
     stats.clearKeyIfDifferent(EnforcementReason.TIMED_VISIT, packageName)
+    stats.clearKeyIfDifferent(EnforcementReason.EARNED_TIME, packageName)
     if (appRuleOverlay.requestedPackage() == null) {
       usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())?.let(::bankUsage)
     }
@@ -120,6 +125,7 @@ internal class WholeAppOwner(
     if (rollingLimits.rules().containsKey(attribution.packageName)) {
       rollingLimits.addUsage(attribution.packageName, attribution.durationMs, nowWallMs)
     }
+    earnedTime.addUsage(attribution.packageName, attribution.durationMs)
   }
 
   private fun enforceAppLimits(packageName: String?): Boolean {
@@ -131,7 +137,8 @@ internal class WholeAppOwner(
     val rollingAt = rollingLimits.availableAgainAt(packageName, wallNow)
     if (dailyAt == null) stats.reset(EnforcementReason.APP_LIMIT)
     if (rollingAt == null) stats.reset(EnforcementReason.ROLLING_LIMIT)
-    if (dailyAt == null && rollingAt == null) return false
+    if (dailyAt == null && rollingAt == null) return enforceEarnedTime(packageName)
+    stats.reset(EnforcementReason.EARNED_TIME)
 
     endExpiredIntentSession(packageName)
     val budgetAt = maxOf(dailyAt ?: wallNow, rollingAt ?: wallNow)
@@ -170,6 +177,49 @@ internal class WholeAppOwner(
     return true
   }
 
+  /**
+   * Closes an app until its habit app has earned it time. A habit app that can no longer be
+   * launched leaves no way to earn, so the rule is not enforced until that app returns.
+   */
+  private fun enforceEarnedTime(packageName: String): Boolean {
+    val rule = earnedTime.rules()[packageName]
+    val habitLaunch = rule?.let { service.packageManager.getLaunchIntentForPackage(it.habitPackage) }
+    if (rule == null || habitLaunch == null || earnedTime.balanceMs(packageName) > 0L) {
+      stats.reset(EnforcementReason.EARNED_TIME)
+      return false
+    }
+    endExpiredIntentSession(packageName)
+    val habitLabel = labelFor(rule.habitPackage)
+    prepareAppRuleOverlay(packageName, AppRuleOverlayMode.EARN)
+    appRuleOverlay.showEarn(
+      packageName = packageName,
+      title = service.getString(R.string.zen_guard_earn_title, habitLabel),
+      detail = service.getString(R.string.zen_guard_earn_detail, rule.habitMinutes, habitLabel, rule.rewardMinutes, labelFor(packageName)),
+      habitAction = service.getString(R.string.zen_guard_earn_open, habitLabel),
+      onOpenHabit = { openHabit(rule.habitPackage) },
+      onLeave = ::leaveAppRule,
+      onAttached = {
+        pauseAppRuleUsage()
+        stats.record(EnforcementReason.EARNED_TIME, EnforcementStatsOutcome.SUCCESS, packageName)
+      },
+    )
+    scheduleAppRuleRefresh()
+    return true
+  }
+
+  private fun openHabit(habitPackage: String) {
+    val launch = service.packageManager.getLaunchIntentForPackage(habitPackage)
+    if (launch == null || !canEnforce()) return leaveAppRule()
+    closeAppRuleOverlay()
+    usageTracker.reset()
+    currentForegroundPackage = null
+    try {
+      service.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (_: ActivityNotFoundException) {
+      leaveAppRule()
+    }
+  }
+
   private fun foregroundAppPackage(): String? =
     service.windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }?.root?.packageName?.toString()
       ?: service.rootInActiveWindow?.packageName?.toString()?.takeIf { it != service.packageName }
@@ -190,6 +240,7 @@ internal class WholeAppOwner(
     stats.reset(EnforcementReason.APP_LIMIT)
     stats.reset(EnforcementReason.ROLLING_LIMIT)
     stats.reset(EnforcementReason.TIMED_VISIT)
+    stats.reset(EnforcementReason.EARNED_TIME)
   }
 
   private fun releaseAppRuleOverlay(packageName: String): Boolean {

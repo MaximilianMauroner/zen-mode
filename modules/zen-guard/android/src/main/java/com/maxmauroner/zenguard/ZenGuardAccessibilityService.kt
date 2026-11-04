@@ -57,7 +57,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     )
     wholeApp.createAppLimitStore()
     instagram.createTally()
-    wholeApp.createIntentAndRollingStores()
+    wholeApp.createAppRuleStores()
     appRuleSafety = AppRuleSafety.resolve(this)
     wholeApp.onServiceConnected(appRuleSafety)
     browserIntervention?.end()

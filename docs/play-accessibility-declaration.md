@@ -31,7 +31,9 @@ without current consent. The service enables these user-selected features:
 - read the current address only from exact known browser address-bar nodes
   while website blocking is enabled and close a locally matched hostname;
 - identify the foreground app and elapsed foreground time for daily,
-  timed-visit, and rolling app rules; and
+  timed-visit, rolling, and earned-time app rules. An earned-time rule keeps an
+  app closed until the user spends time in a habit app they chose, and its
+  overlay can open that habit app when the user taps it; and
 - display an accessibility overlay when a configured boundary needs a user
   choice or explanation.
 

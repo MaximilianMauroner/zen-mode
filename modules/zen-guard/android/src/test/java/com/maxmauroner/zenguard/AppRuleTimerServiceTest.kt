@@ -2,6 +2,9 @@ package com.maxmauroner.zenguard
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.pm.ApplicationInfo
+import android.content.pm.ResolveInfo
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
@@ -110,6 +113,52 @@ class AppRuleTimerServiceTest {
     assertNull(overlay().requestedPackage())
     assertFalse(rolling.isOver(APP, wallNow()))
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+  }
+
+  @Test fun `an app with no earned time is closed and the card opens its habit app`() {
+    installLauncher(OTHER_APP)
+    EarnedTimeStore(context).setRule(APP, EarnRule(OTHER_APP, 30, 5))
+
+    openApp(APP)
+    showOverlayWindow(APP)
+
+    assertEquals(AppRuleOverlayMode.EARN, overlay().mode)
+    assertEquals(1L, count(EnforcementReason.EARNED_TIME))
+    views().filterIsInstance<Button>().single { it.text == "Open $OTHER_APP" }.performClick()
+    assertNull(overlay().requestedPackage())
+    assertEquals(OTHER_APP, shadowOf(controller.get()).nextStartedActivity?.`package`)
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
+  }
+
+  @Test fun `habit time earns time in proportion and using it closes the app again`() {
+    installLauncher(OTHER_APP)
+    val earned = EarnedTimeStore(context).apply { setRule(APP, EarnRule(OTHER_APP, 2, 1)) }
+
+    showAppWindows(OTHER_APP)
+    windowEvent(OTHER_APP)
+    advance(Duration.ofSeconds(60))
+    val balance = earned.balanceMs(APP)
+    assertTrue("balance=$balance", balance in 22_500L..30_000L)
+
+    showAppWindows(APP)
+    windowEvent(APP)
+    advance(Duration.ofMillis(20))
+    assertNull(overlay().requestedPackage())
+
+    advance(Duration.ofSeconds(45))
+    assertEquals(0L, earned.balanceMs(APP))
+    assertEquals(AppRuleOverlayMode.EARN, overlay().mode)
+  }
+
+  @Test fun `an earned-time app stays open while its habit app cannot be launched`() {
+    EarnedTimeStore(context).setRule(APP, EarnRule(OTHER_APP, 30, 5))
+
+    showAppWindows(APP)
+    windowEvent(APP)
+    advance(Duration.ofSeconds(20))
+
+    assertNull(overlay().requestedPackage())
+    assertEquals(0L, count(EnforcementReason.EARNED_TIME))
   }
 
   @Test fun `daily midnight reset closes an idle card and does not charge blocked time`() {
@@ -1142,6 +1191,18 @@ class AppRuleTimerServiceTest {
   }
 
   private fun wallNow() = wholeApp().appRuleWallClock()
+
+  private fun installLauncher(packageName: String) {
+    val info = ResolveInfo().apply {
+      activityInfo = ActivityInfo().apply {
+        this.packageName = packageName
+        name = "$packageName.Main"
+        applicationInfo = ApplicationInfo().apply { this.packageName = packageName }
+      }
+    }
+    val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(packageName)
+    shadowOf(context.packageManager).addResolveInfoForIntent(launcher, info)
+  }
 
   private fun openApp(packageName: String) {
     showAppWindows(packageName)

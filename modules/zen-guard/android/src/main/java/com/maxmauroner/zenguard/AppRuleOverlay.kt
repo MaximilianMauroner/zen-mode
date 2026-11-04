@@ -14,9 +14,9 @@ import android.widget.ScrollView
 import android.widget.TextView
 import kotlin.math.roundToInt
 
-internal enum class AppRuleOverlayMode { ASK, COOLDOWN, LIMIT }
+internal enum class AppRuleOverlayMode { ASK, COOLDOWN, LIMIT, EARN }
 
-/** One whole-app boundary for daily budgets, rolling allowances, and timed visits. */
+/** One whole-app boundary for daily budgets, rolling allowances, timed visits, and earned time. */
 internal class AppRuleOverlay(
   private val service: AccessibilityService,
 ) {
@@ -53,7 +53,7 @@ internal class AppRuleOverlay(
       appLabel = appLabel,
       cooldownRemainingMs = 0L,
       sessionMinutes = sessionMinutes,
-      onStart = onStart,
+      onPrimary = onStart,
       onLeave = onLeave,
       onAttached = onAttached,
     )
@@ -72,7 +72,7 @@ internal class AppRuleOverlay(
       appLabel = appLabel,
       cooldownRemainingMs = cooldownRemainingMs,
       sessionMinutes = 0,
-      onStart = {},
+      onPrimary = {},
       onLeave = onLeave,
       onAttached = onAttached,
     )
@@ -91,21 +91,40 @@ internal class AppRuleOverlay(
     )
   }
 
+  /** An app that opens only on time earned in [habitAction]'s habit app. There is no countdown. */
+  fun showEarn(
+    packageName: String,
+    title: String,
+    detail: String,
+    habitAction: String,
+    onOpenHabit: () -> Unit,
+    onLeave: () -> Unit,
+    onAttached: () -> Unit,
+  ) {
+    show(
+      packageName, AppRuleOverlayMode.EARN, "", 0L, 0, onOpenHabit, onLeave, onAttached, title, detail, habitAction,
+    )
+  }
+
   private fun show(
     packageName: String,
     mode: AppRuleOverlayMode,
     appLabel: String,
     cooldownRemainingMs: Long,
     sessionMinutes: Int,
-    onStart: () -> Unit,
+    onPrimary: () -> Unit,
     onLeave: () -> Unit,
     onAttached: () -> Unit,
     limitTitle: String = "",
     limitDetail: String = "",
+    habitAction: String = "",
   ) {
+    val cooldown = mode == AppRuleOverlayMode.COOLDOWN || mode == AppRuleOverlayMode.LIMIT
+    val isEarn = mode == AppRuleOverlayMode.EARN
+    val isLimit = mode == AppRuleOverlayMode.LIMIT || isEarn
     if (shownFor == packageName && this.mode == mode) {
-      if (mode != AppRuleOverlayMode.ASK) updateCountdown(cooldownRemainingMs)
-      if (mode == AppRuleOverlayMode.LIMIT) {
+      if (cooldown) updateCountdown(cooldownRemainingMs)
+      if (isLimit) {
         titleView?.text = titleText(limitTitle, service.getColor(R.color.zen_accent))
         descriptionView?.text = limitDetail
       }
@@ -114,8 +133,6 @@ internal class AppRuleOverlay(
     hide()
     shownFor = packageName
     this.mode = mode
-    val cooldown = mode != AppRuleOverlayMode.ASK
-    val isLimit = mode == AppRuleOverlayMode.LIMIT
 
     val accent = service.getColor(R.color.zen_accent)
     val copy = service.getColor(R.color.zen_copy)
@@ -158,7 +175,11 @@ internal class AppRuleOverlay(
     top.addView(tagContainer, weightedWrap(weight = 1f))
 
     val state = styledText(
-      if (cooldown) formatAvailabilityCountdown(cooldownRemainingMs) else service.getString(R.string.zen_guard_intent_state_ask, sessionMinutes),
+      when {
+        cooldown -> formatAvailabilityCountdown(cooldownRemainingMs)
+        isEarn -> service.getString(R.string.zen_guard_earn_state)
+        else -> service.getString(R.string.zen_guard_intent_state_ask, sessionMinutes)
+      },
       11f,
       if (cooldown) muted else accent,
       bold = true,
@@ -201,7 +222,7 @@ internal class AppRuleOverlay(
     centerBody.addView(markWrapper, matchWrap(topMargin = dp(12)))
 
     val eyebrow = styledText(
-      if (isLimit) service.getString(R.string.zen_guard_app_limits_eyebrow) else if (cooldown) service.getString(R.string.zen_guard_intent_eyebrow_cooldown) else service.getString(R.string.zen_guard_intent_eyebrow),
+      if (isEarn) service.getString(R.string.zen_guard_earn_eyebrow) else if (isLimit) service.getString(R.string.zen_guard_app_limits_eyebrow) else if (cooldown) service.getString(R.string.zen_guard_intent_eyebrow_cooldown) else service.getString(R.string.zen_guard_intent_eyebrow),
       11f,
       accent,
       bold = true,
@@ -245,10 +266,11 @@ internal class AppRuleOverlay(
     }
 
     if (!cooldown) {
-      val start = actionButton(service.getString(R.string.zen_guard_intent_start, sessionMinutes), primary = true).apply {
-        setOnClickListener { onStart() }
+      val primaryLabel = if (isEarn) habitAction else service.getString(R.string.zen_guard_intent_start, sessionMinutes)
+      val primary = actionButton(primaryLabel, primary = true).apply {
+        setOnClickListener { onPrimary() }
       }
-      actions.addView(start, matchWrap())
+      actions.addView(primary, matchWrap())
     }
 
     val leave = actionButton(

@@ -87,6 +87,8 @@ export type RollingLimit = InstalledApp & {
 
 declare class ZenGuardModule extends NativeModule<{}> {
   getStatus(): Promise<ZenGuardStatus>;
+  startXDiagnostics(): Promise<void>;
+  getXDiagnostics(): Promise<{ state: 'empty' | 'recording' | 'complete'; json?: string }>;
   getEnforcementStats(): Promise<EnforcementStats>;
   openAccessibilitySettings(): Promise<void>;
   openYouTube(): Promise<void>;

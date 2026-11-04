@@ -3,6 +3,8 @@ import { getAddDomainErrorMessage } from './site-rule-errors';
 
 export type { AdultSiteSettings, AppLimit, EnforcementStats, InstalledApp, IntentApp, RollingLimit, ZenGuardStatus };
 
+export const startXDiagnostics = () => ZenGuardModule.startXDiagnostics();
+export const getXDiagnostics = () => ZenGuardModule.getXDiagnostics();
 export const getZenGuardStatus = () => ZenGuardModule.getStatus();
 export const getEnforcementStats = () => ZenGuardModule.getEnforcementStats();
 export const openAccessibilitySettings = () => ZenGuardModule.openAccessibilitySettings();

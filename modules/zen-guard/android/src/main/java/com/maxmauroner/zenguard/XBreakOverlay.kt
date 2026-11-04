@@ -107,13 +107,15 @@ internal class XBreakOverlay(
     mode = requestedMode
     body.doOnFirstAttach {
       if (root === body) {
+        runCatching { XDiagnostics.record(service, "overlay", org.json.JSONObject().put("result", "attached").put("mode", requestedMode.name), true) }
         onAttached()
         if (requestedMode == Mode.BREAK) handler.post(tick)
       }
     }
     try {
       manager.addView(body, WindowManager.LayoutParams(-1, -1, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT))
-    } catch (_: RuntimeException) {
+    } catch (error: RuntimeException) {
+      runCatching { XDiagnostics.record(service, "overlay", org.json.JSONObject().put("result", "attach_failed").put("error", error.javaClass.simpleName), true) }
       hide()
     }
   }

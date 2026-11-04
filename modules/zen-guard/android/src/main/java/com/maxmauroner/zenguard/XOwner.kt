@@ -10,6 +10,8 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.Toast
 import java.util.ArrayDeque
+import org.json.JSONObject
+import org.json.JSONArray
 
 internal class XOwner(
   private val service: AccessibilityService,
@@ -21,6 +23,7 @@ internal class XOwner(
   private val policy = XGuardStateMachine()
   private var homeUsageState = HomeFeedUsageState.PAUSED
   private var storageAvailable = true
+  private var lastPublishedRuntime: HomeFeedRuntimeState? = null
   private lateinit var overlay: XBreakOverlay
   private val handler by lazy { Handler(Looper.getMainLooper()) }
   private val ticker = object : Runnable {
@@ -107,10 +110,11 @@ internal class XOwner(
   }
 
   fun observe(event: AccessibilityEvent?) {
-    if (!canEnforce()) return
+    if (!canEnforce()) { trace("enforcement_unavailable"); return }
     val nowMs = SystemClock.elapsedRealtime()
     var settings = readSettings()
     if (!isScreenInteractive) {
+      trace("screen_off")
       policy.pause(nowMs, settings)
       homeUsageState = if (policy.requiresFreshHomeObservation()) {
         HomeFeedUsageState.UNKNOWN
@@ -121,6 +125,7 @@ internal class XOwner(
       return
     }
     val activeRoot = service.rootInActiveWindow ?: run {
+      trace("root_missing")
       policy.markUnverifiableGap(nowMs, settings)
       homeUsageState = HomeFeedUsageState.UNKNOWN
       publishHomeStatus()
@@ -128,6 +133,7 @@ internal class XOwner(
     }
     val root = if (activeRoot.packageName?.toString() == X_PACKAGE) activeRoot else xRootUnderBreak(activeRoot)
     if (root == null) {
+      trace("other_app")
       if (overlay.isShowing && service.windows.any { it.root?.packageName?.toString() == X_PACKAGE }) return
       policy.pause(nowMs, settings)
       homeUsageState = if (policy.requiresFreshHomeObservation()) {
@@ -138,11 +144,12 @@ internal class XOwner(
       publishHomeStatus()
       return
     }
-    val surface = XDetector.detect(snapshotNodeSignals(root))
+    val nodes = snapshotNodeSignals(root)
+    val surface = XDetector.detect(nodes)
     val pager = if (surface == XSurface.VIDEO) findXNode(root) { isXVideoPager(it) } else null
     if (surface == XSurface.HOME) preferences.recordXSignal(ZenGuardPreferences.X_HOME_SIGNAL)
     if (pager != null) preferences.recordXSignal(ZenGuardPreferences.X_VIDEO_SIGNAL)
-    if (preferences.xObservationMode) { clearEnforcement(); return }
+    if (preferences.xObservationMode) { trace("observation_mode", surface, nodes); clearEnforcement(); return }
     settings = readSettings()
     if (!storageAvailable && surface == XSurface.HOME && settings.homeEnabled && event != null) {
       if (homeFeedStatusStore.recoverX(nowMs)) {
@@ -197,6 +204,7 @@ internal class XOwner(
           }
           target = candidate.parent
         }
+        runCatching { XDiagnostics.record(service, "video_action", JSONObject().put("clickedBack", leftVideo), true) }
         if (leftVideo) {
           val callbackKey = event?.eventTime?.toString() ?: SystemClock.elapsedRealtime().toString()
           recordXVideoStats(callbackKey, EnforcementStatsOutcome.SUCCESS)
@@ -209,6 +217,27 @@ internal class XOwner(
       }
     }
     publishHomeStatus(showUnavailableOnFailure = surface == XSurface.HOME && settings.homeEnabled)
+    trace("evaluated", surface, nodes, action, pager != null, advanced, event?.eventType)
+  }
+
+  private fun trace(reason: String, surface: XSurface? = null, nodes: List<NodeSignal> = emptyList(), action: XAction? = null, pager: Boolean = false, advanced: Boolean = false, eventType: Int? = null) {
+    runCatching {
+      if (!XDiagnostics.isRecording(service)) return
+      val runtime = lastPublishedRuntime
+      val markers = setOf("scaffold_home_tabbed", "Search", "PostDetail", "MainLanding", "VideoTab")
+      val data = JSONObject().put("reason", reason).put("surface", surface?.name ?: "unobserved")
+        .put("markers", JSONArray(nodes.map { it.viewId }.filter { it in markers }.distinct().sorted()))
+        .put("nodeCount", nodes.size).put("pager", pager).put("advanced", advanced)
+        .put("eventType", eventType ?: JSONObject.NULL)
+        .put("action", action?.name ?: "none").put("overlayShowing", ::overlay.isInitialized && overlay.isShowing)
+        .put("homeEnabled", preferences.xHomeEnabled).put("videosEnabled", preferences.xVideosEnabled)
+        .put("signalMask", preferences.xSignalMask).put("homeMinutes", preferences.xHomeMinutes)
+        .put("observationMode", preferences.xObservationMode).put("usedMs", runtime?.usedMs ?: JSONObject.NULL)
+        .put("usageState", runtime?.usageState?.name ?: "UNKNOWN").put("lockoutState", runtime?.lockoutState?.name ?: "UNKNOWN")
+        .put("storageState", runtime?.storageState?.name ?: "UNKNOWN").put("blockedUntilElapsedMs", runtime?.blockedUntilElapsedMs ?: JSONObject.NULL)
+        .put("freshObservationRequired", policy.requiresFreshHomeObservation())
+      XDiagnostics.record(service, "x", data)
+    }
   }
 
   private fun xRootUnderBreak(activeRoot: AccessibilityNodeInfo): AccessibilityNodeInfo? {
@@ -252,6 +281,7 @@ internal class XOwner(
     if (!::homeFeedStatusStore.isInitialized || !storageAvailable) return
     val nowElapsedMs = SystemClock.elapsedRealtime()
     val runtime = policy.homeRuntimeState(nowElapsedMs)
+    lastPublishedRuntime = runtime.copy(usageState = homeUsageState)
     if (homeFeedStatusStore.recordX(runtime.copy(usageState = homeUsageState))) return
 
     storageAvailable = false

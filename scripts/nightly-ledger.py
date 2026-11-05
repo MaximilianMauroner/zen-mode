@@ -41,6 +41,10 @@ def transition(state, action, args, now=None):
         return state, {"seeded": True, **baseline}
     if state is None:
         raise ValueError("Seed the ledger from the latest Play release before building")
+    if action == "check":
+        sha, = args
+        validate_sha(sha)
+        return state, {"needed": sha not in state["attempts"]}
     if action == "reserve":
         sha, = args
         validate_sha(sha)
@@ -75,7 +79,7 @@ def transition(state, action, args, now=None):
         if status == "succeeded":
             state["latest"] = {key: attempt[key] for key in ("version", "versionCode", "sha")}
         return state, {"finished": True, "status": status}
-    raise ValueError("Expected status, seed, reserve, or finish")
+    raise ValueError("Expected status, check, seed, reserve, or finish")
 
 
 def validate_sha(sha):
@@ -119,8 +123,8 @@ def auth_token():
 def transact(app, action, args, token, request=github_request, now=None):
     if app != "zen-mode":
         raise ValueError("Expected zen-mode repository")
-    if action not in ("status", "reserve", "finish"):
-        raise ValueError("Expected status, reserve, or finish; ledger cutover is manual")
+    if action not in ("status", "check", "reserve", "finish"):
+        raise ValueError("Expected status, check, reserve, or finish; ledger cutover is manual")
     url = "https://api.github.com/repos/MaximilianMauroner/zen-mode/contents/ledger.json"
     record = request("GET", url + "?ref=release-state", token)
     try:

@@ -14,8 +14,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  checks:
+  changes:
     if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      needed: ${{ steps.ledger.outputs.needed }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check whether this revision was already attempted
+        id: ledger
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/nightly-ledger.py zen-mode check "$GITHUB_SHA" | python3 -c 'import json, sys; print("needed=" + str(json.load(sys.stdin)["needed"]).lower())' >> "$GITHUB_OUTPUT"
+
+  checks:
+    needs: changes
+    if: needs.changes.outputs.needed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:

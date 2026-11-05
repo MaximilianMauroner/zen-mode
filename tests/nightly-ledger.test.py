@@ -90,11 +90,23 @@ class GitHubLedgerTests(unittest.TestCase):
 
     def test_status_and_duplicate_gates_never_write(self):
         self.assertEqual(self.transact("status", []), self.state)
+        self.assertFalse(self.transact("check", ["a" * 40])["needed"])
+        self.assertTrue(self.transact("check", ["b" * 40])["needed"])
         self.assertFalse(self.transact("reserve", ["a" * 40])["build"])
-        self.assertEqual(self.calls, ["GET", "GET"])
+        self.assertEqual(self.calls, ["GET", "GET", "GET", "GET"])
         self.state["lastAttemptDay"] = "2026-09-17"
         self.assertEqual(self.transact("reserve", ["b" * 40])["reason"], "daily attempt already used")
         self.assertEqual(self.calls[-1], "GET")
+
+    def test_check_skips_failed_attempts_and_rejects_invalid_revisions(self):
+        result = self.transact("reserve", ["b" * 40])
+        self.transact("finish", [result["id"], "failed"])
+        writes = self.calls.count("PUT")
+        self.assertFalse(self.transact("check", ["b" * 40])["needed"])
+        self.assertTrue(self.transact("check", ["c" * 40])["needed"])
+        with self.assertRaisesRegex(ValueError, "full Git SHA"):
+            self.transact("check", ["invalid"])
+        self.assertEqual(self.calls.count("PUT"), writes)
 
     def test_changed_state_is_saved_and_idempotent_finish_does_not_write(self):
         result = self.transact("reserve", ["b" * 40])

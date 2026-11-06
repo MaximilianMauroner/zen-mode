@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { RefreshControl, Share, Text, View } from 'react-native';
+import { RefreshControl, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 
@@ -13,7 +13,7 @@ import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { authorizeWeakening } from '@/features/protection/authorize-weakening';
 import { actionFailure, IDLE_ACTION, isReading, readValue, RUNNING_ACTION, type ActionState } from '@/features/protection/control-state';
 import { useGuardStatusFocus, useSharedGuardStatus } from '@/features/protection/guard-status-context';
-import { getXDiagnostics, startXDiagnostics, getZenGuardStatus, openAccessibilitySettings, openInstagram, openYouTube, openX, setNativeProtectionEnabled } from '@/features/protection/native';
+import { getXDiagnostics, startXDiagnostics, shareXDiagnostics, getZenGuardStatus, openAccessibilitySettings, openInstagram, openYouTube, openX, setNativeProtectionEnabled } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
 
 /** System controls stay separate from feed settings and whole-app budgets. */
@@ -97,9 +97,9 @@ export default function SettingsScreen() {
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">X diagnostics</Text>
         <Text className="text-copy">Record for 10 minutes while you use X. The report includes rule settings, timing, service events and known screen markers. It does not include post text, messages or screenshots. A new recording replaces the previous report.</Text>
-        <Text className="text-copy">{diagnostic.state === 'recording' ? 'Recording. It stops after 10 minutes.' : diagnostic.state === 'complete' ? 'Recording complete. Share the report when ready.' : 'No recording yet.'}</Text>
+        <Text className="text-copy">{diagnostic.state === 'recording' ? 'Recording. It stops after 10 minutes.' : diagnostic.state === 'complete' ? 'Recording complete. Share the JSON report when ready.' : 'No recording yet.'}</Text>
         <SecondaryButton title="Start 10-minute recording" disabled={disabled || diagnostic.state === 'recording'} onPress={() => runAction(async () => { await startXDiagnostics(); await refreshDiagnostic(); })} />
-        {diagnostic.state === 'complete' && diagnostic.json ? <SecondaryButton title="Share diagnostic report" disabled={busy} onPress={() => runAction(async () => { await Share.share({ message: diagnostic.json! }); })} /> : null}
+        {diagnostic.state === 'complete' && diagnostic.json ? <SecondaryButton title="Share diagnostic report" disabled={busy} onPress={() => runAction(shareXDiagnostics)} /> : null}
       </View>
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">About</Text>

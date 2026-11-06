@@ -47,6 +47,7 @@ class ZenGuardModule extends NativeModule<{}> {
   }
 
   async startXDiagnostics() {}
+  async shareXDiagnostics() { throw new Error('X diagnostic export requires Android.'); }
   async getXDiagnostics() { return { state: 'empty' as const }; }
 
   async getEnforcementStats(): Promise<EnforcementStats> {

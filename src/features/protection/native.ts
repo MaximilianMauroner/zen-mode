@@ -5,6 +5,7 @@ export type { AdultSiteSettings, AppLimit, EarnRule, EnforcementStats, Installed
 
 export const startXDiagnostics = () => ZenGuardModule.startXDiagnostics();
 export const getXDiagnostics = () => ZenGuardModule.getXDiagnostics();
+export const shareXDiagnostics = () => ZenGuardModule.shareXDiagnostics();
 export const getZenGuardStatus = () => ZenGuardModule.getStatus();
 export const getEnforcementStats = () => ZenGuardModule.getEnforcementStats();
 export const openAccessibilitySettings = () => ZenGuardModule.openAccessibilitySettings();

@@ -1,11 +1,15 @@
 package com.maxmauroner.zenguard
 
+import android.content.ClipData
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
+import androidx.core.content.FileProvider
+import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -97,6 +101,20 @@ internal object XDiagnostics {
     }
     return if (trace.has("endedAt")) mapOf("state" to "complete", "json" to trace.toString(2))
     else mapOf("state" to "recording")
+  }
+
+  fun share(context: Context) {
+    val report = status(context)["json"] as? String ?: error("Complete an X recording before exporting it.")
+    val directory = File(context.cacheDir, "x-diagnostics")
+    check(directory.isDirectory || directory.mkdirs()) { "Could not create the X report folder." }
+    val file = File.createTempFile("x-diagnostics-", ".json", directory)
+    file.writeText(report)
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.x-diagnostics", file)
+    val send = Intent(Intent.ACTION_SEND).setType("application/json")
+      .putExtra(Intent.EXTRA_STREAM, uri)
+      .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    send.clipData = ClipData.newUri(context.contentResolver, "X diagnostic report", uri)
+    context.startActivity(Intent.createChooser(send, "Share X diagnostic report").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
   }
 
   private fun bootCount(context: Context): Int = Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)

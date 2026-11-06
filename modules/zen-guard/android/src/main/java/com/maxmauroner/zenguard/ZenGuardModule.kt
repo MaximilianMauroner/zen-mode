@@ -86,6 +86,10 @@ class ZenGuardModule : Module() {
       XDiagnostics.start(context, isServiceEnabled(context))
     }.runOnQueue(Queues.MAIN)
 
+    AsyncFunction("shareXDiagnostics") {
+      XDiagnostics.share(requireNotNull(appContext.reactContext))
+    }
+
     AsyncFunction("getXDiagnostics") {
       XDiagnostics.status(requireNotNull(appContext.reactContext))
     }.runOnQueue(Queues.MAIN)

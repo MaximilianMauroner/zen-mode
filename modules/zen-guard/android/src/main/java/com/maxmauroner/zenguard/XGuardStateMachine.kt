@@ -1,6 +1,6 @@
 package com.maxmauroner.zenguard
 
-internal enum class XSurface { HOME, VIDEO, OTHER, UNKNOWN }
+internal enum class XSurface { HOME, POST, VIDEO, OTHER, UNKNOWN }
 internal enum class XAction { NONE, HOME_BREAK, HOME_UNAVAILABLE, LEAVE_VIDEO }
 internal data class XVideoScrollSignal(
   val sourceIsPager: Boolean,
@@ -52,9 +52,10 @@ internal class XGuardStateMachine {
       homeLockoutState = HomeFeedLockoutState.NONE
       unknownLockoutSinceMs = null
       homeObservationRequired = false
+    } else if (surface == XSurface.POST) {
+      pause(now, settings)
+      if (!storageUnavailable) homeObservationRequired = false
     } else if (surface != XSurface.HOME) {
-      // UNKNOWN preserves already-consumed time only until a known surface is observed. A verified
-      // non-Home surface ends the visit even when it follows an unverifiable transition tree.
       resetHomeSession()
       homeObservationRequired = false
     }
@@ -247,7 +248,8 @@ internal class XGuardStateMachine {
 internal object XDetector {
   fun detect(nodes: List<NodeSignal>): XSurface = when {
     nodes.any { it.viewId == "scaffold_home_tabbed" } -> XSurface.HOME
-    nodes.any { it.viewId in setOf("Search", "PostDetail", "MainLanding") } -> XSurface.OTHER
+    nodes.any { it.viewId in setOf("Search", "MainLanding") } -> XSurface.OTHER
+    nodes.any { it.viewId == "PostDetail" } -> XSurface.POST
     nodes.any { it.viewId == "VideoTab" } -> XSurface.VIDEO
     else -> XSurface.UNKNOWN
   }

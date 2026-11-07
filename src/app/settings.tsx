@@ -8,7 +8,7 @@ import { Row, RowGroup } from '@/components/ui/card';
 import { GuardNotes } from '@/components/ui/guard-notes';
 import { Screen, ScreenHeader } from '@/components/ui/screen';
 import { useWeakeningGate, WeakeningGateDialog } from '@/components/ui/weakening-gate';
-import { openFeedbackIssue } from '@/features/feedback/github-issue';
+import { sendReport } from '@/features/feedback/reports';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { authorizeWeakening } from '@/features/protection/authorize-weakening';
 import { actionFailure, IDLE_ACTION, isReading, readValue, RUNNING_ACTION, type ActionState } from '@/features/protection/control-state';
@@ -107,7 +107,7 @@ export default function SettingsScreen() {
           <Row label="Zen Mode" detail="Version installed on this device" value={Constants.expoConfig?.version ?? 'Unknown'} />
           <Row label="View statistics" disabled={busy} onPress={() => router.navigate('/stats')} />
           <Row label="Privacy" disabled={busy} onPress={() => router.navigate('/privacy')} />
-          <Row label="Send feedback" disabled={busy} onPress={() => runAction(openFeedbackIssue)} />
+          {sendReport ? <Row label="Report a problem or idea" disabled={busy} onPress={() => router.navigate('/report')} /> : null}
         </RowGroup>
       </View>
       <View className="gap-3">

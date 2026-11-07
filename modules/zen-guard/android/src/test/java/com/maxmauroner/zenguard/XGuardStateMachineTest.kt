@@ -4,6 +4,28 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class XGuardStateMachineTest {
+  @Test fun `opening a post pauses Home time without resetting the allowance`() {
+    val guard = XGuardStateMachine()
+    val settings = XSettings(homeAllowanceMs = 300_000L)
+    val post = XDetector.detect(listOf(NodeSignal(viewId = "PostDetail")))
+
+    guard.next(XSurface.HOME, 0L, settings)
+    assertEquals(XAction.NONE, guard.next(post, 240_000L, settings))
+    assertEquals(240_000L, guard.homeRuntimeState(250_000L).usedMs)
+    assertEquals(XAction.NONE, guard.next(XSurface.HOME, 250_000L, settings))
+    assertEquals(XAction.NONE, guard.next(XSurface.HOME, 309_999L, settings))
+    assertEquals(XAction.HOME_BREAK, guard.next(XSurface.HOME, 310_000L, settings))
+  }
+
+  @Test fun `reaching the Home limit as a post opens keeps the post accessible`() {
+    val guard = XGuardStateMachine()
+    val settings = XSettings(homeAllowanceMs = 300_000L)
+    guard.next(XSurface.HOME, 0L, settings)
+
+    assertEquals(XAction.NONE, guard.next(XSurface.POST, 300_000L, settings))
+    assertEquals(XAction.HOME_BREAK, guard.next(XSurface.HOME, 310_000L, settings))
+  }
+
   @Test fun `Home runtime snapshot includes time until X backgrounds`() {
     val guard = XGuardStateMachine()
     val settings = XSettings(homeAllowanceMs = 300_000L)
@@ -316,7 +338,7 @@ class XGuardStateMachineTest {
       XDetector.detect(listOf(NodeSignal(viewId = "VideoTab"), NodeSignal(viewId = "scaffold_home_tabbed"))),
     )
     assertEquals(
-      XSurface.OTHER,
+      XSurface.POST,
       XDetector.detect(listOf(NodeSignal(viewId = "VideoTab"), NodeSignal(viewId = "PostDetail"))),
     )
     assertEquals(XSurface.UNKNOWN, XDetector.detect(listOf(NodeSignal(text = "VideoTab scaffold_home_tabbed"))))

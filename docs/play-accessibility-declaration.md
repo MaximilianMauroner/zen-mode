@@ -51,8 +51,9 @@ rules, selected package names, local usage/session values, consent and setup
 state, and privacy-reduced detection summaries in app-private storage. The full
 launchable-app inventory is neither saved nor transmitted.
 
-The separate optional GitHub feedback action sends only the app version and
-platform in an external issue-draft URL. It is not fed by AccessibilityService.
+The separate optional problem report sends only the text the user types, an
+optional reply email, the app version and build, and the Android version. It is
+not fed by AccessibilityService.
 
 ## User control and safety
 

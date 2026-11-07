@@ -17,7 +17,7 @@ export type ReportDevice = { constants: Pick<Constants, 'expoConfig'>; platform:
 
 export const REPORT_PAGE = '/report';
 export const REPORT_LIMIT = 4000;
-export const EMAIL_LIMIT = 254;
+export const EMAIL_LIMIT = 320;
 const TIMEOUT_MS = 15_000;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const REJECTIONS: readonly string[] = ['unknown_app', 'invalid_kind', 'empty_message', 'message_too_long', 'details_too_long', 'invalid_email'];
@@ -54,21 +54,25 @@ async function post(origin: string, draft: ReportDraft, device: ReportDevice): P
   };
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
-  let response: Response;
+  const deadline = new Promise<never>((_, reject) => abort.signal.addEventListener('abort', () => reject(new Error('deadline')), { once: true }));
+  deadline.catch(() => undefined);
   try {
-    response = await fetch(`${origin}/api/reports`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: abort.signal });
+    const response = await Promise.race([
+      fetch(`${origin}/api/reports`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'omit', signal: abort.signal }),
+      deadline,
+    ]);
+    if (response.ok) return { kind: 'sent' };
+    if (response.status === 429) return { kind: 'rate-limited' };
+    if (response.status === 400) {
+      const reason: unknown = await Promise.race([response.json().then((json: { reason?: unknown } | null) => json?.reason, () => undefined), deadline]);
+      return { kind: 'rejected', reason: typeof reason === 'string' && REJECTIONS.includes(reason) ? reason as ReportRejection : 'unknown' };
+    }
+    return { kind: 'failed' };
   } catch {
     return { kind: abort.signal.aborted ? 'timeout' : 'offline' };
   } finally {
     clearTimeout(timer);
   }
-  if (response.ok) return { kind: 'sent' };
-  if (response.status === 429) return { kind: 'rate-limited' };
-  if (response.status === 400) {
-    const reason: unknown = await response.json().then((json: { reason?: unknown } | null) => json?.reason, () => undefined);
-    return { kind: 'rejected', reason: typeof reason === 'string' && REJECTIONS.includes(reason) ? reason as ReportRejection : 'unknown' };
-  }
-  return { kind: 'failed' };
 }
 
 const origin = process.env.EXPO_PUBLIC_REPORTS_ORIGIN;

@@ -146,6 +146,28 @@ class XServiceBehaviorTest {
     assertEquals(1, overlayViews().size)
   }
 
+  @Test fun `opening a post preserves Home usage until the break`() {
+    val home = node(X, "scaffold_home_tabbed")
+    showRoot(home)
+    deliver(X)
+    advanceSeconds(45)
+
+    showRoot(node(X, "PostDetail"))
+    deliver(X)
+    advanceSeconds(30)
+    assertEquals(45_000L, storedHome().usedMs)
+    assertTrue(overlayViews().isEmpty())
+
+    showRoot(home)
+    deliver(X)
+    advanceSeconds(14)
+    assertTrue(overlayViews().isEmpty())
+    advanceSeconds(1)
+    shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
+    assertEquals(1, overlayViews().size)
+    assertEquals(1L, homeStops())
+  }
+
   @Test fun `an X event cannot enforce a Home signature in a foreign root`() {
     showRoot(node(X, "scaffold_home_tabbed"))
     deliver(X)

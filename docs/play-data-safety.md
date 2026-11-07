@@ -62,7 +62,7 @@ are not "collected" under Play's off-device transmission definition:
 | User-generated content and email address | Optional problem report text and reply email sent to the Lab4Code inbox | Collected, optional, user-initiated, not shared; purpose app functionality and developer communications. Max must confirm the Console answer |
 | App info and performance | App version, build, and Android version in the optional problem report | Collected with the report, optional, user-initiated, not shared. Max must confirm the Console answer |
 | Device or other IDs | No advertising ID, hardware ID, Android ID, or generated user ID is read by app code | Not collected or shared |
-| Location, personal information, financial information, health and fitness, messages, photos/videos, audio, files/documents, calendar, contacts | No corresponding app behavior or permission | Not collected or shared |
+| Location, personal information other than the optional reply email above, financial information, health and fitness, messages, photos/videos, audio, files/documents, calendar, contacts | No corresponding app behavior or permission | Not collected or shared |
 
 ## Console classification saved
 

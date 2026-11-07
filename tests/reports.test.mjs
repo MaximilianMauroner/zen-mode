@@ -41,13 +41,13 @@ describe('report request', () => {
     assert.equal(unconfigured.sendReport, null);
   });
 
-  it('posts JSON without credentials to the configured origin', async () => {
+  it('posts JSON with cookies and credentials left out to the configured origin', async () => {
     assert.deepEqual(await sendReport(draft(), device()), { kind: 'sent' });
     const { url, init } = request();
     assert.equal(url, 'https://reports.test/api/reports');
     assert.equal(init.method, 'POST');
     assert.deepEqual(init.headers, { 'Content-Type': 'application/json' });
-    assert.equal(init.credentials, undefined);
+    assert.equal(init.credentials, 'omit');
   });
 
   it('sends only the typed text, the app version and build, and the OS version', async () => {
@@ -122,7 +122,7 @@ describe('report outcome', () => {
     ['a message over 4000 characters', { message: 'x'.repeat(4001) }, 'message_too_long'],
     ['details over 4000 characters', { details: 'x'.repeat(4001) }, 'details_too_long'],
     ['an invalid email', { contactEmail: 'not-an-email' }, 'invalid_email'],
-    ['an email over 254 characters', { contactEmail: `${'a'.repeat(250)}@example.com` }, 'invalid_email'],
+    ['an email over 320 characters', { contactEmail: `${'a'.repeat(309)}@example.com` }, 'invalid_email'],
   ]) {
     it(`refuses ${name} on the device without sending`, async () => {
       assert.deepEqual(await sendReport(draft(change), device()), { kind: 'rejected', reason });
@@ -148,4 +148,19 @@ describe('report outcome', () => {
     mock.timers.tick(1);
     assert.deepEqual(await pending, { kind: 'timeout' });
   });
+  it('keeps the deadline while it reads a refusal body that never finishes', async () => {
+    mock.timers.enable({ apis: ['setTimeout'] });
+    fetchMock.mock.mockImplementation(async () => ({ ok: false, status: 400, json: () => new Promise(() => undefined) }));
+    const pending = sendReport(draft(), device());
+    await Promise.resolve(); await Promise.resolve();
+    mock.timers.tick(15_000);
+    assert.deepEqual(await pending, { kind: 'timeout' });
+  });
+
+  it('accepts an email at the inbox limit', async () => {
+    const at = `${'a'.repeat(308)}@example.com`;
+    assert.equal(at.length, 320);
+    assert.deepEqual(await sendReport(draft({ contactEmail: at }), device()), { kind: 'sent' });
+  });
+
 });

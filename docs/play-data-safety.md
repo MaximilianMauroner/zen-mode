@@ -36,10 +36,6 @@ evidence remains pending.
 - Android backup is disabled. Clearing app storage or uninstalling normally
   deletes the app-private records; manufacturer-controlled device transfer can
   vary.
-- Selecting **Send feedback** opens an external GitHub issue draft whose URL
-  contains the app version and platform. GitHub receives those two fields when
-  the draft opens. Nothing is submitted automatically; a submitted issue and
-  user-entered content are public.
 - Selecting the privacy-policy link opens the public policy on GitHub. Selecting
   the browser-readiness check opens `https://example.com` in an external
   browser. Those are user-directed external navigations; the external handler,
@@ -63,9 +59,8 @@ are not "collected" under Play's off-device transmission definition:
 | --- | --- | --- |
 | App activity / installed apps | Foreground package names, local usage, and a launchable-app picker | Not collected or shared; on-device only |
 | Web browsing | Current known address-bar value while blocking is enabled | Not collected or shared; on-device only and not saved |
-| User-generated content | Optional text entered on GitHub after opening an external draft | User-directed public GitHub submission; not automatically collected by Zen Mode |
 | User-generated content and email address | Optional problem report text and reply email sent to the Lab4Code inbox | Collected, optional, user-initiated, not shared; purpose app functionality and developer communications. Max must confirm the Console answer |
-| App info and performance | App version and platform in the optional GitHub draft URL | Optional external transmission to GitHub; see decision below |
+| App info and performance | App version, build, and Android version in the optional problem report | Collected with the report, optional, user-initiated, not shared. Max must confirm the Console answer |
 | Device or other IDs | No advertising ID, hardware ID, Android ID, or generated user ID is read by app code | Not collected or shared |
 | Location, personal information, financial information, health and fitness, messages, photos/videos, audio, files/documents, calendar, contacts | No corresponding app behavior or permission | Not collected or shared |
 
@@ -73,10 +68,9 @@ are not "collected" under Play's off-device transmission definition:
 
 The parent saved **No required collection or sharing** in Console using the
 current Google guidance distinction for explicit external/user-initiated
-sharing. The audited guard data is processed locally. The optional feedback
-action opens an external GitHub draft containing only app version and platform;
-those fields are not diagnostics, performance data, or an identifier, and
-nothing is submitted automatically. Accessibility data, browser addresses, app
+sharing. That answer predates the problem report and must be updated before a
+release build with the report screen reaches testers. The audited guard data is
+processed locally. Accessibility data, browser addresses, app
 inventory, rules, and usage are not transmitted.
 
 This records the exact source facts and saved Console rationale. Re-evaluate the
@@ -93,7 +87,7 @@ with the report screen reaches testers.
   the exact uploaded candidate. Runtime network testing remains owner-reserved
   and is not claimed here.
 - The public policy URL and in-app disclosure use the same local-processing,
-  retention, consent, and optional GitHub-feedback facts.
+  retention, consent, and optional problem-report facts.
 - The parent saved the public policy URL and the classification above in
   Console. Only the approved one-person Internal test is active; no production
   rollout was started.

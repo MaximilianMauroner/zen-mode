@@ -55,18 +55,6 @@ The settings lock and setup completion are stored using Expo SecureStore.
 Other guard state is stored in Android SharedPreferences. Active enforcement
 state also exists in memory while the Accessibility service runs.
 
-## Optional GitHub feedback
-
-If the user selects **Send feedback**, Zen Mode asks Android to open an editable
-issue draft on GitHub. The draft URL contains the Zen Mode version and platform
-(for example, Android), so GitHub receives those details when the draft opens.
-Nothing is submitted automatically. If the user submits the issue, the issue
-and any text they add are public. GitHub processes this information under the
-[GitHub Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
-
-Do not include personal or sensitive information in a public feedback issue.
-Feedback can instead be sent privately to support@lab4code.com.
-
 ## Optional problem reports
 
 If the user opens **Report a problem or idea** and taps **Send report**, Zen
@@ -98,8 +86,7 @@ app.
 
 The app does not include analytics, advertising, or an upload path for guard
 data. Its only app-owned network request is the optional problem report
-described above. The optional GitHub feedback action and the problem report
-are the only external transmissions.
+described above. The problem report is the only external transmission.
 
 ## Retention and deletion
 
@@ -135,7 +122,7 @@ saved local rules remain until deleted.
 Zen Mode limits its processing to the functionality described above and stores
 guard state in Android app-private storage. No method of storage is guaranteed
 to be perfectly secure. Users should keep Android and their device security
-updates current and should not put private information in public GitHub issues.
+updates current.
 
 ## Children
 

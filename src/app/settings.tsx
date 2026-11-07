@@ -8,7 +8,6 @@ import { Row, RowGroup } from '@/components/ui/card';
 import { GuardNotes } from '@/components/ui/guard-notes';
 import { Screen, ScreenHeader } from '@/components/ui/screen';
 import { useWeakeningGate, WeakeningGateDialog } from '@/components/ui/weakening-gate';
-import { openFeedbackIssue } from '@/features/feedback/github-issue';
 import { sendReport } from '@/features/feedback/reports';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { authorizeWeakening } from '@/features/protection/authorize-weakening';
@@ -109,7 +108,6 @@ export default function SettingsScreen() {
           <Row label="View statistics" disabled={busy} onPress={() => router.navigate('/stats')} />
           <Row label="Privacy" disabled={busy} onPress={() => router.navigate('/privacy')} />
           {sendReport ? <Row label="Report a problem or idea" disabled={busy} onPress={() => router.navigate('/report')} /> : null}
-          <Row label="Send feedback" disabled={busy} onPress={() => runAction(openFeedbackIssue)} />
         </RowGroup>
       </View>
       <View className="gap-3">

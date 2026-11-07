@@ -6,6 +6,9 @@
   "build": {
     "production": {
       "credentialsSource": "remote",
+      "env": {
+        "EXPO_PUBLIC_REPORTS_ORIGIN": "https://tools.mauroner.net"
+      },
       "android": {
         "buildType": "app-bundle"
       }

@@ -17,7 +17,12 @@ evidence remains pending.
 ## Release audit facts
 
 - Zen Mode has no account, advertising SDK, AD_ID permission, analytics SDK,
-  app-owned backend, crash-report upload, cloud sync, or in-app purchase flow.
+  crash-report upload, cloud sync, or in-app purchase flow.
+- Release builds have **Report a problem or idea**. When the user taps Send
+  report, the app posts one report to the Lab4Code reports inbox at
+  `tools.mauroner.net`. It holds the kind, the typed text, an optional email
+  for a reply, the app version and build, and the OS name and version. It
+  never holds guard data, settings, or an identifier.
 - Accessibility screen data from YouTube, Instagram, and X is processed in the
   accessibility-service process and is not persisted as screen text or sent
   off-device.
@@ -40,9 +45,9 @@ evidence remains pending.
   browser. Those are user-directed external navigations; the external handler,
   not a Zen Mode backend, makes the resulting request. The latter carries no
   Zen Mode data in its URL.
-- The audited release source has no app-owned API client, analytics, or
-  telemetry uploader. Launching YouTube, Instagram, or X hands control to the
-  selected third-party app without uploading guard data.
+- Apart from the problem report, the release source has no app-owned API
+  client, analytics, or telemetry uploader. Launching YouTube, Instagram, or X
+  hands control to the selected third-party app without uploading guard data.
 - The merged release manifest currently contains `INTERNET`,
   `ACCESS_NETWORK_STATE`, `VIBRATE`, `USE_BIOMETRIC`, and `USE_FINGERPRINT`
   through the Expo/framework dependency set. It does not contain AD_ID,
@@ -59,6 +64,7 @@ are not "collected" under Play's off-device transmission definition:
 | App activity / installed apps | Foreground package names, local usage, and a launchable-app picker | Not collected or shared; on-device only |
 | Web browsing | Current known address-bar value while blocking is enabled | Not collected or shared; on-device only and not saved |
 | User-generated content | Optional text entered on GitHub after opening an external draft | User-directed public GitHub submission; not automatically collected by Zen Mode |
+| User-generated content and email address | Optional problem report text and reply email sent to the Lab4Code inbox | Collected, optional, user-initiated, not shared; purpose app functionality and developer communications. Max must confirm the Console answer |
 | App info and performance | App version and platform in the optional GitHub draft URL | Optional external transmission to GitHub; see decision below |
 | Device or other IDs | No advertising ID, hardware ID, Android ID, or generated user ID is read by app code | Not collected or shared |
 | Location, personal information, financial information, health and fitness, messages, photos/videos, audio, files/documents, calendar, contacts | No corresponding app behavior or permission | Not collected or shared |
@@ -76,6 +82,10 @@ inventory, rules, and usage are not transmitted.
 This records the exact source facts and saved Console rationale. Re-evaluate the
 answer if Google changes the form guidance or the app later adds any automatic
 network transfer, analytics, diagnostics, identifier, or backend path.
+
+The problem report is an app-owned backend path. The saved answer of no
+collection does not cover it. Update the Console answer before a release build
+with the report screen reaches testers.
 
 ## Console handoff
 

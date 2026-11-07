@@ -6,6 +6,7 @@ import { SecondaryButton } from '@/components/ui/button';
 import { ErrorNote, Screen, ScreenHeader } from '@/components/ui/screen';
 import { openPrivacyPolicy } from '@/features/privacy/policy';
 import { getActionError } from '@/features/action-error';
+import { sendReport } from '@/features/feedback/reports';
 
 export default function PrivacyScreen() {
   const [error, setError] = useState('');
@@ -35,6 +36,7 @@ export default function PrivacyScreen() {
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">Your controls</Text>
         <Text className="text-body text-muted">You can turn off Zen Mode in Android Accessibility settings at any time. Clear storage for Zen Mode in Android settings or uninstall it to remove its local data. Zen Mode opts out of Android cloud backup. Device-to-device transfer behavior can still depend on the device manufacturer.</Text>
         <Text className="text-body text-muted">Opening Send feedback creates an editable GitHub issue draft and sends the app version and platform to GitHub. Nothing is submitted until you choose to submit it. Submitted issues and their contents are public.</Text>
+        {sendReport ? <Text className="text-body text-muted">Report a problem or idea sends only what you type, your optional email, the app version and build, and the Android version to Lab4Code. It never sends your rules, apps, sites, usage, or device identifiers. Nothing is sent until you tap Send report.</Text> : null}
         <Text className="text-body text-muted">Zen Mode is provided by Maximilian Mauroner (Lab4Code), Italy. Privacy and support: support@lab4code.com</Text>
         <ErrorNote message={error} />
         <SecondaryButton title={busy ? 'Opening…' : 'Read the privacy policy'} disabled={busy} onPress={openPolicy} />

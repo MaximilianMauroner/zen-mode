@@ -48,3 +48,21 @@ test('Start requires every enabled YouTube feed to have a supported observed sig
   }), true, 'a supported observed enabled Home rule can start');
   assert.equal(hasAllRequiredYouTubeSignals({ ...status, shortsEnabled: false, youtubeHomeEnabled: false }), false, 'no enabled rule cannot start');
 });
+
+test('supported Home stays in setup until the user starts protection', () => {
+  const observed = { ...status, youtubeHomeDetectionSupported: true, youtubeHomeObserved: true };
+  const setup = getFeedPresentation({ ...observed, observationMode: true }, 'youtubeHome');
+  assert.equal(setup.statusLabel, 'Set up');
+  assert.match(setup.detail, /Setup only checks the screen/);
+  const active = getFeedPresentation(observed, 'youtubeHome');
+  assert.equal(active.statusLabel, 'Limited');
+  assert.match(active.detail, /Subscriptions after 10 seconds/);
+  assert.match(active.detail, /Unknown layouts stay available/);
+});
+
+test('supported unobserved Home requests a real signal without claiming enforcement', () => {
+  const pending = getFeedPresentation({ ...status, youtubeHomeDetectionSupported: true }, 'youtubeHome');
+  assert.equal(pending.statusLabel, 'Check');
+  assert.match(pending.detail, /Open Home once/);
+  assert.match(pending.detail, /layout is unsupported/);
+});

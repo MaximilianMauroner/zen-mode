@@ -15,7 +15,7 @@ import { feedWeakeningAction } from '@/features/protection/feed-weakening';
 import { useWeakeningGate, WeakeningGateDialog } from './weakening-gate';
 import { getXDrawerGuidance } from '@/features/protection/x-drawer-guidance';
 import { hasAllRequiredXSignals } from '@/features/protection/x-readiness';
-import { hasAllRequiredYouTubeSignals } from '@/features/protection/youtube-readiness';
+import { getYouTubeDrawerGuidance, hasAllRequiredYouTubeSignals } from '@/features/protection/youtube-readiness';
 import { getSupportedAppAvailability, type SupportedAppKey } from '@/features/protection/target-availability';
 import { getFeedDrawerTargetPresentation } from '@/features/protection/feed-drawer-presentation';
 import { getZenGuardStatus, openInstagram, setInstagramObservationMode, setInstagramSettings, openX, openYouTube, setObservationMode, setYouTubeSettings, setXObservationMode, setXSettings, type ZenGuardStatus } from '@/features/protection/native';
@@ -46,12 +46,13 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
   // After setup, a feed switched on later still needs its own signal. Say so,
   // rather than leaving the user with a rule that quietly enforces nothing.
   const xGuidance = isX ? getXDrawerGuidance(status, Boolean(observing)) : { initialAwaiting: [], postSetupAwaiting: [] };
+  const youtubeGuidance = !isX && !isInstagram && !observing ? getYouTubeDrawerGuidance(status) : [];
   const targetPresentation = getFeedDrawerTargetPresentation(
     targetAvailability,
     TITLES[targetApp],
     Boolean(observing),
     Boolean(enabled),
-    xGuidance.postSetupAwaiting.length > 0,
+    xGuidance.postSetupAwaiting.length > 0 || youtubeGuidance.length > 0,
   );
 
   const run = (task: (fresh: ZenGuardStatus) => Promise<void>) => {
@@ -120,8 +121,8 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
               </Section>
             </> : <>
               <Section title="Home feed" status={getFeedPresentation(status, 'youtubeHome').statusLabel} first>
-                <RuleChoice label="YouTube Home rule" limitedLabel="Block Home" allowedLabel="Allow Home" enabled={status?.youtubeHomeEnabled === true} disabled={disabled} onChange={(value) => change({ youtubeHomeEnabled: value })} />
-                <Text className="text-support text-muted">Search, Subscriptions, library/history, channels, notifications, and opened videos stay available. Home blocking waits for a device-verified signal.</Text>
+                <RuleChoice label="YouTube Home rule" limitedLabel="10 seconds" allowedLabel="Allow Home" enabled={status?.youtubeHomeEnabled === true} disabled={disabled} onChange={(value) => change({ youtubeHomeEnabled: value })} />
+                <Text className="text-support text-muted">Zen Mode opens Subscriptions after 10 seconds on a recognized Home feed. Search, opened videos, and unknown layouts stay available.</Text>
               </Section>
               <ScrollingSection isX={false} status={status} statusLabel={result.statusLabel} disabled={disabled} change={change} />
             </>}
@@ -130,7 +131,7 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
                 {status?.xHomeEnabled ? <Text className="text-support text-muted">{xGuidance.initialAwaiting.includes('home') ? '○ Open the Home feed' : '✓ Home feed detected'}</Text> : null}
                 {status?.xVideosEnabled ? <Text className="text-support text-muted">{xGuidance.initialAwaiting.includes('videos') ? '○ Open one video' : '✓ Video viewer detected'}</Text> : null}
               </> : <>
-                {status?.youtubeHomeEnabled ? <Text className="text-support text-muted">{status.youtubeHomeObserved ? '✓ Home feed detected' : status.youtubeHomeDetectionSupported ? '○ Open the Home feed once' : '○ Home detection awaits physical-device validation'}</Text> : null}
+                {status?.youtubeHomeEnabled ? <Text className="text-support text-muted">{status.youtubeHomeObserved ? '✓ Home feed detected' : status.youtubeHomeDetectionSupported ? '○ Open Home once. If it stays undetected, this layout is unsupported.' : '○ This build cannot recognize Home'}</Text> : null}
                 {status?.shortsEnabled ? <Text className="text-support text-muted">{status.lastDetectionAt > 0 ? '✓ Shorts detected' : '○ Open one Short, then return here. Zen Mode checks this YouTube screen before limiting scrolling; unknown layouts stay unblocked.'}</Text> : null}
               </>}
               {canStart ? <PrimaryButton title="Start protection" disabled={disabled} onPress={() => run(async () => { if (isInstagram) await setInstagramObservationMode(false); else if (isX) await setXObservationMode(false); else await setObservationMode(false); })} /> : detected ? <Text className="text-support text-muted">Turn on protection and Android access in Settings.</Text> : null}
@@ -141,7 +142,8 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
                   {feed === 'home' ? '○ Open the Home feed once to start breaks' : '○ Open one video once to start the video limit'}
                 </Text>
               ))}
-              <Text className="text-caption text-faint">Other X rules keep running in the meantime.</Text>
+              {youtubeGuidance.map((feed) => <Text key={feed} className="text-support text-muted">{feed === 'home' ? '○ Open Home once. If it stays undetected, this layout is unsupported.' : '○ Open one Short once to start the scrolling limit.'}</Text>)}
+              {isX ? <Text className="text-caption text-faint">Other X rules keep running in the meantime.</Text> : null}
             </View> : null}
             {targetPresentation.recovery ? <Text className="mt-5 text-support text-muted">{targetPresentation.recovery}</Text> : null}
             {targetPresentation.showOpener ? (

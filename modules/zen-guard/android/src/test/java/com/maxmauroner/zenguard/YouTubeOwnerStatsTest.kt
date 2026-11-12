@@ -32,7 +32,7 @@ class YouTubeOwnerStatsTest {
   }
 
   @After fun tearDown() {
-    owner.reset()
+    owner.destroy()
     controller.destroy()
   }
 

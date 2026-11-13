@@ -14,9 +14,9 @@ internal object YouTubeSurfaceDetector {
     "search_suggestions", "channel_header", "channel_page", "channel_profile",
     "notification_panel", "notification_list", "history_list", "playlist_panel", "comment_thread",
   )
-  private val navigationLabels = setOf("home", "shorts", "subscriptions", "you", "library")
+  private val navigationLabels = setOf("home", "shorts", "subs", "subscriptions", "you", "library")
   private val preservedSelectedLabels = setOf(
-    "subscriptions", "you", "library", "history", "notifications", "search", "channel",
+    "subs", "subscriptions", "you", "library", "history", "notifications", "search", "channel",
   )
 
   fun detect(nodes: List<NodeSignal>): YouTubeSurface {
@@ -40,26 +40,49 @@ internal object YouTubeSurfaceDetector {
     if (nodes.any { it.className?.toString() == "android.widget.EditText" }) {
       return YouTubeScreen(YouTubeSurface.OTHER)
     }
-    val bar = nodes.singleOrNull { it.viewIdResourceName == "$YOUTUBE_PACKAGE:id/pivot_bar" }
+    val topBar = nodes.singleOrNull { it.viewIdResourceName == "$YOUTUBE_PACKAGE:id/tabs_bar" }
       ?: return YouTubeScreen(YouTubeSurface.UNKNOWN)
-    val navigation = visibleNodes(bar) ?: return YouTubeScreen(YouTubeSurface.UNKNOWN)
-    val controls = navigation.filter { it != bar && it.isClickable && it.isEnabled }
-    val selected = controls.filter { control ->
-      visibleNodes(control)?.any { it.isSelected } == true
-    }
-    val home = selected.singleOrNull()
-      ?: return YouTubeScreen(YouTubeSurface.UNKNOWN)
-    if (controls.singleOrNull { controlLabels(it) == setOf("home") } != home) {
-      return YouTubeScreen(YouTubeSurface.UNKNOWN)
-    }
-    val subscriptions = controls.singleOrNull { controlLabels(it) == setOf("subscriptions") }
-      ?: return YouTubeScreen(YouTubeSurface.UNKNOWN)
-    if (subscriptions == home) return YouTubeScreen(YouTubeSurface.UNKNOWN)
-    // A retained Home-tab selection alone cannot distinguish Search or a channel from the feed.
-    val homeContent = nodes.any {
-      it !in navigation && it.isScrollable && it.contentDescription?.toString()?.trim()?.lowercase() == "home"
-    }
-    if (!homeContent) return YouTubeScreen(YouTubeSurface.UNKNOWN)
+    return inspectTopTabs(nodes, topBar)
+  }
+
+  private fun inspectTopTabs(nodes: List<AccessibilityNodeInfo>, topBar: AccessibilityNodeInfo): YouTubeScreen {
+    val unknown = YouTubeScreen(YouTubeSurface.UNKNOWN)
+    val browse = nodes.singleOrNull {
+      it.viewIdResourceName == "$YOUTUBE_PACKAGE:id/browse_fragment_layout_coordinator_layout"
+    } ?: return unknown
+    val browseNodes = visibleNodes(browse) ?: return unknown
+    val appBar = browseNodes.singleOrNull { it.viewIdResourceName == "$YOUTUBE_PACKAGE:id/appbar_layout" }
+      ?: return unknown
+    if (topBar !in (visibleNodes(appBar) ?: return unknown)) return unknown
+    val contents = browseNodes.singleOrNull {
+      it.viewIdResourceName == "$YOUTUBE_PACKAGE:id/pane_fragment_contents"
+    } ?: return unknown
+    val contentNodes = visibleNodes(contents) ?: return unknown
+    if (contentNodes.none {
+        it.viewIdResourceName == "$YOUTUBE_PACKAGE:id/results" &&
+          it.className?.toString() == "android.support.v7.widget.RecyclerView"
+      }) return unknown
+
+    val bar = nodes.singleOrNull { it.viewIdResourceName == "$YOUTUBE_PACKAGE:id/pivot_bar" } ?: return unknown
+    val navigation = visibleNodes(bar) ?: return unknown
+    val selectedLabels = navigation.filter { it.isSelected }
+      .flatMap { labels(signal(it)) }
+      .filter(navigationLabels::contains)
+      .toSet()
+    if (selectedLabels != setOf("home")) return unknown
+
+    val tabs = visibleNodes(topBar)?.filter {
+      it.viewIdResourceName == "$YOUTUBE_PACKAGE:id/tabs_bar_text_tab_view" &&
+        it.className?.toString() == "android.widget.Button"
+    } ?: return unknown
+    val home = tabs.singleOrNull { controlLabels(it) == setOf("home") } ?: return unknown
+    val subscriptions = tabs.singleOrNull {
+      val labels = controlLabels(it)
+      labels == setOf("subs") || labels == setOf("subscriptions")
+    } ?: return unknown
+    if (!subscriptions.isEnabled || !subscriptions.isClickable) return unknown
+    val selected = tabs.filter { tab -> visibleNodes(tab)?.any { it.isSelected } == true }
+    if (selected.singleOrNull() != home) return unknown
     return YouTubeScreen(YouTubeSurface.HOME, subscriptions)
   }
 

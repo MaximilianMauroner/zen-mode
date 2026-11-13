@@ -51,9 +51,7 @@ internal class YouTubeOwner(
     val nodes = snapshotNodeSignals(root)
     val result = ShortsDetector.detect(nodes)
     if (!result.isShortsViewer) {
-      exitResult.confirmed(
-        screen.surface, screen.surface == YouTubeSurface.HOME, SystemClock.elapsedRealtime(),
-      )?.let { exit ->
+      exitResult.confirmed(screen.surface, SystemClock.elapsedRealtime())?.let { exit ->
         recordYouTubeShortsStats(exit.pageIndex, EnforcementStatsOutcome.SUCCESS)
         resultOverlay.show()
       }

@@ -183,7 +183,7 @@ class YouTubeHomeServiceTest {
 
   @Test fun `a selected Home tab alone cannot identify a Home feed`() {
     val tree = homeTree()
-    tree.content.contentDescription = ""
+    tree.content.viewIdResourceName = ""
     enter(tree)
     advance(10_000)
     assertFalse(preferences.youtubeHomeObserved)
@@ -235,7 +235,7 @@ class YouTubeHomeServiceTest {
 
   @Test fun `duplicate Home controls fail open`() {
     val tree = homeTree()
-    shadowOf(tree.bar).addChild(tab("Home"))
+    shadowOf(tree.bar).addChild(topTab("Home"))
     enter(tree)
     advance(10_000)
     assertFalse(preferences.youtubeHomeObserved)
@@ -244,7 +244,7 @@ class YouTubeHomeServiceTest {
 
   @Test fun `duplicate Subscriptions controls and content lookalikes are never clicked`() {
     val tree = homeTree()
-    val duplicate = tab("Subscriptions")
+    val duplicate = topTab("Subs")
     shadowOf(tree.bar).addChild(duplicate)
     enter(tree)
     advance(10_000)
@@ -253,7 +253,7 @@ class YouTubeHomeServiceTest {
 
     val contentOnly = homeTree()
     contentOnly.subscriptions.contentDescription = "Unknown"
-    val lookalike = tab("Subscriptions")
+    val lookalike = topTab("Subs")
     shadowOf(contentOnly.content).addChild(lookalike)
     enter(contentOnly)
     advance(10_000)
@@ -365,29 +365,109 @@ class YouTubeHomeServiceTest {
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
   }
 
+  @Test fun `Home top tab opens Subs after ten seconds`() {
+    val tree = homeTree()
+    enter(tree)
+    assertTrue(preferences.youtubeHomeObserved)
+    advance(9_999)
+    assertNoClick(tree)
+    advance(1)
+    assertEquals(listOf(ACTION_CLICK), shadowOf(tree.subscriptions).performedActions)
+  }
+
+  @Test fun `top Subs selection cancels a Home visit`() {
+    val tree = homeTree()
+    enter(tree)
+    advance(5_000)
+    tree.home.isSelected = false
+    tree.subscriptions.isSelected = true
+    contentEvent()
+    advance(10_000)
+    assertNoClick(tree)
+  }
+
+  @Test fun `top tab Home fails open on other or incomplete screens`() {
+    for (id in listOf("search_edit_text", "watch_player", "channel_header")) {
+      val tree = homeTree()
+      shadowOf(tree.root).addChild(node().apply { viewIdResourceName = "$YOUTUBE:id/$id" })
+      enter(tree)
+      advance(10_000)
+      assertNoClick(tree)
+    }
+    val noResults = homeTree()
+    noResults.content.viewIdResourceName = ""
+    enter(noResults)
+    advance(10_000)
+    assertNoClick(noResults)
+  }
+
+  @Test fun `top tab Home requires one selected Home and one clickable Subs`() {
+    val multipleSelected = homeTree()
+    multipleSelected.subscriptions.isSelected = true
+    enter(multipleSelected)
+    advance(10_000)
+    assertNoClick(multipleSelected)
+
+    val duplicateSubs = homeTree()
+    shadowOf(duplicateSubs.bar).addChild(topTab("Subs"))
+    enter(duplicateSubs)
+    advance(10_000)
+    assertNoClick(duplicateSubs)
+
+    val notClickable = homeTree()
+    notClickable.subscriptions.isClickable = false
+    enter(notClickable)
+    advance(10_000)
+    assertNoClick(notClickable)
+  }
+
+  @Test fun `top Home tab outside selected bottom Home fails open`() {
+    val tree = homeTree()
+    tree.bottomHome.isSelected = false
+    enter(tree)
+    advance(10_000)
+    assertNoClick(tree)
+  }
+
   private data class HomeTree(
     val root: AccessibilityNodeInfo,
     val bar: AccessibilityNodeInfo,
     val home: AccessibilityNodeInfo,
     val subscriptions: AccessibilityNodeInfo,
     val content: AccessibilityNodeInfo,
+    val bottomHome: AccessibilityNodeInfo,
   )
 
-  // Synthetic semantic layout. The repository has no captured positive Home tree.
+  // Synthetic reconstruction of the captured YouTube 21.45.82 Home structure.
   private fun homeTree(subscriptionsFirst: Boolean = false): HomeTree {
     val root = node()
-    val bar = node().apply { viewIdResourceName = "$YOUTUBE:id/pivot_bar" }
-    val home = tab("Home").apply { isSelected = true }
-    val subscriptions = tab("Subscriptions")
+    val browse = node().apply { viewIdResourceName = "$YOUTUBE:id/browse_fragment_layout_coordinator_layout" }
+    val appbar = node().apply { viewIdResourceName = "$YOUTUBE:id/appbar_layout" }
+    val bar = node().apply { viewIdResourceName = "$YOUTUBE:id/tabs_bar" }
+    val home = topTab("Home").apply { isSelected = true }
+    val subscriptions = topTab("Subs")
     val content = node().apply {
-      contentDescription = "Home"
-      isScrollable = true
+      viewIdResourceName = "$YOUTUBE:id/results"
+      className = "android.support.v7.widget.RecyclerView"
     }
+    val contents = node().apply { viewIdResourceName = "$YOUTUBE:id/pane_fragment_contents" }
+    val bottom = node().apply { viewIdResourceName = "$YOUTUBE:id/pivot_bar" }
+    val bottomHome = tab("Home").apply { isSelected = true }
+    shadowOf(bottom).addChild(bottomHome)
     val tabs = if (subscriptionsFirst) listOf(subscriptions, home) else listOf(home, subscriptions)
-    tabs.forEach { shadowOf(bar).addChild(node().also { wrapper -> shadowOf(wrapper).addChild(it) }) }
-    shadowOf(root).addChild(content)
-    shadowOf(root).addChild(bar)
-    return HomeTree(root, bar, home, subscriptions, content)
+    tabs.forEach { shadowOf(bar).addChild(it) }
+    shadowOf(appbar).addChild(bar)
+    shadowOf(browse).addChild(appbar)
+    shadowOf(contents).addChild(content)
+    shadowOf(browse).addChild(contents)
+    shadowOf(root).addChild(browse)
+    shadowOf(root).addChild(bottom)
+    return HomeTree(root, bar, home, subscriptions, content, bottomHome)
+  }
+
+  private fun topTab(label: String): AccessibilityNodeInfo = tab(label).apply {
+    viewIdResourceName = "$YOUTUBE:id/tabs_bar_text_tab_view"
+    className = "android.widget.Button"
   }
 
   private fun tab(label: String): AccessibilityNodeInfo = node().apply {

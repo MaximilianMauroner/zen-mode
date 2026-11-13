@@ -11,13 +11,13 @@ internal class YouTubeShortsExitResult(private val confirmationWindowMs: Long = 
     requestedAtMs = nowMs
   }
 
-  fun confirmed(surface: YouTubeSurface, homeSelected: Boolean, nowMs: Long): ConfirmedExit? {
+  fun confirmed(surface: YouTubeSurface, nowMs: Long): ConfirmedExit? {
     val requestedAt = requestedAtMs ?: return null
     if (nowMs < requestedAt || nowMs - requestedAt > confirmationWindowMs) {
       clear()
       return null
     }
-    if (surface != YouTubeSurface.HOME || !homeSelected) return null
+    if (surface != YouTubeSurface.HOME) return null
     val pageIndex = pendingPageIndex
     clear()
     return ConfirmedExit(pageIndex)

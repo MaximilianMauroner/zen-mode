@@ -2,17 +2,22 @@ package com.maxmauroner.zenguard
 
 internal enum class YouTubeSurface { HOME, SHORTS, OTHER, UNKNOWN }
 
-internal enum class YouTubeHomeAction { NONE, LEAVE_HOME }
+internal data class YouTubeHomeVisit(val startedElapsedMs: Long) {
+  val deadlineElapsedMs: Long = startedElapsedMs + 10_000L
+}
 
-/** Policy only. Android navigation stays in the service after a destination is proven on-device. */
-internal object YouTubeHomePolicy {
-  fun next(
-    surface: YouTubeSurface,
-    enabled: Boolean,
-    observed: Boolean,
-  ): YouTubeHomeAction = if (surface == YouTubeSurface.HOME && enabled && observed) {
-    YouTubeHomeAction.LEAVE_HOME
-  } else {
-    YouTubeHomeAction.NONE
+internal class YouTubeHomePolicy {
+  private var visit: YouTubeHomeVisit? = null
+
+  fun observe(surface: YouTubeSurface, enabled: Boolean, observed: Boolean, nowElapsedMs: Long): YouTubeHomeVisit? {
+    if (surface != YouTubeSurface.HOME || !enabled || !observed) {
+      reset()
+      return null
+    }
+    return visit ?: YouTubeHomeVisit(nowElapsedMs).also { visit = it }
+  }
+
+  fun reset() {
+    visit = null
   }
 }

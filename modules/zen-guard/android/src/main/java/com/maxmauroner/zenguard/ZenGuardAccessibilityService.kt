@@ -12,7 +12,9 @@ import android.view.accessibility.AccessibilityEvent
 class ZenGuardAccessibilityService : AccessibilityService() {
   private lateinit var preferences: ZenGuardPreferences
   private val stats = InterventionStats(null)
-  private val youtube = YouTubeOwner(this, stats)
+  private val youtube: YouTubeOwner = YouTubeOwner(this, stats, canEnforce = {
+    !wholeApp.hasRequestedCard && canRunEnforcementAction()
+  })
   private val x = XOwner(this, stats, canEnforce = ::canRunEnforcementAction)
   private val instagram = InstagramOwner(this, stats, canEnforce = ::canRunEnforcementAction)
   private val wholeApp = WholeAppOwner(
@@ -22,7 +24,10 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     onForegroundChanged = { packageName ->
       if (packageName != YOUTUBE_PACKAGE && packageName != this.packageName) youtube.reset()
     },
-    onCardAttached = { instagram.pause() },
+    onCardAttached = {
+      youtube.cancelHomeVisit()
+      instagram.pause()
+    },
     onRelease = { packageName, root ->
       when {
         BrowserUrlDetector.supports(packageName) -> browserIntervention?.observe(packageName, root)
@@ -37,6 +42,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   private val screenStateReceiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
       if (intent?.action != Intent.ACTION_SCREEN_OFF || !hasActiveProtection()) return
+      youtube.cancelHomeVisit()
       val nowMs = SystemClock.elapsedRealtime()
       x.screenOff(nowMs)
       instagram.screenOff(nowMs)
@@ -113,6 +119,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     }
 
     wholeApp.trackForegroundApp(event)
+    if (rootInActiveWindow?.packageName?.toString() != YOUTUBE_PACKAGE) youtube.cancelHomeVisit()
     if (wholeApp.hasRequestedCard) return
     // The blocker is an accessibility overlay owned by this package. Ignore its own focus and
     // content events; treating them as an external app would immediately remove the blocker.
@@ -172,7 +179,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     runCatching { XDiagnostics.service(this, false, "destroy") }
     wholeApp.cancelVisitDeadline()
     browserIntervention?.end()
-    youtube.reset()
+    youtube.destroy()
     x.destroy(hasActiveProtection())
     instagram.cancelNavigation()
     wholeApp.stopUsageAndCloseCard()

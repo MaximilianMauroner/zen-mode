@@ -38,8 +38,7 @@ class ZenGuardModule : Module() {
         "shortsEnabled" to preferences.shortsEnabled,
         "youtubeHomeEnabled" to preferences.youtubeHomeEnabled,
         "youtubeHomeObserved" to preferences.youtubeHomeObserved,
-        // Turn on only with captured fixtures and a verified Android enforcement action.
-        "youtubeHomeDetectionSupported" to false,
+        "youtubeHomeDetectionSupported" to true,
         "xHomeEnabled" to preferences.xHomeEnabled,
         "xVideosEnabled" to preferences.xVideosEnabled,
         "xHomeMinutes" to preferences.xHomeMinutes,
@@ -307,8 +306,8 @@ class ZenGuardModule : Module() {
     AsyncFunction("setObservationMode") { enabled: Boolean ->
       val context = requireNotNull(appContext.reactContext)
       val preferences = ZenGuardPreferences(context)
-      if (!enabled && preferences.lastDetectionAt == 0L) {
-        throw IllegalStateException("A Shorts signal must be observed before enforcement can be enabled")
+      if (!enabled && !preferences.hasRequiredYouTubeSignals()) {
+        throw IllegalStateException("Open each enabled YouTube feed before starting protection")
       }
       preferences.observationMode = enabled
     }

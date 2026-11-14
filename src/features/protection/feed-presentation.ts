@@ -23,12 +23,13 @@ export function getFeedPresentation(status: ZenGuardStatus | null, feed: Feed, l
   if (availability === 'unavailable') return { statusLabel: 'Unavailable', detail: 'Feed protection needs the Android app.', tone: 'neutral' as const };
   if (feed === 'xHome' || feed === 'xVideos') return xPresentation(status, feed);
   if (feed === 'youtubeHome') {
-    const saved = 'Block the Home recommendation feed';
-    if (!status.youtubeHomeDetectionSupported) return { statusLabel: 'Unavailable', detail: `Saved: ${saved}. This build has no device-verified Home signal, so no Home action will run.`, tone: 'neutral' as const };
+    const saved = 'Switch Home to Subscriptions after 10 seconds';
+    if (!status.youtubeHomeDetectionSupported) return { statusLabel: 'Unavailable', detail: `Saved: ${saved}. This build cannot recognize Home, so no Home action will run.`, tone: 'neutral' as const };
     if (!status.serviceEnabled) return { statusLabel: 'Not running', detail: `Saved: ${saved}. Android access is needed.`, tone: 'neutral' as const };
     if (!status.protectionEnabled) return { statusLabel: 'Not running', detail: `Saved: ${saved}. Protection is paused.`, tone: 'neutral' as const };
-    if (getYouTubeFeedReadiness(status, 'home') === 'awaiting') return { statusLabel: 'Check', detail: `Saved: ${saved}. Device-verified Home detection is not available yet; no Home action will run.`, tone: 'neutral' as const };
-    return { statusLabel: 'Blocked', detail: 'The Home recommendation feed is blocked.', tone: 'accent' as const };
+    if (status.observationMode) return { statusLabel: 'Set up', detail: `Saved: ${saved}. Open Home, then return here to start protection. Setup only checks the screen.`, tone: 'neutral' as const };
+    if (getYouTubeFeedReadiness(status, 'home') === 'awaiting') return { statusLabel: 'Check', detail: `Saved: ${saved}. Open Home once. If it stays undetected, this layout is unsupported.`, tone: 'neutral' as const };
+    return { statusLabel: 'Limited', detail: 'Zen Mode opens Subscriptions after 10 seconds on a recognized Home feed. Unknown layouts stay available.', tone: 'accent' as const };
   }
   const saved = feed === 'shorts' ? 'One Short per visit' : feed === 'reels' ? `${status.instagramWaitSeconds}s pause, ${status.instagramReelsMinutes}m viewing window` : feed === 'home' ? `${status.instagramHomeMinutes}m of home-feed viewing` : 'Block Explore';
   const reason = !status.serviceEnabled ? 'Android access is needed.' : !status.protectionEnabled ? 'Protection is paused.' : feed === 'shorts' ? !isShortsReady(status) ? 'Finish feed setup.' : null : status.instagramObservationMode || (status.instagramSignalMask & 3) !== 3 ? 'Finish feed setup.' : null;

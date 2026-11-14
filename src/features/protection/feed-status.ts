@@ -49,7 +49,7 @@ export function getProtectionReadiness(status: ZenGuardStatus): ProtectionReadin
       result.enabled += 1;
       result.unavailable += 1;
     } else {
-      add(true, getSupportedAppAvailability(status, 'youtube'), getYouTubeFeedReadiness(status, 'home') === 'ready');
+      add(true, getSupportedAppAvailability(status, 'youtube'), !status.observationMode && getYouTubeFeedReadiness(status, 'home') === 'ready');
     }
   }
   add(status.xHomeEnabled, getSupportedAppAvailability(status, 'x'), !status.xObservationMode && getXFeedReadiness(status, 'home') === 'ready');

@@ -8,18 +8,18 @@ class YouTubeShortsExitResultTest {
   @Test fun `only confirmed Home produces one result`() {
     val result = YouTubeShortsExitResult()
     result.requested(4, 1_000L)
-    assertNull(result.confirmed(YouTubeSurface.HOME, false, 1_100L))
-    assertEquals(4, result.confirmed(YouTubeSurface.HOME, true, 1_200L)?.pageIndex)
-    assertNull(result.confirmed(YouTubeSurface.HOME, true, 1_300L))
+    assertNull(result.confirmed(YouTubeSurface.UNKNOWN, 1_100L))
+    assertEquals(4, result.confirmed(YouTubeSurface.HOME, 1_200L)?.pageIndex)
+    assertNull(result.confirmed(YouTubeSurface.HOME, 1_300L))
   }
 
   @Test fun `stale or cleared navigation never produces a result`() {
     val result = YouTubeShortsExitResult()
     result.requested(2, 1_000L)
-    assertNull(result.confirmed(YouTubeSurface.HOME, true, 4_001L))
+    assertNull(result.confirmed(YouTubeSurface.HOME, 4_001L))
     result.requested(3, 5_000L)
     result.clear()
-    assertNull(result.confirmed(YouTubeSurface.HOME, true, 5_100L))
+    assertNull(result.confirmed(YouTubeSurface.HOME, 5_100L))
   }
 
   @Test fun `unverified trees never confirm even with a selected Home tab`() {
@@ -35,9 +35,9 @@ class YouTubeShortsExitResultTest {
       val result = YouTubeShortsExitResult()
       result.requested(4, 1_000L)
       val surface = YouTubeSurfaceDetector.detect(nodes)
-      assertNull(result.confirmed(surface, true, 1_100L))
+      assertNull(result.confirmed(surface, 1_100L))
       // An unknown observation must not consume a still-valid pending request.
-      assertEquals(4, result.confirmed(YouTubeSurface.HOME, true, 1_200L)?.pageIndex)
+      assertEquals(4, result.confirmed(YouTubeSurface.HOME, 1_200L)?.pageIndex)
     }
   }
 }

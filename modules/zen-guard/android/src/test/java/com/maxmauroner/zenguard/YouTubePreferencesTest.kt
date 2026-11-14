@@ -43,4 +43,19 @@ class YouTubePreferencesTest {
     assertTrue(restored.shortsEnabled)
     assertFalse(restored.youtubeHomeEnabled)
   }
+  @Test fun setupRequiresEachEnabledFeedSignal() {
+    val preferences = ZenGuardPreferences(context)
+    preferences.shortsEnabled = false
+    preferences.youtubeHomeEnabled = true
+    assertFalse(preferences.hasRequiredYouTubeSignals())
+    preferences.recordYouTubeHomeObserved()
+    assertTrue(preferences.hasRequiredYouTubeSignals())
+    preferences.shortsEnabled = true
+    assertFalse(preferences.hasRequiredYouTubeSignals())
+    preferences.recordDetection(1L, "test-shorts")
+    assertTrue(preferences.hasRequiredYouTubeSignals())
+    preferences.shortsEnabled = false
+    preferences.youtubeHomeEnabled = false
+    assertFalse(preferences.hasRequiredYouTubeSignals())
+  }
 }

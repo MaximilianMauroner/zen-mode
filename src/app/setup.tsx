@@ -139,10 +139,7 @@ export default function SetupScreen() {
           <Text accessibilityRole="header" className="ml-2.5 text-item font-semibold text-copy">Accessibility access</Text>
         </View>
         <Text className="mt-3 text-body text-muted">
-          Zen Mode uses Android accessibility to read YouTube, Instagram, and X screens, browser addresses when site blocking is on, and the foreground app to apply your rules.
-        </Text>
-        <Text className="mt-2.5 text-body text-muted">
-          Screen text and addresses stay on this device. Zen Mode does not record typing or take screenshots.
+          Zen Mode uses accessibility access to see supported feeds, the current app, and browser addresses when site blocking is on. It uses this information to apply your rules. Screen text and addresses stay on your phone.
         </Text>
         <Pressable accessibilityRole="button" accessibilityState={{ expanded: showDetails, disabled: busy }} disabled={busy} onPress={() => setShowDetails((value) => !value)} className="mt-1 min-h-[48px] justify-center self-start">
           <Text className="text-support font-semibold text-accent">{showDetails ? 'Hide access details' : 'More about this access'}</Text>

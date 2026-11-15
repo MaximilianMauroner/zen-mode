@@ -1,17 +1,21 @@
 import { Card } from '@/components/ui/card';
-import { ChoiceCard } from '@/components/ui/choice';
+import { ChipGroup } from '@/components/ui/choice';
 import { PrimaryButton, SecondaryButton } from '@/components/ui/button';
-import { ErrorNote, IconTile, Screen, ScreenTitle } from '@/components/ui/screen';
+import { ErrorNote, Screen, ScreenTitle } from '@/components/ui/screen';
 import { acceptSetupConsent, confirmAndroidAccess, hasCompletedSetup, markSetupComplete } from '@/features/protection/setup';
 import { RECOMMENDED_DEFAULTS_SUMMARY, applyRecommendedDefaults } from '@/features/protection/recommended-defaults';
 import { openAccessibilitySettings } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
-import { Check, Eye, ShieldCheck } from 'lucide-react-native';
+import { Check, Eye } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Platform, Pressable, Text, View } from 'react-native';
 
 type SetupChoice = 'defaults' | 'customize';
+const STARTING_RULES = [
+  { value: 'defaults', label: 'Use healthy defaults' },
+  { value: 'customize', label: 'Customize' },
+] as const;
 
 export default function SetupScreen() {
   const [consented, setConsented] = useState(false);
@@ -112,20 +116,13 @@ export default function SetupScreen() {
 
   return (
     <Screen>
-      <IconTile icon={ShieldCheck} />
-      <ScreenTitle
-        title="Set your boundaries"
-        description="Choose a starting point, then grant Android access. Zen Mode checks each supported feed before applying its rule."
-      />
+      <ScreenTitle title="Set up Zen Mode" />
 
-      <Card>
-        <Text accessibilityRole="header" className="text-item font-semibold text-copy">How would you like to start?</Text>
-        <View accessibilityRole="radiogroup" accessibilityLabel="Starting rules" className="mt-3 gap-2">
-          <ChoiceCard title="Use healthy defaults" detail="Start with the rules listed below. You can adjust them later." selected={choice === 'defaults'} disabled={selectionDisabled} onPress={() => setChoice('defaults')} />
-          <ChoiceCard title="Customize" detail="Open Feeds and Sites after access. Protection stays paused while you choose rules." selected={choice === 'customize'} disabled={selectionDisabled} onPress={() => setChoice('customize')} />
-        </View>
+      <View className="gap-3">
+        <Text accessibilityRole="header" className="text-item font-semibold text-copy">Starting rules</Text>
+        <ChipGroup label="Starting rules" options={STARTING_RULES} selected={choice ?? undefined} disabled={selectionDisabled} onSelect={setChoice} />
         {choice === 'defaults' ? (
-          <View className="mt-3 gap-1.5">
+          <View className="gap-1.5">
             {RECOMMENDED_DEFAULTS_SUMMARY.map((line) => (
               <View key={line} className="flex-row gap-2">
                 <Check color={colors.accent} size={15} style={{ marginTop: 2 }} />
@@ -133,8 +130,8 @@ export default function SetupScreen() {
               </View>
             ))}
           </View>
-        ) : null}
-      </Card>
+        ) : choice === 'customize' ? <Text className="text-support text-muted">Protection stays paused while you choose rules.</Text> : null}
+      </View>
 
       <Card>
         <View className="flex-row items-center">
@@ -142,10 +139,10 @@ export default function SetupScreen() {
           <Text accessibilityRole="header" className="ml-2.5 text-item font-semibold text-copy">Accessibility access</Text>
         </View>
         <Text className="mt-3 text-body text-muted">
-          Zen Mode uses Android accessibility to recognize guarded YouTube, Instagram, and X feeds, read addresses in supported browser bars when site blocking is on, and identify the foreground app for app limits. This access is needed to apply your rules.
+          Zen Mode uses Android accessibility to read YouTube, Instagram, and X screens, browser addresses when site blocking is on, and the foreground app to apply your rules.
         </Text>
         <Text className="mt-2.5 text-body text-muted">
-          Screen contents and browser addresses stay on this device. Zen Mode does not record what you type, take screenshots, or send this data anywhere.
+          Screen text and addresses stay on this device. Zen Mode does not record typing or take screenshots.
         </Text>
         <Pressable accessibilityRole="button" accessibilityState={{ expanded: showDetails, disabled: busy }} disabled={busy} onPress={() => setShowDetails((value) => !value)} className="mt-1 min-h-[48px] justify-center self-start">
           <Text className="text-support font-semibold text-accent">{showDetails ? 'Hide access details' : 'More about this access'}</Text>
@@ -175,9 +172,6 @@ export default function SetupScreen() {
         {accessRequested && Platform.OS === 'android' ? <SecondaryButton title="Open Android settings" disabled={busy} onPress={() => { void openAccessibilitySettings().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Could not open Android settings.')); }} /> : null}
         <SecondaryButton title="Privacy" disabled={busy} onPress={() => router.navigate('/privacy')} />
       </View>
-      <Text className="text-center text-caption text-faint">
-        Nothing here stops you turning the service off in Android Settings, or uninstalling the app outright.
-      </Text>
     </Screen>
   );
 }

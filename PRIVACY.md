@@ -1,6 +1,6 @@
 # Zen Mode privacy policy
 
-Effective date: November 7, 2026
+Effective date: November 15, 2026
 
 Zen Mode is provided by Maximilian Mauroner (Lab4Code), Italy. This policy
 explains how the Android app processes information. Questions or privacy
@@ -55,11 +55,16 @@ The settings lock and setup completion are stored using Expo SecureStore.
 Other guard state is stored in Android SharedPreferences. Active enforcement
 state also exists in memory while the Accessibility service runs.
 
-## Optional problem reports
+## Optional recordings and reports
 
-If the user opens **Report a problem or idea** and taps **Send report**, Zen
-Mode sends one report to the Lab4Code reports inbox at tools.mauroner.net. The
-report contains only:
+Users can start a diagnostic recording for a duration they choose. It records
+up to 800 local events, including guard actions, service status, timing,
+supported app categories, known screen markers, and some rule settings and
+usage state. It does not record screen text, messages, visited addresses, or
+screenshots. The user can stop, review, share, or delete the recording. A new
+recording replaces the previous one.
+
+Users can write a problem report or idea. The report contains:
 
 - whether it is a problem or an idea;
 - the text the user types, and the optional steps or reasons they add;
@@ -67,26 +72,23 @@ report contains only:
 - the Zen Mode version and build number, and the operating system name and
   version (for example, Android 15).
 
-A report never contains rules, blocked apps or websites, usage records,
-settings, accessibility data, browser addresses, or a device or advertising
-identifier. Zen Mode sends a report only when the user taps Send report. It
-does not need an account or a token. Like any website, the server can receive
-ordinary connection data, such as the IP address, when the report arrives.
-Lab4Code uses reports only to fix problems, consider ideas, and reply when an
-email is given. Requests to delete a report can be sent to
-support@lab4code.com. Only release builds can send reports.
+For a problem report, the user can choose to attach the diagnostic recording.
+Zen Mode opens the Android share sheet when the user chooses to share. The user
+chooses the destination. The receiving app or service handles the shared data
+under its own privacy policy.
+
+Earlier app versions can send reports to the Lab4Code reports inbox at
+tools.mauroner.net. Lab4Code uses those reports to fix problems, consider ideas,
+and reply when an email is given. Requests to delete a report can be sent to
+support@lab4code.com.
 
 ## Use and sharing
 
 Zen Mode uses locally processed information to recognize supported surfaces,
 apply the user's rules, show usage and protection status, complete setup, and
-enforce the settings lock. Lab4Code does not receive accessibility content,
-browser addresses, installed-app inventory, rules, or usage records from the
-app.
-
-The app does not include analytics, advertising, or an upload path for guard
-data. Its only app-owned network request is the optional problem report
-described above. The problem report is the only external transmission.
+enforce the settings lock. Diagnostic data leaves the device only when the
+user chooses to share it with another app. Zen Mode does not include analytics
+or advertising.
 
 ## Retention and deletion
 
@@ -102,7 +104,12 @@ storage, or uninstalls the app. More specific behavior is:
 - removing a daily-limit rule does not currently remove that app's saved usage
   field, although it no longer enforces without a rule; and
 - detection summaries and other settings remain until overwritten, app storage
-  is cleared, or the app is uninstalled.
+  is cleared, or the app is uninstalled; and
+- diagnostic recordings remain until the user deletes them, starts a new
+  recording, clears app storage, or uninstalls the app. Cached export files can
+  remain until the user deletes the recording, Android clears the cache, app
+  storage is cleared, or the app is uninstalled. Shared copies are controlled
+  by the receiving app or service.
 
 Zen Mode does not currently have a single in-app erase button. Android's
 **Clear storage** control or uninstalling Zen Mode removes its app-private

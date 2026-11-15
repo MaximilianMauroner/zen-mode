@@ -13,6 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import org.junit.After
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -25,11 +26,69 @@ import java.time.Duration
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 @LooperMode(LooperMode.Mode.PAUSED)
-class XDiagnosticsTest {
+class DiagnosticsTest {
   private val context: Context get() = RuntimeEnvironment.getApplication()
 
+  @After fun clearRecording() = Diagnostics.clear(context)
+
+  @Test fun recordsOnlyDuringTheRequestedInterval() {
+    Diagnostics.record(context, "before", JSONObject(), true)
+    assertEquals("empty", Diagnostics.status(context)["state"])
+    Diagnostics.start(context, true, 2_000L)
+    Diagnostics.record(context, "inside", JSONObject().put("surface", "HOME"), true)
+    ShadowSystemClock.advanceBy(Duration.ofSeconds(2))
+    Diagnostics.record(context, "after", JSONObject(), true)
+    val trace = JSONObject(Diagnostics.status(context)["json"] as String)
+    val events = trace.getJSONArray("events").toString()
+    assertTrue(events.contains("inside"))
+    assertFalse(events.contains("before"))
+    assertFalse(events.contains("after"))
+    assertEquals("complete", Diagnostics.status(context)["state"])
+  }
+
+  @Test fun stopAndClearGiveTheUserControl() {
+    Diagnostics.start(context, true, 60_000L)
+    assertThrows(IllegalStateException::class.java) { Diagnostics.start(context, true, 60_000L) }
+    Diagnostics.finish(context, "user")
+    assertEquals("complete", Diagnostics.status(context)["state"])
+    Diagnostics.clear(context)
+    assertEquals("empty", Diagnostics.status(context)["state"])
+    assertFalse(Diagnostics.isRecording(context))
+  }
+
+  @Test fun interruptedOlderRecordingRemainsAvailable() {
+    Diagnostics.start(context, true, 60_000L)
+    Diagnostics.record(context, "x", JSONObject().put("surface", "HOME"), true)
+    val storage = context.getSharedPreferences("x_diagnostics", Context.MODE_PRIVATE)
+    val olderTrace = JSONObject(storage.getString("trace", null)!!).put("schema", 1)
+    storage.edit().putString("trace", olderTrace.toString()).putBoolean("active", false).commit()
+    val status = Diagnostics.status(context)
+    assertEquals("complete", status["state"])
+    val trace = JSONObject(status["json"] as String)
+    assertEquals("interrupted", trace.getString("endReason"))
+    assertTrue(trace.getJSONArray("events").toString().contains("HOME"))
+  }
+
+  @Test fun rejectsInvalidDurations() {
+    assertThrows(IllegalArgumentException::class.java) { Diagnostics.start(context, true, 0L) }
+    assertThrows(IllegalArgumentException::class.java) { Diagnostics.start(context, true, 3_600_001L) }
+    assertEquals("empty", Diagnostics.status(context)["state"])
+  }
+
+  @Test fun repeatedInterleavedEventsDoNotFillTheRecording() {
+    Diagnostics.start(context, true, 60_000L)
+    repeat(100) {
+      Diagnostics.record(context, "instagram", JSONObject().put("surface", "HOME_FEED"))
+      Diagnostics.record(context, "instagram_action", JSONObject().put("action", "None"))
+    }
+    Diagnostics.finish(context, "user")
+    val trace = JSONObject(Diagnostics.status(context)["json"] as String)
+    assertEquals(3, trace.getJSONArray("events").length())
+    assertEquals(0, trace.getInt("droppedEvents"))
+  }
+
   @Test fun fullRecordingCanBeExportedWithoutExceedingBinderLimit() {
-    XDiagnostics.start(context, true)
+    Diagnostics.start(context, true, 600_000L)
     val data = JSONObject()
       .put("reason", "evaluated").put("surface", "HOME")
       .put("markers", JSONArray().put("scaffold_home_tabbed").put("MainLanding"))
@@ -50,8 +109,8 @@ class XDiagnosticsTest {
     }
     check(storage.edit().putString("trace", trace.toString()).commit())
     ShadowSystemClock.advanceBy(Duration.ofMinutes(10))
-    XDiagnostics.finish(context, "duration")
-    XDiagnostics.share(context)
+    Diagnostics.finish(context, "duration")
+    Diagnostics.share(context)
     val chooser = shadowOf(RuntimeEnvironment.getApplication()).nextStartedActivity
     val parcel = Parcel.obtain()
     try {
@@ -77,27 +136,38 @@ class XDiagnosticsTest {
     assertTrue(chooser.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
     assertEquals("application/json", context.contentResolver.getType(uri))
     val output = context.contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() }
-    assertEquals(XDiagnostics.status(context)["json"], output)
+    assertEquals(Diagnostics.status(context)["json"], output)
     val exported = JSONObject(output)
     assertEquals(800, exported.getJSONArray("events").length())
     assertTrue(exported.has("final"))
     println("X export output: ${output.toByteArray().size} bytes, 800 events, complete JSON")
+
+    Diagnostics.share(context, "Problem: A rule did not run")
+    val reportChooser = shadowOf(RuntimeEnvironment.getApplication()).nextStartedActivity
+    val reportSend = requireNotNull(reportChooser.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java))
+    val reportUri = requireNotNull(reportSend.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java))
+    val report = context.contentResolver.openInputStream(reportUri)!!.bufferedReader().use { JSONObject(it.readText()) }
+    assertEquals("Problem: A rule did not run", report.getString("report"))
+    assertEquals(800, report.getJSONObject("diagnostics").getJSONArray("events").length())
+    assertEquals("Problem: A rule did not run", reportSend.getStringExtra(Intent.EXTRA_TEXT))
+    Diagnostics.clear(context)
+    assertThrows(java.io.FileNotFoundException::class.java) { context.contentResolver.openInputStream(reportUri) }
   }
 
   @Test fun exportRequiresACompletedRecording() {
-    assertThrows(IllegalStateException::class.java) { XDiagnostics.share(context) }
-    XDiagnostics.start(context, true)
-    assertThrows(IllegalStateException::class.java) { XDiagnostics.share(context) }
+    assertThrows(IllegalStateException::class.java) { Diagnostics.share(context) }
+    Diagnostics.start(context, true, 600_000L)
+    assertThrows(IllegalStateException::class.java) { Diagnostics.share(context) }
     assertNull(shadowOf(RuntimeEnvironment.getApplication()).nextStartedActivity)
-    XDiagnostics.finish(context, "test")
+    Diagnostics.finish(context, "test")
   }
 
   @Test fun recordingEndsAtDeadlineAndDoesNotRecordLaterEvents() {
-    XDiagnostics.start(context, true)
-    XDiagnostics.record(context, "test", JSONObject().put("value", 1), true)
+    Diagnostics.start(context, true, 600_000L)
+    Diagnostics.record(context, "test", JSONObject().put("value", 1), true)
     ShadowSystemClock.advanceBy(Duration.ofMinutes(10))
-    XDiagnostics.record(context, "late", JSONObject(), true)
-    val status = XDiagnostics.status(context)
+    Diagnostics.record(context, "late", JSONObject(), true)
+    val status = Diagnostics.status(context)
     assertEquals("complete", status["state"])
     val report = JSONObject(status["json"] as String)
     assertTrue(report.has("final"))
@@ -108,21 +178,21 @@ class XDiagnosticsTest {
 
   @Test fun rebootEndsTheRecordingEvenWhenElapsedTimeIsAmbiguous() {
     Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 7)
-    XDiagnostics.start(context, true)
+    Diagnostics.start(context, true, 600_000L)
     Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 8)
-    assertEquals("complete", XDiagnostics.status(context)["state"])
+    assertEquals("complete", Diagnostics.status(context)["state"])
   }
 
   @Test fun recordingIsBoundedAndRestartReplacesIt() {
-    XDiagnostics.start(context, false)
-    repeat(810) { XDiagnostics.record(context, "test", JSONObject().put("index", it), true) }
-    XDiagnostics.finish(context, "test")
-    val report = JSONObject(XDiagnostics.status(context)["json"] as String)
+    Diagnostics.start(context, false, 600_000L)
+    repeat(810) { Diagnostics.record(context, "test", JSONObject().put("index", it), true) }
+    Diagnostics.finish(context, "test")
+    val report = JSONObject(Diagnostics.status(context)["json"] as String)
     assertEquals(800, report.getJSONArray("events").length())
     assertEquals(11, report.getInt("droppedEvents"))
-    XDiagnostics.start(context, true)
-    XDiagnostics.finish(context, "test")
-    val replacement = JSONObject(XDiagnostics.status(context)["json"] as String)
+    Diagnostics.start(context, true, 600_000L)
+    Diagnostics.finish(context, "test")
+    val replacement = JSONObject(Diagnostics.status(context)["json"] as String)
     assertEquals(1, replacement.getJSONArray("events").length())
     assertEquals(0, replacement.getInt("droppedEvents"))
   }

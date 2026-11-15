@@ -204,7 +204,7 @@ internal class XOwner(
           }
           target = candidate.parent
         }
-        runCatching { XDiagnostics.record(service, "video_action", JSONObject().put("clickedBack", leftVideo), true) }
+        runCatching { Diagnostics.record(service, "video_action", JSONObject().put("clickedBack", leftVideo), true) }
         if (leftVideo) {
           val callbackKey = event?.eventTime?.toString() ?: SystemClock.elapsedRealtime().toString()
           recordXVideoStats(callbackKey, EnforcementStatsOutcome.SUCCESS)
@@ -222,7 +222,7 @@ internal class XOwner(
 
   private fun trace(reason: String, surface: XSurface? = null, nodes: List<NodeSignal> = emptyList(), action: XAction? = null, pager: Boolean = false, advanced: Boolean = false, eventType: Int? = null) {
     runCatching {
-      if (!XDiagnostics.isRecording(service)) return
+      if (!Diagnostics.isRecording(service)) return
       val runtime = lastPublishedRuntime
       val markers = setOf("scaffold_home_tabbed", "Search", "PostDetail", "MainLanding", "VideoTab")
       val data = JSONObject().put("reason", reason).put("surface", surface?.name ?: "unobserved")
@@ -236,7 +236,7 @@ internal class XOwner(
         .put("usageState", runtime?.usageState?.name ?: "UNKNOWN").put("lockoutState", runtime?.lockoutState?.name ?: "UNKNOWN")
         .put("storageState", runtime?.storageState?.name ?: "UNKNOWN").put("blockedUntilElapsedMs", runtime?.blockedUntilElapsedMs ?: JSONObject.NULL)
         .put("freshObservationRequired", policy.requiresFreshHomeObservation())
-      XDiagnostics.record(service, "x", data)
+      Diagnostics.record(service, "x", data)
     }
   }
 

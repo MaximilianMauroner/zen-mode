@@ -1,13 +1,14 @@
-import { useState } from 'react';
-import { Platform, Text, TextInput, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { Platform, Pressable, Share, Text, TextInput, View } from 'react-native';
 import Constants from 'expo-constants';
-import { Redirect, router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 
-import { PrimaryButton } from '@/components/ui/button';
+import { PrimaryButton, SecondaryButton } from '@/components/ui/button';
 import { SectionLabel } from '@/components/ui/card';
 import { ChoiceCard } from '@/components/ui/choice';
 import { ErrorNote, Screen, ScreenHeader } from '@/components/ui/screen';
-import { EMAIL_LIMIT, REPORT_LIMIT, sendReport, type ReportDraft, type ReportKind, type ReportOutcome, type ReportRejection } from '@/features/feedback/reports';
+import { checkReport, EMAIL_LIMIT, formatReport, REPORT_LIMIT, type ReportDraft, type ReportKind, type ReportRejection } from '@/features/feedback/reports';
+import { getDiagnostics, shareDiagnostics, type DiagnosticRecording } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
 
 const FIELDS = {
@@ -16,39 +17,57 @@ const FIELDS = {
 } as const;
 
 const REJECTED = {
-  unknown_app: 'This version cannot send reports. Update Zen Mode.',
-  invalid_kind: 'Choose Problem or Idea.',
   empty_message: 'Write what happened or what you want.',
   message_too_long: 'Make the message shorter.',
   details_too_long: 'Make the details shorter.',
   invalid_email: 'Enter a valid email address, or leave it empty.',
-  unknown: 'The report was not accepted. Check the text and try again.',
 } as const satisfies Record<ReportRejection, string>;
-
-const FAILED = {
-  offline: 'No connection. Check your network and try again.',
-  timeout: 'No answer from the server. Try again in a moment.',
-  'rate-limited': 'Too many reports. Try again in a few minutes.',
-  failed: 'The report was not sent. Try again later.',
-} as const satisfies Record<Exclude<ReportOutcome['kind'], 'sent' | 'rejected'>, string>;
 
 const empty = (kind: ReportKind): ReportDraft => ({ kind, message: '', details: '', contactEmail: '' });
 
 export default function ReportScreen() {
   const [draft, setDraft] = useState<ReportDraft>(() => empty('bug'));
-  const [sending, setSending] = useState(false);
-  const [outcome, setOutcome] = useState<ReportOutcome | null>(null);
-  if (!sendReport) return <Redirect href="/settings" />;
-  const send = sendReport;
-  const edit = (change: Partial<ReportDraft>) => { setDraft({ ...draft, ...change }); setOutcome(null); };
+  const [recording, setRecording] = useState<DiagnosticRecording>({ state: 'empty' });
+  const [includeRecording, setIncludeRecording] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    setIncludeRecording(false);
+    const refresh = async () => {
+      try {
+        const result = await getDiagnostics();
+        if (!active) return;
+        setRecording(result);
+        if (result.state === 'recording') timer = setTimeout(refresh, 1000);
+      } catch {
+        if (active) setError('Could not read the diagnostic recording.');
+      }
+    };
+    if (Platform.OS === 'android') void refresh();
+    return () => { active = false; clearTimeout(timer); };
+  }, []));
+
+  const edit = (change: Partial<ReportDraft>) => { setDraft({ ...draft, ...change }); setError(null); };
   const submit = async () => {
-    if (sending) return;
-    setSending(true);
-    setOutcome(null);
-    const result = await send(draft, { constants: Constants, platform: Platform });
-    setSending(false);
-    setOutcome(result);
-    if (result.kind === 'sent') setDraft(empty(draft.kind));
+    if (sharing) return;
+    const rejection = checkReport(draft);
+    if (rejection) { setError(REJECTED[rejection]); return; }
+    setSharing(true);
+    setError(null);
+    try {
+      const text = formatReport(draft, { constants: Constants, platform: Platform });
+      if (draft.kind === 'bug' && includeRecording && recording.state === 'complete') {
+        await shareDiagnostics(text);
+      } else {
+        await Share.share({ message: text });
+      }
+    } catch {
+      setError('Could not open the share sheet. Try again.');
+    } finally {
+      setSharing(false);
+    }
   };
   const fields = FIELDS[draft.kind];
 
@@ -58,21 +77,29 @@ export default function ReportScreen() {
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">What is it about?</Text>
         <View accessibilityRole="radiogroup" className="gap-2">
-          <ChoiceCard title="Problem" detail="Something does not work as it should." selected={draft.kind === 'bug'} disabled={sending} onPress={() => edit({ kind: 'bug' })} />
-          <ChoiceCard title="Idea" detail="Something Zen Mode could do for you." selected={draft.kind === 'feature'} disabled={sending} onPress={() => edit({ kind: 'feature' })} />
+          <ChoiceCard title="Problem" detail="Something does not work as it should." selected={draft.kind === 'bug'} disabled={sharing} onPress={() => edit({ kind: 'bug' })} />
+          <ChoiceCard title="Idea" detail="Something Zen Mode could do for you." selected={draft.kind === 'feature'} disabled={sharing} onPress={() => edit({ kind: 'feature' })} />
         </View>
       </View>
       <View className="gap-4">
-        <Field label={fields.message.label} hint={fields.message.hint} value={draft.message} disabled={sending} onChange={(message) => edit({ message })} />
-        <Field label={fields.details.label} hint={fields.details.hint} value={draft.details} disabled={sending} onChange={(details) => edit({ details })} />
-        <Field label="Email for a reply" hint="Optional" value={draft.contactEmail} disabled={sending} onChange={(contactEmail) => edit({ contactEmail })} email />
-        <Text className="text-support text-muted">Sends only what you type, the app version, and the Android version. Never your rules, apps, sites, or usage.</Text>
-        <PrimaryButton title={sending ? 'Sending…' : 'Send report'} disabled={sending || !draft.message.trim()} onPress={() => void submit()} />
-        {outcome?.kind === 'sent' ? (
-          <Text accessibilityLiveRegion="polite" className="text-support font-medium text-accent">Thank you. Your report was sent.</Text>
-        ) : outcome ? (
-          <ErrorNote message={outcome.kind === 'rejected' ? REJECTED[outcome.reason] : FAILED[outcome.kind]} />
+        <Field label={fields.message.label} hint={fields.message.hint} value={draft.message} disabled={sharing} onChange={(message) => edit({ message })} />
+        <Field label={fields.details.label} hint={fields.details.hint} value={draft.details} disabled={sharing} onChange={(details) => edit({ details })} />
+        <Field label="Email for a reply" hint="Optional" value={draft.contactEmail} disabled={sharing} onChange={(contactEmail) => edit({ contactEmail })} email />
+        {draft.kind === 'bug' && Platform.OS === 'android' ? (
+          <View className="gap-3">
+            <Pressable accessibilityRole="checkbox" accessibilityLabel="Include diagnostic recording" accessibilityState={{ checked: includeRecording && recording.state === 'complete', disabled: sharing || recording.state !== 'complete' }} disabled={sharing || recording.state !== 'complete'} onPress={() => setIncludeRecording(!includeRecording)} className="min-h-[48px] flex-row items-center gap-3">
+              <View className={`h-6 w-6 items-center justify-center rounded border ${includeRecording && recording.state === 'complete' ? 'border-accent bg-accent' : 'border-muted'}`}>
+                {includeRecording && recording.state === 'complete' ? <Text className="font-bold text-onAccent">✓</Text> : null}
+              </View>
+              <Text className="flex-1 text-copy">Include diagnostic recording</Text>
+            </Pressable>
+            <Text className="text-support text-muted">{recording.state === 'complete' ? 'Review the recording before you share it.' : recording.state === 'recording' ? 'Stop the recording or wait for it to finish.' : 'No recording is saved yet.'}</Text>
+            <SecondaryButton title="Record or review diagnostics" disabled={sharing} onPress={() => router.navigate('/diagnostics')} />
+          </View>
         ) : null}
+        <Text className="text-support text-muted">Choose where to send your report in the share sheet. To contact the developer, use support@lab4code.com. The report includes your text and app and Android versions.</Text>
+        <PrimaryButton title={sharing ? 'Opening share sheet…' : 'Share report'} disabled={sharing || !draft.message.trim()} onPress={() => void submit()} />
+        {error ? <ErrorNote message={error} /> : null}
       </View>
     </Screen>
   );

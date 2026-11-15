@@ -53,6 +53,11 @@ export type EnforcementStats = {
   lastEventAt: number;
 };
 
+export type DiagnosticRecording =
+  | { state: 'empty' }
+  | { state: 'recording'; remainingSeconds: number }
+  | { state: 'complete'; json: string };
+
 export type AdultSiteSettings = {
   available: boolean;
   enabled: boolean;
@@ -96,9 +101,11 @@ export type EarnRule = InstalledApp & {
 
 declare class ZenGuardModule extends NativeModule<{}> {
   getStatus(): Promise<ZenGuardStatus>;
-  startXDiagnostics(): Promise<void>;
-  shareXDiagnostics(): Promise<void>;
-  getXDiagnostics(): Promise<{ state: 'empty' | 'recording' | 'complete'; json?: string }>;
+  startDiagnostics(durationSeconds: number): Promise<void>;
+  stopDiagnostics(): Promise<void>;
+  clearDiagnostics(): Promise<void>;
+  shareDiagnostics(reportText: string): Promise<void>;
+  getDiagnostics(): Promise<DiagnosticRecording>;
   getEnforcementStats(): Promise<EnforcementStats>;
   openAccessibilitySettings(): Promise<void>;
   openYouTube(): Promise<void>;

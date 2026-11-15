@@ -105,19 +105,7 @@ weight here, check the overlays for the same change.
 
 ## Problem reports
 
-Settings has **Report a problem or idea** in About. The screen sends one report
-to the Lab4Code reports inbox when the person taps Send report.
+Problem and idea reports use the phone's share sheet. A person can review a
+diagnostic recording and choose whether to include it with a problem report.
 
-- A report holds the kind, the typed text, an optional email for a reply, the
-  app version and build, and the OS name and version.
-- A report never holds rules, chosen apps or sites, usage, settings, or a
-  device identifier.
-- The app checks the report with the inbox rules before it sends. It shows
-  its own text for each result, never the text of the server.
-- Only release builds have the inbox address. Development builds and the web
-  preview do not show the screen.
-
-Reason: the developer needs to hear about problems, and Zen Mode has no
-account or analytics. A report that holds only typed text keeps the promise
-that guard data stays on the device. A development build must never write
-test reports into the real inbox.
+Reason: people should control what they share. Zen Mode has no analytics.

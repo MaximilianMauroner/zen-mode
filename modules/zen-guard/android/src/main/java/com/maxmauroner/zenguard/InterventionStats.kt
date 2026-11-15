@@ -1,6 +1,9 @@
 package com.maxmauroner.zenguard
 
-internal class InterventionStats(private var store: EnforcementStatsStore?) {
+internal class InterventionStats(
+  private var store: EnforcementStatsStore?,
+  private val onRecord: (EnforcementReason, EnforcementStatsOutcome) -> Unit = { _, _ -> },
+) {
   private var actionSequence = 0L
   private val dedupeKeys = mutableMapOf<EnforcementReason, String>()
 
@@ -14,6 +17,7 @@ internal class InterventionStats(private var store: EnforcementStatsStore?) {
     dedupeKey: String? = null,
     durableActionKey: String? = null,
   ): Boolean {
+    runCatching { onRecord(reason, outcome) }
     if (outcome != EnforcementStatsOutcome.SUCCESS) return false
     if (dedupeKey != null && dedupeKeys[reason] == dedupeKey) return false
     if (dedupeKey != null) dedupeKeys[reason] = dedupeKey

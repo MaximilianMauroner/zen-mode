@@ -37,6 +37,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowWindowManagerImpl
+import org.json.JSONObject
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -76,6 +77,22 @@ class InstagramConnectionServiceTest {
   @After fun tearDown() {
     controller.destroy()
     HomeFeedStatusFailureRegistry.clearForTests()
+  }
+
+  @Test fun `diagnostics record Instagram decisions without screen text`() {
+    Diagnostics.start(context, true, 60_000L)
+    try {
+      showRoot(node(INSTAGRAM, "explore_grid").apply { text = "private Instagram text" })
+      deliver()
+      Diagnostics.finish(context, "user")
+      val recording = Diagnostics.status(context)["json"] as String
+      val events = JSONObject(recording).getJSONArray("events")
+      assertTrue((0 until events.length()).any { events.getJSONObject(it).optString("kind") == "instagram" && events.getJSONObject(it).getJSONObject("data").optString("surface") == "EXPLORE" })
+      assertTrue((0 until events.length()).any { events.getJSONObject(it).optString("kind") == "instagram_action" })
+      assertFalse(recording.contains("private Instagram text"))
+    } finally {
+      Diagnostics.clear(context)
+    }
   }
 
   @Test fun `another connection retains Messages retries and the original suppression deadline`() {

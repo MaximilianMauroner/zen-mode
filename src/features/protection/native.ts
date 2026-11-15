@@ -1,11 +1,13 @@
-import ZenGuardModule, { type AdultSiteSettings, type AppLimit, type EarnRule, type EnforcementStats, type InstalledApp, type IntentApp, type RollingLimit, type ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
+import ZenGuardModule, { type AdultSiteSettings, type AppLimit, type DiagnosticRecording, type EarnRule, type EnforcementStats, type InstalledApp, type IntentApp, type RollingLimit, type ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
 import { getAddDomainErrorMessage } from './site-rule-errors';
 
-export type { AdultSiteSettings, AppLimit, EarnRule, EnforcementStats, InstalledApp, IntentApp, RollingLimit, ZenGuardStatus };
+export type { AdultSiteSettings, AppLimit, DiagnosticRecording, EarnRule, EnforcementStats, InstalledApp, IntentApp, RollingLimit, ZenGuardStatus };
 
-export const startXDiagnostics = () => ZenGuardModule.startXDiagnostics();
-export const getXDiagnostics = () => ZenGuardModule.getXDiagnostics();
-export const shareXDiagnostics = () => ZenGuardModule.shareXDiagnostics();
+export const startDiagnostics = (durationSeconds: number) => ZenGuardModule.startDiagnostics(durationSeconds);
+export const stopDiagnostics = () => ZenGuardModule.stopDiagnostics();
+export const clearDiagnostics = () => ZenGuardModule.clearDiagnostics();
+export const getDiagnostics = () => ZenGuardModule.getDiagnostics();
+export const shareDiagnostics = (reportText = '') => ZenGuardModule.shareDiagnostics(reportText);
 export const getZenGuardStatus = () => ZenGuardModule.getStatus();
 export const getEnforcementStats = () => ZenGuardModule.getEnforcementStats();
 export const openAccessibilitySettings = () => ZenGuardModule.openAccessibilitySettings();

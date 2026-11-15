@@ -80,17 +80,25 @@ class ZenGuardModule : Module() {
       )
     }
 
-    AsyncFunction("startXDiagnostics") {
+    AsyncFunction("startDiagnostics") { durationSeconds: Int ->
       val context = requireNotNull(appContext.reactContext)
-      XDiagnostics.start(context, isServiceEnabled(context))
+      Diagnostics.start(context, isServiceEnabled(context), durationSeconds.toLong() * 1_000L)
     }.runOnQueue(Queues.MAIN)
 
-    AsyncFunction("shareXDiagnostics") {
-      XDiagnostics.share(requireNotNull(appContext.reactContext))
+    AsyncFunction("stopDiagnostics") {
+      Diagnostics.finish(requireNotNull(appContext.reactContext), "user")
+    }.runOnQueue(Queues.MAIN)
+
+    AsyncFunction("clearDiagnostics") {
+      Diagnostics.clear(requireNotNull(appContext.reactContext))
+    }.runOnQueue(Queues.MAIN)
+
+    AsyncFunction("shareDiagnostics") { reportText: String ->
+      Diagnostics.share(requireNotNull(appContext.reactContext), reportText)
     }
 
-    AsyncFunction("getXDiagnostics") {
-      XDiagnostics.status(requireNotNull(appContext.reactContext))
+    AsyncFunction("getDiagnostics") {
+      Diagnostics.status(requireNotNull(appContext.reactContext))
     }.runOnQueue(Queues.MAIN)
 
     AsyncFunction("getEnforcementStats") {

@@ -38,7 +38,13 @@ internal class BrowserIntervention(
     }
     val root = observedRoot ?: browserRoot(browserPackage) ?: return
     if (root.packageName?.toString() != browserPackage) return
-    val detection = BrowserUrlDetector.detect(browserPackage, browserAddressBars(root, browserPackage)) ?: return
+    val detection = BrowserUrlDetector.detect(browserPackage, browserAddressBars(root, browserPackage))
+    runCatching {
+      if (Diagnostics.isRecording(service)) Diagnostics.record(service, "browser", org.json.JSONObject()
+        .put("addressObserved", detection != null)
+        .put("blocked", detection != null && AdultSitePolicy.isBlocked(detection.host, adultSiteStore.customHosts())))
+    }
+    if (detection == null) return
     adultSiteStore.recordBrowserSignal(detection.browserMask)
     if (!AdultSitePolicy.isBlocked(detection.host, adultSiteStore.customHosts())) {
       if (active?.browserPackage == browserPackage) end()

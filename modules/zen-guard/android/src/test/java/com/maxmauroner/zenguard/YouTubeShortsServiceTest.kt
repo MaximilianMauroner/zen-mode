@@ -12,6 +12,7 @@ import android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK
 import android.view.accessibility.AccessibilityWindowInfo
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -28,6 +29,7 @@ import org.robolectric.annotation.Implements
 import org.robolectric.annotation.LooperMode
 import org.robolectric.annotation.RealObject
 import org.robolectric.shadows.ShadowAccessibilityNodeInfo
+import org.json.JSONObject
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], shadows = [YouTubeShortsServiceTest.ShortsNodeShadow::class])
@@ -71,7 +73,27 @@ class YouTubeShortsServiceTest {
 
   @After fun tearDown() {
     controller.destroy()
+    Diagnostics.clear(context)
     HomeFeedStatusFailureRegistry.clearForTests()
+  }
+
+  @Test fun `diagnostics record guard decisions without screen text or other app names`() {
+    val tree = shortsTree()
+    tree.page.text = "private video text"
+    showRoot(tree.root)
+    Diagnostics.start(context, true, 60_000L)
+    controller.get().onAccessibilityEvent(event(TYPE_WINDOW_CONTENT_CHANGED, null))
+    showRoot(AccessibilityNodeInfo.obtain().apply {
+      packageName = "private.example.app"
+      isVisibleToUser = true
+    })
+    controller.get().onAccessibilityEvent(event(TYPE_WINDOW_STATE_CHANGED, null, packageName = "private.example.app"))
+    Diagnostics.finish(context, "user")
+    val recording = Diagnostics.status(context)["json"] as String
+    val events = JSONObject(recording).getJSONArray("events")
+    assertTrue((0 until events.length()).any { events.getJSONObject(it).optString("kind") == "youtube" && events.getJSONObject(it).getJSONObject("data").optBoolean("shorts") })
+    assertFalse(recording.contains("private video text"))
+    assertFalse(recording.contains("private.example.app"))
   }
 
   @Test fun `metadata-free pager advance requests Home only after settlement without counting an exit`() {

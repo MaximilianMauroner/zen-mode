@@ -33,13 +33,20 @@ export default function ReportScreen() {
   const [error, setError] = useState<string | null>(null);
   useFocusEffect(useCallback(() => {
     let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     setIncludeRecording(false);
-    if (Platform.OS === 'android') {
-      void getDiagnostics().then((result) => { if (active) setRecording(result); }).catch(() => {
+    const refresh = async () => {
+      try {
+        const result = await getDiagnostics();
+        if (!active) return;
+        setRecording(result);
+        if (result.state === 'recording') timer = setTimeout(refresh, 1000);
+      } catch {
         if (active) setError('Could not read the diagnostic recording.');
-      });
-    }
-    return () => { active = false; };
+      }
+    };
+    if (Platform.OS === 'android') void refresh();
+    return () => { active = false; clearTimeout(timer); };
   }, []));
 
   const edit = (change: Partial<ReportDraft>) => { setDraft({ ...draft, ...change }); setError(null); };

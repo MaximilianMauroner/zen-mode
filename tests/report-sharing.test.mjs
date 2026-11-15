@@ -19,6 +19,8 @@ async function report(recording = { state: 'complete', json: '{"events":[]}' }, 
   const values = [];
   let focus;
   let cursor = 0;
+  let nextTimer = 0;
+  const timers = new Map();
   const shares = [];
   const hooks = {
     useState(initial) {
@@ -44,13 +46,21 @@ async function report(recording = { state: 'complete', json: '{"events":[]}' }, 
   const source = readFileSync(new URL('../src/app/report.tsx', import.meta.url), 'utf8');
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } });
   const module = { exports: {} };
-  vm.runInNewContext(outputText, { exports: module.exports, require: (name) => imports[name] ?? new Proxy({}, { get: (_, key) => `${name}:${String(key)}` }) });
+  vm.runInNewContext(outputText, {
+    exports: module.exports,
+    require: (name) => imports[name] ?? new Proxy({}, { get: (_, key) => `${name}:${String(key)}` }),
+    setTimeout: (callback) => { const id = ++nextTimer; timers.set(id, callback); return id; },
+    clearTimeout: (id) => timers.delete(id),
+  });
   const render = () => { cursor = 0; return module.exports.default(); };
   render();
-  focus();
+  const blur = focus();
   await new Promise(setImmediate);
   return {
     find: (predicate) => find(render(), predicate),
+    finishRecording: () => { recording = { state: 'complete', json: '{"events":[]}' }; },
+    tick: () => { const callbacks = [...timers.values()]; timers.clear(); callbacks.forEach((callback) => callback()); },
+    blur,
     shares,
   };
 }
@@ -84,6 +94,29 @@ test('checking a completed recording attaches it to the problem report', async (
 
 test('a recording in progress cannot be attached', async () => {
   const view = await report({ state: 'recording', remainingSeconds: 10 });
+  assert.equal(checkbox(view).props.disabled, true);
+});
+
+test('a recording that finishes while the report is open can be attached', async () => {
+  const view = await report({ state: 'recording', remainingSeconds: 1 });
+  assert.equal(checkbox(view).props.disabled, true);
+  view.finishRecording();
+  view.tick();
+  await new Promise(setImmediate);
+  assert.equal(checkbox(view).props.disabled, false);
+  field(view).props.onChange('The rule did not run.');
+  checkbox(view).props.onPress();
+  submit(view).props.onPress();
+  await new Promise(setImmediate);
+  assert.equal(view.shares[0].kind, 'attachment');
+});
+
+test('leaving the report stops checking for a finished recording', async () => {
+  const view = await report({ state: 'recording', remainingSeconds: 1 });
+  view.blur();
+  view.finishRecording();
+  view.tick();
+  await new Promise(setImmediate);
   assert.equal(checkbox(view).props.disabled, true);
 });
 

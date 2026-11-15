@@ -8,10 +8,14 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
+import org.json.JSONObject
 
 class ZenGuardAccessibilityService : AccessibilityService() {
   private lateinit var preferences: ZenGuardPreferences
-  private val stats = InterventionStats(null)
+  private val stats = InterventionStats(null) { reason, outcome ->
+    if (Diagnostics.isRecording(this)) Diagnostics.record(this, "intervention", JSONObject()
+      .put("reason", reason.key).put("outcome", outcome.name))
+  }
   private val youtube: YouTubeOwner = YouTubeOwner(this, stats, canEnforce = {
     !wholeApp.hasRequestedCard && canRunEnforcementAction()
   })
@@ -53,7 +57,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
 
   override fun onServiceConnected() {
     super.onServiceConnected()
-    runCatching { XDiagnostics.service(this, true, "connected") }
+    runCatching { Diagnostics.service(this, true, "connected") }
     preferences = ZenGuardPreferences(this)
     stats.replaceStore(
       try {
@@ -95,8 +99,14 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   override fun onAccessibilityEvent(event: AccessibilityEvent?) {
     if (!::preferences.isInitialized || event == null) return
     if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-      val foreground = when (event.packageName?.toString()) { X_PACKAGE -> "x"; packageName -> "zen"; else -> "other" }
-      runCatching { XDiagnostics.record(this, "foreground", org.json.JSONObject().put("app", foreground)) }
+      val foreground = when (val name = event.packageName?.toString()) {
+        X_PACKAGE -> "x"
+        YOUTUBE_PACKAGE -> "youtube"
+        INSTAGRAM_PACKAGE -> "instagram"
+        packageName -> "zen"
+        else -> if (BrowserUrlDetector.supports(name)) "browser" else "other"
+      }
+      runCatching { Diagnostics.record(this, "foreground", JSONObject().put("app", foreground)) }
     }
     if (!hasActiveProtection()) {
       clearInactiveProtection()
@@ -166,7 +176,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   }
 
   override fun onInterrupt() {
-    runCatching { XDiagnostics.service(this, true, "interrupt") }
+    runCatching { Diagnostics.service(this, true, "interrupt") }
     wholeApp.closeAppRuleOverlay()
     browserIntervention?.end()
     x.pause()
@@ -176,7 +186,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   }
 
   override fun onDestroy() {
-    runCatching { XDiagnostics.service(this, false, "destroy") }
+    runCatching { Diagnostics.service(this, false, "destroy") }
     wholeApp.cancelVisitDeadline()
     browserIntervention?.end()
     youtube.destroy()

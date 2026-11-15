@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { RefreshControl, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Platform, RefreshControl, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 
@@ -8,12 +8,11 @@ import { Row, RowGroup } from '@/components/ui/card';
 import { GuardNotes } from '@/components/ui/guard-notes';
 import { Screen, ScreenHeader } from '@/components/ui/screen';
 import { useWeakeningGate, WeakeningGateDialog } from '@/components/ui/weakening-gate';
-import { sendReport } from '@/features/feedback/reports';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { authorizeWeakening } from '@/features/protection/authorize-weakening';
 import { actionFailure, IDLE_ACTION, isReading, readValue, RUNNING_ACTION, type ActionState } from '@/features/protection/control-state';
 import { useGuardStatusFocus, useSharedGuardStatus } from '@/features/protection/guard-status-context';
-import { getXDiagnostics, startXDiagnostics, shareXDiagnostics, getZenGuardStatus, openAccessibilitySettings, openInstagram, openYouTube, openX, setNativeProtectionEnabled } from '@/features/protection/native';
+import { getZenGuardStatus, openAccessibilitySettings, openInstagram, openYouTube, openX, setNativeProtectionEnabled } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
 
 /** System controls stay separate from feed settings and whole-app budgets. */
@@ -26,14 +25,6 @@ export default function SettingsScreen() {
   const busy = action.kind === 'running';
   const busyRef = useRef(false);
   const gate = useWeakeningGate();
-  const [diagnostic, setDiagnostic] = useState<{ state: 'empty' | 'recording' | 'complete'; json?: string }>({ state: 'empty' });
-  const refreshDiagnostic = useCallback(async () => setDiagnostic(await getXDiagnostics()), []);
-  useEffect(() => {
-    if (!status?.available) return;
-    void getXDiagnostics().then(setDiagnostic).catch(() => {});
-    const timer = setInterval(() => { void refreshDiagnostic().catch(() => {}); }, 5000);
-    return () => clearInterval(timer);
-  }, [refreshDiagnostic, status?.available]);
   const runAction = (task: () => Promise<void>) => {
     if (busyRef.current) return;
     busyRef.current = true;
@@ -95,19 +86,13 @@ export default function SettingsScreen() {
         </RowGroup>
       </View>
       <View className="gap-3">
-        <Text accessibilityRole="header" className="text-title font-semibold text-copy">X diagnostics</Text>
-        <Text className="text-copy">Record for 10 minutes while you use X. The report includes rule settings, timing, service events and known screen markers. It does not include post text, messages or screenshots. A new recording replaces the previous report.</Text>
-        <Text className="text-copy">{diagnostic.state === 'recording' ? 'Recording. It stops after 10 minutes.' : diagnostic.state === 'complete' ? 'Recording complete. Share the JSON report when ready.' : 'No recording yet.'}</Text>
-        <SecondaryButton title="Start 10-minute recording" disabled={disabled || diagnostic.state === 'recording'} onPress={() => runAction(async () => { await startXDiagnostics(); await refreshDiagnostic(); })} />
-        {diagnostic.state === 'complete' && diagnostic.json ? <SecondaryButton title="Share diagnostic report" disabled={busy} onPress={() => runAction(shareXDiagnostics)} /> : null}
-      </View>
-      <View className="gap-3">
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">About</Text>
         <RowGroup>
           <Row label="Zen Mode" detail="Version installed on this device" value={Constants.expoConfig?.version ?? 'Unknown'} />
           <Row label="View statistics" disabled={busy} onPress={() => router.navigate('/stats')} />
           <Row label="Privacy" disabled={busy} onPress={() => router.navigate('/privacy')} />
-          {sendReport ? <Row label="Report a problem or idea" disabled={busy} onPress={() => router.navigate('/report')} /> : null}
+          {Platform.OS === 'android' ? <Row label="Diagnostic recording" detail="Record and review local guard events" disabled={busy} onPress={() => router.navigate('/diagnostics')} /> : null}
+          <Row label="Report a problem or idea" disabled={busy} onPress={() => router.navigate('/report')} />
         </RowGroup>
       </View>
       <View className="gap-3">

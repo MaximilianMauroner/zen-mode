@@ -9,6 +9,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import org.json.JSONObject
 
 internal class YouTubeOwner(
   private val service: AccessibilityService,
@@ -50,6 +51,12 @@ internal class YouTubeOwner(
     observeHome(screen)
     val nodes = snapshotNodeSignals(root)
     val result = ShortsDetector.detect(nodes)
+    runCatching {
+      if (Diagnostics.isRecording(service)) Diagnostics.record(service, "youtube", JSONObject()
+        .put("surface", screen.surface.name).put("shorts", result.isShortsViewer).put("reason", result.reason)
+        .put("observationMode", preferences.observationMode).put("shortsEnabled", preferences.shortsEnabled)
+        .put("homeEnabled", preferences.youtubeHomeEnabled).put("homeObserved", preferences.youtubeHomeObserved))
+    }
     if (!result.isShortsViewer) {
       exitResult.confirmed(screen.surface, SystemClock.elapsedRealtime())?.let { exit ->
         recordYouTubeShortsStats(exit.pageIndex, EnforcementStatsOutcome.SUCCESS)
@@ -87,7 +94,9 @@ internal class YouTubeOwner(
       // Back/Home can put Premium Shorts into PiP. Use YouTube's own Home tab instead.
       val tabs = root.findAccessibilityNodeInfosByViewId("$YOUTUBE_PACKAGE:id/pivot_bar").firstOrNull()
       val homeTab = tabs?.getChild(0)?.getChild(0)
-      if (homeTab?.isClickable == true && homeTab.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+      val clicked = homeTab?.isClickable == true && homeTab.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+      runCatching { Diagnostics.record(service, "youtube_action", JSONObject().put("action", "leave_shorts").put("clicked", clicked), true) }
+      if (clicked) {
         exitResult.requested(policy.pendingExitPageIndex(), SystemClock.elapsedRealtime())
       }
     }
@@ -142,7 +151,8 @@ internal class YouTubeOwner(
       return DeadlineDecision.Cancel
     }
     homeAttemptedVisit = visit
-    screen.subscriptions?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    val clicked = screen.subscriptions?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+    runCatching { Diagnostics.record(service, "youtube_action", JSONObject().put("action", "leave_home").put("clicked", clicked), true) }
     return DeadlineDecision.Complete
   }
 

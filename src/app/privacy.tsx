@@ -6,7 +6,6 @@ import { SecondaryButton } from '@/components/ui/button';
 import { ErrorNote, Screen, ScreenHeader } from '@/components/ui/screen';
 import { openPrivacyPolicy } from '@/features/privacy/policy';
 import { getActionError } from '@/features/action-error';
-import { sendReport } from '@/features/feedback/reports';
 
 export default function PrivacyScreen() {
   const [error, setError] = useState('');
@@ -35,7 +34,8 @@ export default function PrivacyScreen() {
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">Your controls</Text>
         <Text className="text-body text-muted">You can turn off Zen Mode in Android Accessibility settings at any time. Clear storage for Zen Mode in Android settings or uninstall it to remove its local data. Zen Mode opts out of Android cloud backup. Device-to-device transfer behavior can still depend on the device manufacturer.</Text>
-        {sendReport ? <Text className="text-body text-muted">Report a problem or idea sends only what you type, your optional email, the app version and build, and the Android version to Lab4Code. It never sends your rules, apps, sites, usage, or device identifiers. Nothing is sent until you tap Send report.</Text> : null}
+        <Text className="text-body text-muted">You can start a diagnostic recording to capture guard events and settings for a limited time. You can review or delete it, and choose whether to include it with a problem report. Zen Mode opens the share sheet only when you choose to share.</Text>
+        <Text className="text-body text-muted">Reports include the text you enter, your optional email, and the app and Android versions. Choose a recipient in the share sheet. Zen Mode has no analytics.</Text>
         <Text className="text-body text-muted">Zen Mode is provided by Maximilian Mauroner (Lab4Code), Italy. Privacy and support: support@lab4code.com</Text>
         <ErrorNote message={error} />
         <SecondaryButton title={busy ? 'Opening…' : 'Read the privacy policy'} disabled={busy} onPress={openPolicy} />

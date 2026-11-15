@@ -142,6 +142,11 @@ internal class InstagramOwner(
     if (root.packageName?.toString() != INSTAGRAM_PACKAGE) return
     val nodes = snapshotNodeSignals(root)
     val detection = InstagramDetector.detect(nodes)
+    runCatching {
+      if (Diagnostics.isRecording(service)) Diagnostics.record(service, "instagram", org.json.JSONObject()
+        .put("surface", detection.surface.name).put("reason", detection.reason)
+        .put("observationMode", preferences.instagramObservationMode).put("exploreBlocked", preferences.instagramExploreBlocked))
+    }
     if (detection.surface == InstagramSurface.UNKNOWN) {
       debugTrace?.record(
         event = event,
@@ -210,6 +215,12 @@ internal class InstagramOwner(
       reelPagerScrolled = event != null && isReelPagerScroll(event, nodes, reelPagerVisible),
     )
     val action = policy.next(guardInput, preferences.instagramSettings())
+    runCatching {
+      if (Diagnostics.isRecording(service)) Diagnostics.record(service, "instagram_action", org.json.JSONObject()
+        .put("action", if (action is InstagramGuardAction.ShowBlocker) "show_blocker" else "none")
+        .put("reason", (action as? InstagramGuardAction.ShowBlocker)?.reason?.name ?: org.json.JSONObject.NULL)
+        .put("surface", detection.surface.name))
+    }
     debugTrace?.record(
       event = event,
       nodes = nodes,

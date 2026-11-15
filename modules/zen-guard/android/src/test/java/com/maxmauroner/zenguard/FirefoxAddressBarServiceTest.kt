@@ -7,6 +7,8 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,6 +19,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ServiceController
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
+import org.json.JSONObject
 
 /** Firefox 157 leaves its address box text empty and puts the address in the content description. */
 @RunWith(RobolectricTestRunner::class)
@@ -68,6 +71,30 @@ class FirefoxAddressBarServiceTest {
     )
 
     assertEquals(FIREFOX_SIGNAL, AdultSiteRuleStore(context).browserSignalMask)
+  }
+
+  @Test fun `diagnostics record a browser decision without the address`() {
+    Diagnostics.start(context, true, 60_000L)
+    try {
+      val service = controller.get()
+      val addressBox = AccessibilityNodeInfo.obtain().apply {
+        packageName = FIREFOX_PACKAGE
+        viewIdResourceName = "ADDRESSBAR_URL_BOX"
+        contentDescription = " example.com. Search or enter address"
+        isVisibleToUser = true
+      }
+      shadowOf(service).setRootInActiveWindow(addressBox)
+      service.onAccessibilityEvent(AccessibilityEvent.obtain(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED).apply {
+        packageName = FIREFOX_PACKAGE
+      })
+      Diagnostics.finish(context, "user")
+      val recording = Diagnostics.status(context)["json"] as String
+      val events = JSONObject(recording).getJSONArray("events")
+      assertTrue((0 until events.length()).any { events.getJSONObject(it).optString("kind") == "browser" && events.getJSONObject(it).getJSONObject("data").optBoolean("blocked") })
+      assertFalse(recording.contains("example.com"))
+    } finally {
+      Diagnostics.clear(context)
+    }
   }
 
   private companion object {

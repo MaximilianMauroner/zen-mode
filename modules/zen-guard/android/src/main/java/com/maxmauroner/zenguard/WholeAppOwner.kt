@@ -135,6 +135,13 @@ internal class WholeAppOwner(
     val wallNow = appRuleWallClock()
     val dailyAt = appLimits.availableAgainAt(packageName, wallNow)
     val rollingAt = rollingLimits.availableAgainAt(packageName, wallNow)
+    runCatching {
+      if (Diagnostics.isRecording(service)) Diagnostics.record(service, "app_rules", org.json.JSONObject()
+        .put("dailyRule", appLimits.limits().containsKey(packageName)).put("dailyBlocked", dailyAt != null)
+        .put("rollingRule", rollingLimits.rules().containsKey(packageName)).put("rollingBlocked", rollingAt != null)
+        .put("timedVisitRule", intentStore.intents().containsKey(packageName))
+        .put("earnedTimeRule", earnedTime.rules().containsKey(packageName)))
+    }
     if (dailyAt == null) stats.reset(EnforcementReason.APP_LIMIT)
     if (rollingAt == null) stats.reset(EnforcementReason.ROLLING_LIMIT)
     if (dailyAt == null && rollingAt == null) return enforceEarnedTime(packageName)

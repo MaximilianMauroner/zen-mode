@@ -95,6 +95,28 @@ class InstagramConnectionServiceTest {
     }
   }
 
+  @Test fun `a chat opened after Messages is reached stays open`() {
+    beginMessagesNavigation()
+    val inboxTab = node(INSTAGRAM, "direct_tab").apply { isClickable = true }
+    assertTrue(shadowOf(inboxTab).performedActions.isEmpty())
+    shadowOf(inboxTab).setOnPerformActionListener { action, _ -> action == ACTION_CLICK }
+    val inbox = node(INSTAGRAM, "inbox_v2_thread_list_recycler").also { shadowOf(it).addChild(inboxTab) }
+    showRoot(inbox)
+    deliver()
+
+    val chat = node(INSTAGRAM, "thread_fragment_container").also {
+      shadowOf(it).addChild(node(INSTAGRAM, "message_list"))
+      shadowOf(it).addChild(node(INSTAGRAM, "message_composer"))
+    }
+    showRoot(chat)
+    deliver()
+    advance(Duration.ofSeconds(4))
+
+    assertEquals(listOf(GLOBAL_ACTION_BACK), shadowOf(controller.get()).globalActionsPerformed)
+    assertTrue(shadowOf(inboxTab).performedActions.isEmpty())
+    assertNull(shadowOf(RuntimeEnvironment.getApplication()).nextStartedActivity)
+  }
+
   @Test fun `another connection retains Messages retries and the original suppression deadline`() {
     val tree = beginMessagesNavigation()
     advance(Duration.ofMillis(100))

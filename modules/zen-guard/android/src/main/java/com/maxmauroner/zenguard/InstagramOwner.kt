@@ -164,8 +164,8 @@ internal class InstagramOwner(
 
     val nowMs = SystemClock.elapsedRealtime()
     if (nowMs < navigationSuppressedUntilMs) {
-      if (detection.surface == InstagramSurface.DIRECT_MESSAGES && isMessagesInbox(nodes)) {
-        navigationSuppressedUntilMs = 0L
+      if (detection.surface == InstagramSurface.DIRECT_MESSAGES) {
+        arriveAtMessages()
         intervention.end()
       }
       debugTrace?.record(
@@ -368,8 +368,8 @@ internal class InstagramOwner(
     if (rootIsInstagram) {
       val nodes = snapshotNodeSignals(root)
       val detection = InstagramDetector.detect(nodes)
-      if (detection.surface == InstagramSurface.DIRECT_MESSAGES && isMessagesInbox(nodes)) {
-        navigationSuppressedUntilMs = 0L
+      if (detection.surface == InstagramSurface.DIRECT_MESSAGES) {
+        arriveAtMessages()
         return
       }
       if (clickDirectTab(root)) {
@@ -377,9 +377,7 @@ internal class InstagramOwner(
         return
       }
 
-      if (detection.surface == InstagramSurface.DIRECT_MESSAGES && isDmThreadVisible(nodes) ||
-        detection.surface == InstagramSurface.REELS_VIEWER
-      ) {
+      if (detection.surface == InstagramSurface.REELS_VIEWER) {
         if (service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)) {
           navigationHandler.postDelayed({ ensureMessagesVisible(attempt + 1) }, NAVIGATION_RETRY_MS)
           return
@@ -393,9 +391,13 @@ internal class InstagramOwner(
     navigationHandler.postDelayed({ ensureMessagesVisible(attempt + 1) }, NAVIGATION_RETRY_MS)
   }
 
-  private fun isMessagesInbox(nodes: List<NodeSignal>): Boolean {
-    val ids = nodes.map { it.viewId.lowercase() }
-    return ids.any { id -> INBOX_ID_FRAGMENTS.any(id::contains) }
+  /**
+   * Any Messages screen ends the navigation. A chat is Messages too: once the user is there, the
+   * user owns the navigation, and Zen must not back out of a chat the user just opened.
+   */
+  private fun arriveAtMessages() {
+    cancelNavigation()
+    navigationSuppressedUntilMs = 0L
   }
 
   private fun clickDirectTab(root: AccessibilityNodeInfo): Boolean {
@@ -461,12 +463,6 @@ internal class InstagramOwner(
     private const val MAIN_LAUNCH_ATTEMPT = 3
     private const val MAX_NAVIGATION_ATTEMPTS = 12
     private const val INSTAGRAM_REELS_DEADLINE_RETRY_MS = 1_000L
-
-    private val INBOX_ID_FRAGMENTS = listOf(
-      "direct_inbox",
-      "inbox_refreshable_thread_list_recyclerview",
-      "direct_inbox_action_bar",
-    )
 
     private val DM_THREAD_CLICK_TARGETS = listOf(
       "message_list",

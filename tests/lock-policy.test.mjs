@@ -8,6 +8,7 @@ import {
   formatRemaining,
   parseLockRecord,
   stateOf,
+  UnreadableLockError,
   UNLOCK_DELAY_MS,
 } from '../src/features/protection/lock-policy.ts';
 
@@ -53,9 +54,12 @@ test('an absent or expired record reports open', () => {
   assert.equal(stateOf({ version: 1, lockedUntil: NOW, unlockRequestedAt: NOW }, NOW).kind, 'pending');
 });
 
-test('a malformed record reads as no lock, so settings can never be stranded', () => {
+test('only a missing key parses as no record', () => {
+  assert.equal(parseLockRecord(null), null);
+});
+
+test('a malformed stored record is unreadable', () => {
   for (const serialized of [
-    null,
     '',
     'not json',
     '[]',
@@ -70,18 +74,33 @@ test('a malformed record reads as no lock, so settings can never be stranded', (
     // record is a record this version does not understand.
     '{"version":1,"lockedUntil":1700}',
   ]) {
-    assert.equal(parseLockRecord(serialized), null, `expected null for ${JSON.stringify(serialized)}`);
+    assert.throws(() => parseLockRecord(serialized), UnreadableLockError, serialized);
   }
 });
 
 test('a non-finite stored time cannot masquerade as a lock', () => {
   // JSON.stringify writes Infinity and NaN as null, but a hand-edited or
   // third-party record can still carry them through a permissive parser.
-  assert.equal(parseLockRecord('{"version":1,"lockedUntil":1e999,"unlockRequestedAt":null}'), null);
-  assert.equal(parseLockRecord('{"version":1,"lockedUntil":1,"unlockRequestedAt":1e999}'), null);
+  assert.throws(() => parseLockRecord('{"version":1,"lockedUntil":1e999,"unlockRequestedAt":null}'), UnreadableLockError);
+  assert.throws(() => parseLockRecord('{"version":1,"lockedUntil":1,"unlockRequestedAt":1e999}'), UnreadableLockError);
 });
 
-test('a well-formed record round-trips, and a missing request field means none', () => {
+test('a damaged passcode record is unreadable', () => {
+  const salt = 'a'.repeat(32);
+  const hash = 'b'.repeat(64);
+  for (const record of [{ version: 2, salt }, { version: 2, hash }, { version: 2, salt, hash: 'not a hash' }]) {
+    assert.throws(() => parseLockRecord(JSON.stringify(record)), UnreadableLockError);
+  }
+});
+
+test('invalid attempt history makes the passcode lock unreadable', () => {
+  const record = { version: 2, salt: 'a'.repeat(32), hash: 'b'.repeat(64) };
+  for (const attempts of [null, {}, { failures: -1, retryAt: 0 }, { failures: 5 }, { failures: 5, retryAt: 0 }]) {
+    assert.throws(() => parseLockRecord(JSON.stringify({ ...record, attempts })), UnreadableLockError);
+  }
+});
+
+test('existing version 1 time locks still read correctly', () => {
   assert.deepEqual(parseLockRecord('{"version":1,"lockedUntil":1700,"unlockRequestedAt":null}'), {
     version: 1,
     lockedUntil: 1700,

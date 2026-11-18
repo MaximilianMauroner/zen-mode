@@ -38,6 +38,7 @@ internal class AppRuleOverlay(
   private var availabilityView: TextView? = null
   private var startButtons: List<Pair<Int, Button>> = emptyList()
   private var capLeftMs: Long? = null
+  private var entranceAnimators: List<ObjectAnimator> = emptyList()
 
   fun isShowing(): Boolean = root?.isAttachedToWindow == true
   fun requestedPackage(): String? = shownFor
@@ -153,17 +154,20 @@ internal class AppRuleOverlay(
       title.scaleX = 0.92f
       title.scaleY = 0.92f
       leave.alpha = 0f
-      container.doOnFirstAttach {
+      entranceAnimators = listOf(
         ObjectAnimator.ofPropertyValuesHolder(
           title,
           PropertyValuesHolder.ofFloat(View.ALPHA, 1f),
           PropertyValuesHolder.ofFloat(View.SCALE_X, 1f),
           PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f),
-        ).apply { duration = 300L }.start()
+        ).apply { duration = 300L },
         ObjectAnimator.ofFloat(leave, View.ALPHA, 1f).apply {
           startDelay = 150L
           duration = 200L
-        }.start()
+        },
+      )
+      container.doOnFirstAttach {
+        if (root === container) entranceAnimators.forEach { it.start() }
       }
     }
     val params = WindowManager.LayoutParams(
@@ -439,6 +443,8 @@ internal class AppRuleOverlay(
   fun hide() {
     val existingRoot = root
     root = null
+    entranceAnimators.forEach { it.end() }
+    entranceAnimators = emptyList()
     shownFor = null
     mode = null
     titleView = null

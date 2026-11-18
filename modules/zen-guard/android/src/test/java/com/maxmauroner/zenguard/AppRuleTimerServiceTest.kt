@@ -219,6 +219,7 @@ class AppRuleTimerServiceTest {
     ValueAnimator::class.java.getDeclaredMethod("setDurationScale", Float::class.javaPrimitiveType).invoke(null, 1f)
     showAppWindows(APP)
     windowEvent(APP)
+    val root = overlay().privateField<View>("root")
     val title = views().filterIsInstance<TextView>().single { it.text == "Time's up.\nGo play." }
     val button = views().filterIsInstance<Button>().single()
     assertTrue(title.alpha < 1f)
@@ -233,8 +234,29 @@ class AppRuleTimerServiceTest {
     assertEquals(1f, button.alpha, 0f)
     windowEvent(APP)
     advance(Duration.ofMillis(20))
+    assertTrue(root === overlay().privateField<View>("root"))
+    val currentTitle = views().filterIsInstance<TextView>().single { it.text == "Time's up.\nGo play." }
+    val currentButton = views().filterIsInstance<Button>().single()
+    assertEquals(1f, currentTitle.alpha, 0f)
+    assertEquals(1f, currentTitle.scaleX, 0f)
+    assertEquals(1f, currentButton.alpha, 0f)
+  }
+
+  @Test fun `hiding kids card ends entrance animators`() {
+    ValueAnimator::class.java.getDeclaredMethod("setDurationScale", Float::class.javaPrimitiveType).invoke(null, 1f)
+    ZenGuardPreferences(context).endScreen = EndScreen.KIDS
+    AppLimitStore(context).apply { setLimit(APP, 1); addUsage(APP, 60_000L, wallNow()) }
+    openApp(APP)
+    val title = views().filterIsInstance<TextView>().single { it.text == "Time's up.\nGo play." }
+    val button = views().filterIsInstance<Button>().single()
+    val animators = overlay().privateField<List<android.animation.ObjectAnimator>>("entranceAnimators")
+    animators.forEach { it.start() }
+    assertTrue(animators.any { it.isStarted })
+    overlay().hide()
+    assertTrue(animators.none { it.isStarted })
     assertEquals(1f, title.alpha, 0f)
     assertEquals(1f, title.scaleX, 0f)
+    assertEquals(1f, title.scaleY, 0f)
     assertEquals(1f, button.alpha, 0f)
   }
 

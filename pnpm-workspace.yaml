@@ -6,3 +6,5 @@ patchedDependencies:
 
 publicHoistPattern:
   - react-native-css-interop
+  # react-native-css-interop/babel names this plugin without depending on it.
+  - '@babel/plugin-transform-react-jsx'

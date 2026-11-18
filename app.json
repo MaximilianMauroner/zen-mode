@@ -9,6 +9,7 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0D1210",
     "ios": {
+      "supportsTablet": true,
       "icon": "./assets/images/refuge/icon.png"
     },
     "android": {

@@ -1,11 +1,72 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import test from 'node:test';
+import { registerHooks } from 'node:module';
+import test, { after } from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+
 import { RECOMMENDED_DEFAULTS_SUMMARY } from '../src/features/protection/recommended-defaults.ts';
 
+const moduleUrl = (source) => 'data:text/javascript,' + encodeURIComponent(source);
+const secureStoreUrl = moduleUrl(`
+  export const values = new Map();
+  export async function getItemAsync(key) { return values.get(key) ?? null; }
+  export async function setItemAsync(key, value) { values.set(key, value); }
+`);
+const cryptoUrl = moduleUrl(`
+  import { createHash, getRandomValues } from 'node:crypto';
+  export { getRandomValues };
+  export const CryptoDigestAlgorithm = { SHA256: 'sha256' };
+  export async function digestStringAsync(algorithm, data) {
+    return createHash(algorithm).update(data).digest('hex');
+  }
+`);
+const reactNativeUrl = moduleUrl("export const Platform = { OS: 'android' };");
+const nativeUrl = moduleUrl(`
+  export const status = {};
+  export const calls = [];
+  export async function getZenGuardStatus() { return { ...status }; }
+  export async function hasCurrentNativeConsent() { return status.currentConsent; }
+  export async function acceptCurrentNativeConsent() { status.currentConsent = true; calls.push('consent'); }
+  export async function openAccessibilitySettings() { calls.push('open settings'); }
+  export async function setNativeProtectionEnabled(enabled) { status.protectionEnabled = enabled; }
+  export async function setEndScreen(mode) { status.endScreen = mode; }
+  export async function setAppLimit(packageName, minutes) { status.dailyCaps[packageName] = minutes; }
+  export async function setIntentApp(packageName, sessionMinutes, cooldownMinutes) {
+    status.visits[packageName] = { sessionMinutes, cooldownMinutes };
+  }
+  export async function setYouTubeSettings(...args) { status.rules.youtube = args; }
+  export async function setXSettings(...args) { status.rules.x = args; }
+  export async function setInstagramSettings(...args) { status.rules.instagram = args; }
+  export async function setAdultSiteBlockingEnabled(enabled) { status.rules.adultSites = enabled; }
+  export async function setObservationMode(enabled) { status.observation.youtube = enabled; }
+  export async function setInstagramObservationMode(enabled) { status.observation.instagram = enabled; }
+  export async function setXObservationMode(enabled) { status.observation.x = enabled; }
+`);
+
+const hooks = registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === 'expo-secure-store') return nextResolve(secureStoreUrl, context);
+    if (specifier === 'expo-crypto') return nextResolve(cryptoUrl, context);
+    if (specifier === 'react-native') return nextResolve(reactNativeUrl, context);
+    if (specifier === './native') return nextResolve(nativeUrl, context);
+    if (['./lock', './lock-policy', './recommended-defaults', './setup-policy'].includes(specifier)) {
+      return nextResolve(specifier + '.ts', context);
+    }
+    return nextResolve(specifier, context);
+  },
+});
+
+const store = await import(secureStoreUrl);
+const native = await import(nativeUrl);
+const lock = await import('../src/features/protection/lock.ts');
+const setupActions = await import('../src/features/protection/setup.ts');
+after(() => hooks.deregister());
+
+const source = readFileSync(new URL('../src/app/setup.tsx', import.meta.url), 'utf8');
+const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } });
 const element = (type, props) => ({ type, props });
+
 function find(node, predicate) {
   if (!node || typeof node !== 'object') return undefined;
   if (predicate(node)) return node;
@@ -15,98 +76,219 @@ function find(node, predicate) {
   }
 }
 
-async function setup({ accessGranted = true } = {}) {
+async function setup({ activePasscode, platform = 'android', endScreen = 'off', appAvailability = { youtube: 'installed', instagram: 'installed', x: 'installed' } } = {}) {
+  store.values.clear();
+  native.calls.length = 0;
+  Object.assign(native.status, {
+    available: true, serviceEnabled: false, currentConsent: false, protectionEnabled: false, endScreen,
+    appAvailability, dailyCaps: {}, visits: {}, rules: {}, observation: {},
+  });
+  if (activePasscode) await lock.updatePasscode({ passcode: activePasscode, confirmation: activePasscode });
+
   const values = [];
   const effects = [];
-  const calls = { consent: 0, settings: 0, defaults: 0, completed: 0, destination: null };
+  const pendingEffects = [];
   let cursor = 0;
+  let effectCursor = 0;
   let onAppState;
-  const hooks = {
+  let destination;
+  let openedUrl;
+  const reactHooks = {
     useState(initial) {
       const index = cursor++;
       if (!(index in values)) values[index] = typeof initial === 'function' ? initial() : initial;
       return [values[index], (value) => { values[index] = typeof value === 'function' ? value(values[index]) : value; }];
     },
-    useRef(initial) { return hooks.useState(() => ({ current: initial }))[0]; },
+    useRef(initial) { return reactHooks.useState(() => ({ current: initial }))[0]; },
     useCallback: (callback) => callback,
-    useEffect: (effect) => effects.push(effect),
+    useEffect(effect, deps) {
+      const index = effectCursor++;
+      const previous = effects[index];
+      if (previous && deps.every((dep, i) => Object.is(dep, previous.deps[i]))) return;
+      pendingEffects.push(() => {
+        previous?.cleanup?.();
+        effects[index] = { deps, cleanup: effect() };
+      });
+    },
   };
   const imports = {
-    react: hooks,
+    react: reactHooks,
     'react/jsx-runtime': { jsx: element, jsxs: element },
-    'react-native': { Platform: { OS: 'android' }, AppState: { addEventListener: (_event, callback) => { onAppState = callback; return { remove() {} }; } } },
-    'expo-router': { router: { replace: (path) => { calls.destination = path; } } },
-    '@/features/protection/setup': {
-      async hasCompletedSetup() { return false; },
-      async acceptSetupConsent() { calls.consent++; },
-      async confirmAndroidAccess() { if (!accessGranted) throw Error('Enable Android access first.'); },
-      async markSetupComplete() { calls.completed++; },
-    },
-    '@/features/protection/recommended-defaults': {
-      RECOMMENDED_DEFAULTS_SUMMARY,
-      async applyRecommendedDefaults() { calls.defaults++; },
-    },
-    '@/features/protection/native': { async openAccessibilitySettings() { calls.settings++; } },
+    'react-native': { Platform: { OS: platform }, AppState: { addEventListener: (_event, callback) => {
+      onAppState = callback;
+      return { remove() { onAppState = undefined; } };
+    } } },
+    'expo-router': { router: { replace: (path) => { destination = path; } } },
+    'expo-linking': { async openURL(url) { openedUrl = url; } },
+    '@/features/protection/setup': setupActions,
+    '@/features/protection/lock': lock,
+    '@/features/protection/recommended-defaults': await import('../src/features/protection/recommended-defaults.ts'),
+    '@/features/protection/native': native,
     '@/theme/colors': { colors: {} },
   };
-  const source = readFileSync(new URL('../src/app/setup.tsx', import.meta.url), 'utf8');
-  const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } });
   const module = { exports: {} };
-  vm.runInNewContext(outputText, { Error, exports: module.exports, require: (name) => imports[name] ?? new Proxy({}, { get: (_, key) => `${name}:${String(key)}` }) });
-  const render = () => { cursor = 0; return module.exports.default(); };
+  vm.runInNewContext(outputText, { Error, exports: module.exports, require: (name) => imports[name] ?? new Proxy({}, { get: (_, key) => String(key) }) });
+  const render = () => {
+    cursor = 0;
+    effectCursor = 0;
+    const screen = module.exports.default();
+    for (const effect of pendingEffects.splice(0)) effect();
+    return screen;
+  };
+  const locate = (predicate) => find(render(), predicate);
+  const props = (name) => locate((node) => node.props?.title === name && node.props?.onPress)?.props;
+  const press = async (name) => {
+    const button = props(name);
+    assert.ok(button, `Expected an action named ${name}`);
+    assert.equal(Boolean(button.disabled), false);
+    await button.onPress();
+  };
   render();
-  effects.forEach((effect) => effect());
   await new Promise(setImmediate);
   return {
-    find: (predicate) => find(render(), predicate),
-    returnToApp: async () => { onAppState('active'); await new Promise(setImmediate); },
-    calls,
+    press, props, find: locate,
+    async chooseMode(mode) { await press(mode); await press('Continue'); },
+    chooseStartingRules: (value) => locate((node) => node.props?.label === 'Starting rules').props.onSelect(value),
+    selectDays: (days) => locate((node) => node.props?.label === 'Lock length').props.onSelect(days),
+    enter: (label, value) => locate((node) => node.type === 'PasscodeInput' && node.props.label === label).props.onChangeText(value),
+    consent: () => locate((node) => node.props?.accessibilityRole === 'checkbox').props.onPress(),
+    returnToApp: async (enabled) => {
+      native.status.serviceEnabled = enabled;
+      render();
+      onAppState('active');
+      await new Promise(setImmediate);
+    },
+    get destination() { return destination; },
+    get openedUrl() { return openedUrl; },
   };
 }
 
-const choices = (view) => view.find((node) => node.props?.label === 'Starting rules');
-const consent = (view) => view.find((node) => node.props?.accessibilityRole === 'checkbox');
-const proceed = (view) => view.find((node) => node.props?.title === 'Continue to Android access');
+const recommendedRules = { youtube: [true, false], x: [true, true, 5], instagram: [30, 5, 5, true], adultSites: true };
+const timedVisit = { sessionMinutes: 5, cooldownMinutes: 5 };
 
-test('setup requires both a starting choice and explicit consent', async () => {
-  const view = await setup();
-  await proceed(view).props.onPress();
-  assert.equal(view.calls.consent, 0);
-  choices(view).props.onSelect('customize');
-  await proceed(view).props.onPress();
-  assert.equal(view.calls.consent, 0);
-  consent(view).props.onPress();
-  await proceed(view).props.onPress();
-  assert.equal(view.calls.consent, 1);
-  assert.equal(view.calls.settings, 1);
-  await view.returnToApp();
-  assert.equal(view.calls.defaults, 0);
-  assert.equal(view.calls.completed, 1);
-  assert.equal(view.calls.destination, '/?setup=customize');
+test('Kids setup confirms a passcode, waits for access, and caps only installed apps before Family Link', async () => {
+  const view = await setup({ appAvailability: { youtube: 'installed', instagram: 'installed', x: 'absent' } });
+  await view.chooseMode('Kids');
+  await view.press('Passcode');
+  view.enter('Passcode', 'family code');
+  view.enter('Confirm passcode', 'different code');
+  await view.press('Continue');
+  assert.ok(view.find((node) => /do not match/.test(node.props?.message)));
+  assert.equal((await lock.readLockState()).kind, 'open');
+
+  view.enter('Confirm passcode', 'family code');
+  await view.press('Continue');
+  await view.press('Continue to Android access');
+  assert.deepEqual(native.calls, []);
+  view.consent();
+  await view.press('Continue to Android access');
+  assert.deepEqual(native.calls, ['consent', 'open settings']);
+  await view.returnToApp(false);
+  assert.equal(await setupActions.hasCompletedSetup(), false);
+  assert.deepEqual(native.status.dailyCaps, {});
+  assert.equal((await lock.readLockState()).kind, 'open');
+
+  await view.returnToApp(true);
+  assert.equal(await setupActions.hasCompletedSetup(), true);
+  assert.equal(native.status.protectionEnabled, true);
+  assert.deepEqual(native.status.rules, recommendedRules);
+  assert.deepEqual(native.status.observation, { youtube: true, instagram: true, x: true });
+  assert.equal(native.status.endScreen, 'kids');
+  assert.deepEqual(native.status.dailyCaps, { 'com.google.android.youtube': 60, 'com.instagram.android': 60 });
+  assert.deepEqual(native.status.visits, { 'com.google.android.youtube': timedVisit, 'com.instagram.android': timedVisit });
+  assert.equal((await lock.readLockState()).kind, 'passcode');
+  await lock.requirePasscode('family code');
+  assert.equal(view.destination, undefined);
+  await view.press('Open Google Family Link');
+  assert.equal(view.openedUrl, 'https://families.google/familylink/');
+  await view.press('Finish setup');
+  assert.equal(view.destination, '/');
 });
 
-test('default rules are shown and applied only after Android access is confirmed', async () => {
+test('Focus setup keeps the recommended rules, adds timed visits and arms the chosen time lock', async (t) => {
+  const now = Date.UTC(2026, 10, 18);
+  t.mock.timers.enable({ apis: ['Date'], now });
   const view = await setup();
-  choices(view).props.onSelect('defaults');
+  await view.chooseMode('Focus');
+  await view.press('Time lock');
+  view.selectDays(3);
+  await view.press('Continue');
+  view.consent();
+  await view.press('Continue to Android access');
+  await view.returnToApp(true);
+
+  assert.deepEqual(native.status.rules, recommendedRules);
+  assert.deepEqual(native.status.dailyCaps, {});
+  assert.deepEqual(native.status.visits, {
+    'com.google.android.youtube': timedVisit,
+    'com.instagram.android': timedVisit,
+    'com.twitter.android': timedVisit,
+  });
+  assert.equal(native.status.endScreen, 'focus');
+  assert.equal(native.status.protectionEnabled, true);
+  assert.equal((await lock.readLockState()).lockedUntil, now + 3 * 86_400_000);
+  assert.equal(view.props('Open Google Family Link'), undefined);
+  assert.equal(view.destination, '/');
+});
+
+test('Customize offers both starting choices and leaves manually selected rules paused', async () => {
+  const view = await setup();
+  await view.chooseMode('Customize');
+  assert.equal(view.props('Continue').disabled, true);
+  view.chooseStartingRules('recommended');
   for (const line of RECOMMENDED_DEFAULTS_SUMMARY) {
     assert.ok(view.find((node) => node.props?.children === line));
   }
-  consent(view).props.onPress();
-  await proceed(view).props.onPress();
-  assert.equal(view.calls.defaults, 0);
-  await view.returnToApp();
-  assert.equal(view.calls.defaults, 1);
-  assert.equal(view.calls.completed, 1);
-  assert.equal(view.calls.destination, '/');
+  view.chooseStartingRules('customize');
+  await view.press('Continue');
+  view.consent();
+  await view.press('Continue to Android access');
+  await view.returnToApp(true);
+
+  assert.equal(await setupActions.hasCompletedSetup(), true);
+  assert.equal(native.status.protectionEnabled, false);
+  assert.deepEqual(native.status.rules, {});
+  assert.equal(view.destination, '/?setup=customize');
 });
 
-test('setup does not complete when Android access was not granted', async () => {
-  const view = await setup({ accessGranted: false });
-  choices(view).props.onSelect('defaults');
-  consent(view).props.onPress();
-  await proceed(view).props.onPress();
-  await view.returnToApp();
-  assert.equal(view.calls.defaults, 0);
-  assert.equal(view.calls.completed, 0);
-  assert.ok(view.find((node) => node.props?.message === 'Enable Android access first.'));
+test('Customize can still apply the healthy defaults without arming a new lock or visits', async () => {
+  const view = await setup();
+  await view.chooseMode('Customize');
+  view.chooseStartingRules('recommended');
+  await view.press('Continue');
+  view.consent();
+  await view.press('Continue to Android access');
+  await view.returnToApp(true);
+
+  assert.equal(native.status.protectionEnabled, true);
+  assert.deepEqual(native.status.rules, recommendedRules);
+  assert.equal(native.status.endScreen, 'off');
+  assert.deepEqual(native.status.visits, {});
+  assert.equal((await lock.readLockState()).kind, 'open');
+  assert.equal(view.destination, '/');
+});
+
+test('setup with an existing lock restores access without replacing rules or the lock', async () => {
+  const view = await setup({ activePasscode: 'existing code', endScreen: 'kids' });
+  native.status.visits = { 'com.google.android.youtube': { sessionMinutes: 1, cooldownMinutes: 30 } };
+  assert.equal(view.props('Focus'), undefined);
+  view.consent();
+  await view.press('Continue to Android access');
+  await view.returnToApp(true);
+
+  assert.deepEqual(native.status.visits, { 'com.google.android.youtube': { sessionMinutes: 1, cooldownMinutes: 30 } });
+  assert.deepEqual(native.status.rules, {});
+  assert.equal(native.status.protectionEnabled, true);
+  await lock.requirePasscode('existing code');
+  assert.ok(view.props('Open Google Family Link'));
+});
+
+test('Kids on web can preview the setup choices without requesting Android access or showing Family Link', async () => {
+  const view = await setup({ platform: 'web' });
+  await view.chooseMode('Kids');
+  await view.press('Time lock');
+  await view.press('Continue');
+  assert.equal(view.props('Continue to Android access').disabled, true);
+  assert.equal(view.props('Open Google Family Link'), undefined);
+  assert.deepEqual(native.calls, []);
 });

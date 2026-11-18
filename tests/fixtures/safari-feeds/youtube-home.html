@@ -1,0 +1,69 @@
+<!doctype html>
+<!-- Mobile capture from https://m.youtube.com/?ra=m. Trimmed to the tested markup. -->
+<html lang="en">
+  <body>
+    <ytm-app id="app">
+      <ytm-pivot-bar-renderer role="tablist">
+        <ytm-pivot-bar-item-renderer>
+          <div role="tab" class="pivot-bar-item-tab pivot-w2w" aria-selected="true">
+            <div class="pivot-bar-item-title pivot-w2w">
+              <span role="text">Home</span>
+            </div>
+          </div>
+        </ytm-pivot-bar-item-renderer>
+        <ytm-pivot-bar-item-renderer>
+          <div role="tab" class="pivot-bar-item-tab pivot-shorts" aria-selected="false">
+            <div class="pivot-bar-item-title pivot-shorts">
+              <span role="text">Shorts</span>
+            </div>
+          </div>
+        </ytm-pivot-bar-item-renderer>
+        <ytm-pivot-bar-item-renderer>
+          <div role="tab" class="pivot-bar-item-tab pivot-subs" aria-selected="false">
+            <div class="pivot-bar-item-title pivot-subs">
+              <span role="text">Subscriptions</span>
+            </div>
+          </div>
+        </ytm-pivot-bar-item-renderer>
+        <ytm-pivot-bar-item-renderer>
+          <div role="tab" class="pivot-bar-item-tab pivot-you" aria-selected="false">
+            <div class="pivot-bar-item-title pivot-you">
+              <span role="text">You</span>
+            </div>
+          </div>
+        </ytm-pivot-bar-item-renderer>
+      </ytm-pivot-bar-renderer>
+      <div class="page-container">
+        <ytm-browse>
+          <ytm-single-column-browse-results-renderer>
+            <div>
+              <div>
+                <ytm-tab-renderer>
+                  <ytm-rich-grid-renderer>
+                    <div>
+                      <ytm-rich-section-renderer>
+                        <div>
+                          <div>
+                            <ytm-feed-nudge-renderer>
+                              <div>
+                                <div>
+                                  <h2>
+                                    <span aria-label="Your YouTube history is off" role="text">Your YouTube history is off</span>
+                                  </h2>
+                                </div>
+                              </div>
+                            </ytm-feed-nudge-renderer>
+                          </div>
+                        </div>
+                      </ytm-rich-section-renderer>
+                    </div>
+                  </ytm-rich-grid-renderer>
+                </ytm-tab-renderer>
+              </div>
+            </div>
+          </ytm-single-column-browse-results-renderer>
+        </ytm-browse>
+      </div>
+    </ytm-app>
+  </body>
+</html>

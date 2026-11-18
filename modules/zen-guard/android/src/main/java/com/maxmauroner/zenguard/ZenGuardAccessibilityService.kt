@@ -51,9 +51,13 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   )
   private lateinit var appRuleSafety: AppRuleSafety
   private var browserIntervention: BrowserIntervention? = null
-  private var screenReceiverRegistered = false
-  private val screenStateReceiver = object : BroadcastReceiver() {
+  private var systemReceiverRegistered = false
+  private val systemReceiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
+      if (intent?.action == Intent.ACTION_SHUTDOWN) {
+        AccessibilityAccess.recordCleanShutdown(this@ZenGuardAccessibilityService)
+        return
+      }
       if (intent?.action != Intent.ACTION_SCREEN_OFF || !hasActiveProtection()) return
       youtube.cancelHomeVisit()
       val nowMs = SystemClock.elapsedRealtime()
@@ -95,14 +99,16 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     instagram.restore(preferences, homeFeedStatusStore, nowElapsedMs)
     x.restore(preferences, homeFeedStatusStore, nowElapsedMs)
     instagram.publishHomeStatus()
-    val screenFilter = IntentFilter(Intent.ACTION_SCREEN_OFF)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      registerReceiver(screenStateReceiver, screenFilter, Context.RECEIVER_NOT_EXPORTED)
-    } else {
-      @Suppress("DEPRECATION")
-      registerReceiver(screenStateReceiver, screenFilter)
+    if (!systemReceiverRegistered) {
+      val filter = IntentFilter(Intent.ACTION_SCREEN_OFF).apply { addAction(Intent.ACTION_SHUTDOWN) }
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        registerReceiver(systemReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+      } else {
+        @Suppress("DEPRECATION")
+        registerReceiver(systemReceiver, filter)
+      }
+      systemReceiverRegistered = true
     }
-    screenReceiverRegistered = true
     wholeApp.start()
     x.start()
     instagram.start()
@@ -199,6 +205,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
 
   override fun onUnbind(intent: Intent?): Boolean {
     heartbeatHandler.removeCallbacks(heartbeat)
+    unregisterSystemReceiver()
     AccessibilityAccess.disconnected(this)
     return super.onUnbind(intent)
   }
@@ -215,11 +222,14 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     wholeApp.stopUsageAndCloseCard()
     instagram.destroy(hasActiveProtection())
     stats.clear()
-    if (screenReceiverRegistered) {
-      unregisterReceiver(screenStateReceiver)
-      screenReceiverRegistered = false
-    }
+    unregisterSystemReceiver()
     super.onDestroy()
+  }
+
+  private fun unregisterSystemReceiver() {
+    if (!systemReceiverRegistered) return
+    unregisterReceiver(systemReceiver)
+    systemReceiverRegistered = false
   }
 
   private fun hasActiveProtection(): Boolean =

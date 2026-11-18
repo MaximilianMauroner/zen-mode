@@ -1,6 +1,7 @@
 package com.maxmauroner.zenguard
 
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.os.Looper
 import android.provider.Settings
@@ -128,9 +129,81 @@ class AccessibilityAccessTest {
     )
   }
 
-  @Test fun `a reconnect on a new boot ignores the previous connection`() {
+  @Test fun `a new disable before connection does not reuse an acknowledged heartbeat`() {
     setEnabled(true)
     AccessibilityAccess.connected(context)
+    ShadowSystemClock.advanceBy(Duration.ofMinutes(1))
+    setEnabled(false)
+    val previous = requireNotNull(AccessibilityAccess.read(context).offPeriod)
+    setEnabled(true)
+    AccessibilityAccess.acknowledge(context, previous.through)
+    assertNull(AccessibilityAccess.read(context).offPeriod)
+
+    ShadowSystemClock.advanceBy(Duration.ofMinutes(1))
+    setEnabled(false)
+    val disabledAt = ShadowSystem.currentTimeMillis()
+    assertEquals(
+      AccessibilityAccess.Status(false, AccessibilityAccess.OffPeriod(disabledAt, disabledAt)),
+      AccessibilityAccess.read(context),
+    )
+  }
+
+  @Test fun `a reboot after a force stop reports the gap from the last heartbeat`() {
+    setEnabled(true)
+    AccessibilityAccess.connected(context)
+    val lastHeartbeat = ShadowSystem.currentTimeMillis()
+    ShadowSystemClock.advanceBy(Duration.ofHours(1))
+    Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 8)
+    AccessibilityAccess.connected(context)
+    assertEquals(
+      AccessibilityAccess.Status(true, AccessibilityAccess.OffPeriod(lastHeartbeat, ShadowSystem.currentTimeMillis())),
+      AccessibilityAccess.read(context),
+    )
+  }
+
+  @Test fun `restoring access clears a heartbeat left by an older disable record`() {
+    setEnabled(true)
+    AccessibilityAccess.connected(context)
+    val previousStart = ShadowSystem.currentTimeMillis()
+    ShadowSystemClock.advanceBy(Duration.ofMinutes(1))
+    context.getSharedPreferences("zen_guard_accessibility_access", Context.MODE_PRIVATE)
+      .edit()
+      .putBoolean("enabled", false)
+      .putLong("disabled_at", previousStart)
+      .putLong("disabled_through", ShadowSystem.currentTimeMillis())
+      .commit()
+    val previous = requireNotNull(AccessibilityAccess.read(context).offPeriod)
+    AccessibilityAccess.acknowledge(context, previous.through)
+    assertNull(AccessibilityAccess.read(context).offPeriod)
+
+    ShadowSystemClock.advanceBy(Duration.ofMinutes(1))
+    setEnabled(false)
+    val disabledAt = ShadowSystem.currentTimeMillis()
+    assertEquals(
+      AccessibilityAccess.Status(false, AccessibilityAccess.OffPeriod(disabledAt, disabledAt)),
+      AccessibilityAccess.read(context),
+    )
+  }
+
+  @Test fun `a reconnect on a new boot ignores the previous clean connection`() {
+    val original = Robolectric.buildService(ZenGuardAccessibilityService::class.java).create()
+    try {
+      setEnabled(true)
+      connect(original.get())
+      context.sendBroadcast(Intent(Intent.ACTION_SHUTDOWN))
+      shadowOf(Looper.getMainLooper()).idle()
+    } finally {
+      original.destroy()
+    }
+    ShadowSystemClock.advanceBy(Duration.ofHours(1))
+    Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 8)
+    AccessibilityAccess.connected(context)
+    assertEquals(AccessibilityAccess.Status(true, null), AccessibilityAccess.read(context))
+  }
+
+  @Test fun `a new boot without a previous connection has no notice`() {
+    setEnabled(true)
+    AccessibilityAccess.read(context)
     ShadowSystemClock.advanceBy(Duration.ofHours(1))
     Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 8)
     AccessibilityAccess.connected(context)

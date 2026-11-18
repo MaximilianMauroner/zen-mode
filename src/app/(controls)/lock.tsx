@@ -34,6 +34,16 @@ const LOCK_TITLES: Record<LockDisplay['kind'], string> = {
   unreadable: 'Unreadable lock',
 };
 
+async function readLockDisplay(): Promise<LockDisplay> {
+  try {
+    return await readLockState();
+  } catch (cause) {
+    return cause instanceof UnreadableLockError
+      ? { kind: 'unreadable', message: cause.message }
+      : { kind: 'unavailable' };
+  }
+}
+
 export default function LockScreen() {
   const [lock, setLock] = useState<LockDisplay | null>(null);
   const [refreshing, setRefreshing] = useState(true);
@@ -54,22 +64,23 @@ export default function LockScreen() {
     setRefreshing(true);
     setError('');
     try {
-      setLock(await readLockState());
-    } catch (cause) {
-      setLock(cause instanceof UnreadableLockError
-        ? { kind: 'unreadable', message: cause.message }
-        : { kind: 'unavailable' });
+      setLock(await readLockDisplay());
     } finally {
       setRefreshing(false);
       refreshInFlightRef.current = false;
     }
   }, []);
 
-  // Warm inactive tabs after the first frame without delaying the visible screen.
+  // Warm inactive tabs. A read that is already running delivers its own result.
   useEffect(() => {
-    const frame = requestAnimationFrame(() => { void refresh(); });
-    return () => cancelAnimationFrame(frame);
-  }, [refresh]);
+    let active = true;
+    void readLockDisplay().then((next) => {
+      if (!active || refreshInFlightRef.current) return;
+      setLock(next);
+      setRefreshing(false);
+    });
+    return () => { active = false; };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {

@@ -1,0 +1,6 @@
+{
+  "rules": {
+    "no-ordering-timers": "eslint.config.js"
+  },
+  "opt_out": {}
+}

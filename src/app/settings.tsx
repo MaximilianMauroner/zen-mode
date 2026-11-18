@@ -4,7 +4,7 @@ import Constants from 'expo-constants';
 import { router } from 'expo-router';
 
 import { DangerButton, PrimaryButton, SecondaryButton } from '@/components/ui/button';
-import { ChipGroup } from '@/components/ui/choice';
+import { ChoiceCard } from '@/components/ui/choice';
 import { Row, RowGroup } from '@/components/ui/card';
 import { GuardNotes } from '@/components/ui/guard-notes';
 import { Screen, ScreenHeader } from '@/components/ui/screen';
@@ -75,7 +75,13 @@ export default function SettingsScreen() {
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">End screen</Text>
         <Text className="text-body text-muted">Choose what appears when a visit or daily limit ends.</Text>
-        <ChipGroup label="End screen" options={[{ value: 'off', label: 'Off' }, { value: 'kids', label: 'Kids' }, { value: 'focus', label: 'Focus' }]} selected={status?.endScreen} disabled={disabled} fill onSelect={(value) => runAction(async () => { await setEndScreen(value); await refresh(); })} />
+        {([
+          { value: 'off', label: 'Off', detail: 'The app closes with no screen.' },
+          { value: 'kids', label: 'Kids', detail: 'Show a friendly full screen.' },
+          { value: 'focus', label: 'Focus', detail: 'Show the usual card.' },
+        ] as const).map(({ value, label, detail }) => (
+          <ChoiceCard key={value} title={label} detail={detail} selected={status?.endScreen === value} disabled={disabled} onPress={() => runAction(async () => { await setEndScreen(value); await refresh(); })} />
+        ))}
       </View>
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">Guard details</Text>

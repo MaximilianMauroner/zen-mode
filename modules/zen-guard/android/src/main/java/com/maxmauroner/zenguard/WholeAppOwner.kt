@@ -87,15 +87,15 @@ internal class WholeAppOwner(
    * Only window changes count as a switch; keyboards and system bars raise other
    * event types while the same app stays on screen.
    */
-  fun trackForegroundApp(event: AccessibilityEvent) {
-    if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+  fun trackForegroundApp(event: AccessibilityEvent): Boolean {
+    if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return false
 
-    var packageName = event.packageName?.toString() ?: return
+    var packageName = event.packageName?.toString() ?: return false
     val blockedPackage = appRuleOverlay.requestedPackage()
     if (blockedPackage != null) {
-      if (packageName == service.packageName) return
+      if (packageName == service.packageName) return false
       // A keyboard or system window is not a switch away from the app under our overlay.
-      packageName = foregroundAppPackage() ?: return
+      packageName = foregroundAppPackage() ?: return false
     }
     stats.clearKeyIfDifferent(EnforcementReason.APP_LIMIT, packageName)
     stats.clearKeyIfDifferent(EnforcementReason.ROLLING_LIMIT, packageName)
@@ -106,7 +106,7 @@ internal class WholeAppOwner(
     }
     onForegroundChanged(packageName)
     currentForegroundPackage = packageName
-    if (enforceAppLimits(packageName)) return
+    if (enforceAppLimits(packageName)) return true
     if (packageName != service.packageName) {
       handleIntentForeground(packageName)
       if (blockedPackage != null && appRuleOverlay.requestedPackage() == null) {
@@ -114,6 +114,7 @@ internal class WholeAppOwner(
       }
       scheduleAppRuleRefresh()
     }
+    return false
   }
 
   private fun bankUsage(attribution: AppUsageTracker.Attribution) {
@@ -192,7 +193,7 @@ internal class WholeAppOwner(
       EndScreen.OFF -> {
         pauseAppRuleUsage()
         stats.record(reason, EnforcementStatsOutcome.SUCCESS, packageName)
-        leaveAppRule()
+        leaveAppRule(preserveStats = true)
         true
       }
       EndScreen.KIDS -> {
@@ -201,7 +202,8 @@ internal class WholeAppOwner(
           pauseAppRuleUsage()
           stats.record(reason, EnforcementStatsOutcome.SUCCESS, packageName)
         }
-        if (reason == EnforcementReason.TIMED_VISIT) timedEndPackage = packageName else scheduleAppRuleRefresh()
+        if (reason == EnforcementReason.TIMED_VISIT) timedEndPackage = packageName
+        scheduleAppRuleRefresh()
         true
       }
     }
@@ -264,14 +266,16 @@ internal class WholeAppOwner(
     closeAppRuleOverlay()
   }
 
-  fun closeAppRuleOverlay() {
+  fun closeAppRuleOverlay(preserveStats: Boolean = false) {
     timedEndPackage = null
     if (::appRuleOverlay.isInitialized) appRuleOverlay.hide()
     appCardRefresh.cancel()
-    stats.reset(EnforcementReason.APP_LIMIT)
-    stats.reset(EnforcementReason.ROLLING_LIMIT)
-    stats.reset(EnforcementReason.TIMED_VISIT)
-    stats.reset(EnforcementReason.EARNED_TIME)
+    if (!preserveStats) {
+      stats.reset(EnforcementReason.APP_LIMIT)
+      stats.reset(EnforcementReason.ROLLING_LIMIT)
+      stats.reset(EnforcementReason.TIMED_VISIT)
+      stats.reset(EnforcementReason.EARNED_TIME)
+    }
   }
 
   private fun releaseAppRuleOverlay(packageName: String): Boolean {
@@ -399,8 +403,10 @@ internal class WholeAppOwner(
     if (remaining > 0L) visitDeadline.scheduleAt(nowElapsedMs + remaining) else visitDeadline.cancel()
   }
 
-  private fun leaveAppRule() {
-    closeAppRuleOverlay()
+  private fun leaveAppRule() = leaveAppRule(preserveStats = false)
+
+  private fun leaveAppRule(preserveStats: Boolean) {
+    closeAppRuleOverlay(preserveStats)
     if (!canEnforce()) return
     usageTracker.reset()
     currentForegroundPackage = null

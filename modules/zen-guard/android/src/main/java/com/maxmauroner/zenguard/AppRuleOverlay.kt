@@ -98,17 +98,36 @@ internal class AppRuleOverlay(
     mode = AppRuleOverlayMode.KIDS_END
     val container = LinearLayout(service).apply {
       orientation = LinearLayout.VERTICAL
-      gravity = Gravity.CENTER
-      setPadding(dp(24), dp(32), dp(24), dp(32))
-      setBackgroundColor(service.getColor(R.color.zen_accent))
+      setBackgroundColor(service.getColor(R.color.zen_night))
+      setPadding(dp(24), dp(16), dp(24), dp(16))
+      setOnApplyWindowInsetsListener { v, insets ->
+        @Suppress("DEPRECATION")
+        val topInset = insets.systemWindowInsetTop
+        @Suppress("DEPRECATION")
+        val bottomInset = insets.systemWindowInsetBottom
+        v.setPadding(dp(24), dp(16) + topInset, dp(24), dp(16) + bottomInset)
+        insets
+      }
     }
-    container.addView(styledText("Time's up.\nGo play.", 40f, service.getColor(R.color.zen_on_accent), bold = true).apply {
+    val scroll = ScrollView(service).apply {
+      isFillViewport = true
+      isVerticalScrollBarEnabled = false
+      overScrollMode = View.OVER_SCROLL_NEVER
+    }
+    container.addView(scroll, weightedHeight())
+    val content = LinearLayout(service).apply {
+      orientation = LinearLayout.VERTICAL
+      gravity = Gravity.CENTER
+      setPadding(0, dp(32), 0, dp(32))
+    }
+    scroll.addView(content, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+    content.addView(styledText(service.getString(R.string.zen_guard_kids_end_title), 40f, service.getColor(R.color.zen_copy), bold = true).apply {
       gravity = Gravity.CENTER
     }, matchWrap())
-    container.addView(styledText(appLabel, 20f, service.getColor(R.color.zen_on_accent)).apply {
+    content.addView(styledText(appLabel, 20f, service.getColor(R.color.zen_muted)).apply {
       gravity = Gravity.CENTER
     }, matchWrap(topMargin = dp(16)))
-    container.addView(actionButton("Back home", primary = false).apply {
+    content.addView(actionButton(service.getString(R.string.zen_guard_intent_cooldown_leave), primary = true).apply {
       setOnClickListener { onLeave() }
     }, matchWrap(topMargin = dp(32)))
     val params = WindowManager.LayoutParams(

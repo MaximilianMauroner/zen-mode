@@ -85,6 +85,33 @@ test('only actual app signers count, never the Play source stamp', () => {
   }
 });
 
+// Build-tools 37 prints each signer by scheme, and adds an index only for several signers.
+// Recorded from apksigner 37.0.0 on a v2-only debug APK and on an APK with two signers.
+test('scheme-qualified apksigner signer lines count once per certificate', () => {
+  const v2Only = [
+    'V2 Signer: certificate DN: CN=Android Debug, OU=Android, O=Unknown, L=Unknown, ST=Unknown, C=US',
+    `V2 Signer: certificate SHA-256 digest: ${QA_SIGNER_SHA256}`,
+    'V2 Signer: certificate SHA-1 digest: 5e8f16062ea3cd2c4a0d547876baa6f38cabf625',
+    'V2 Signer: certificate MD5 digest: 20f46148b72d8e5e5ca23d37a4f41490',
+  ].join('\n');
+  assert.deepEqual(parseSignerDigests(v2Only), [QA_SIGNER_SHA256]);
+
+  const twoSigners = [
+    ...certificate('V2 Signer #1:', QA_SIGNER_SHA256),
+    ...certificate('V2 Signer #2:', chromeSigner),
+  ].join('\n');
+  assert.deepEqual(parseSignerDigests(twoSigners), [chromeSigner, QA_SIGNER_SHA256]);
+
+  // One certificate under two scheme labels is one signer. The stamp beside it is none.
+  const multiScheme = [
+    ...certificate('Signer #1', QA_SIGNER_SHA256),
+    ...certificate('V2 Signer:', QA_SIGNER_SHA256),
+    ...certificate('V3.0 Signer:', QA_SIGNER_SHA256),
+    ...certificate('Source Stamp Signer:', chromeSigner),
+  ].join('\n');
+  assert.deepEqual(parseSignerDigests(multiScheme), [QA_SIGNER_SHA256]);
+});
+
 test('target APK sets must be one app and one signer set, signed by the pinned official signer', () => {
   const file = (name, overrides = {}) => ({ file: name, package: 'org.mozilla.firefox', versionCode: 5,
     versionName: '157.0', split: null, signers: [firefoxSigner], ...overrides });

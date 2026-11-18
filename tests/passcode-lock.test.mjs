@@ -67,7 +67,7 @@ test('Home protects the notice when the user presses Dismiss notice', async () =
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
   });
   const disabledAt = Date.UTC(2026, 10, 18);
-  const status = { available: true, serviceDisabledAt: disabledAt, serviceDisabledThrough: disabledAt };
+  const status = { available: true, serviceEnabled: false, serviceDisabledAt: disabledAt, serviceDisabledThrough: disabledAt };
   const values = [];
   const prompts = [];
   const acknowledgments = [];
@@ -126,6 +126,8 @@ test('Home protects the notice when the user presses Dismiss notice', async () =
   render();
   focus();
   await new Promise(setImmediate);
+  assert.equal(findAction(render(), 'Dismiss notice'), undefined, 'the notice cannot be dismissed while access is still off');
+  status.serviceEnabled = true;
 
   await dismiss();
   assert.deepEqual(acknowledgments, [], 'canceling the challenge keeps the notice');

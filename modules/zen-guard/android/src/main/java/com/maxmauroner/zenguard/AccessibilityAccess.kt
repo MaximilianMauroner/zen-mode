@@ -34,7 +34,7 @@ internal object AccessibilityAccess {
     val connecting = enabled && lifecycle == Lifecycle.CONNECTED
     val bootCount = if (connecting) Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1) else -1
     val newOffStart = when {
-      wasEnabled && !enabled -> disconnectedAt ?: now
+      wasEnabled && !enabled -> disconnectedAt ?: preferences.getLong(HEARTBEAT_AT, 0L).takeIf { it in 1..now } ?: now
       wasEnabled && bootCount >= 0 && bootCount == preferences.getInt(BOOT_COUNT, -1) ->
         reconnectOffStart(preferences, now, disconnectedAt)
       else -> null
@@ -77,7 +77,7 @@ internal object AccessibilityAccess {
   fun heartbeat(context: Context) {
     val preferences = store(context)
     if (preferences.getBoolean(ENABLED, false)) {
-      preferences.edit().putHeartbeat(System.currentTimeMillis()).commit()
+      preferences.edit().putHeartbeat(System.currentTimeMillis()).apply()
     }
   }
 

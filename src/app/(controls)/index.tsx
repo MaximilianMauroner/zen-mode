@@ -107,11 +107,11 @@ export default function FeedsScreen() {
         <Card className="gap-2">
           <Text accessibilityRole="header" className="text-item font-semibold text-copy">Protection was off</Text>
           <Text accessibilityLiveRegion="polite" className="text-support text-muted">{offNotice.message}</Text>
-          <SecondaryButton title="Dismiss notice" disabled={busy} onPress={() => runAction(async () => {
+          {status?.serviceEnabled ? <SecondaryButton title="Dismiss notice" disabled={busy} onPress={() => runAction(async () => {
             if (!await authorizeWeakening(true, 'dismiss the protection notice', gate.request)) return;
             await acknowledgeServiceDisabled(offNotice.disabledThrough);
             await refresh();
-          })} />
+          })} /> : null}
         </Card>
       ) : null}
       {nextAction ? (

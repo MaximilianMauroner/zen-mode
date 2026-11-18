@@ -116,6 +116,18 @@ class AccessibilityAccessTest {
     }
   }
 
+  @Test fun `access turned off after a force stop reports the gap from the last heartbeat`() {
+    setEnabled(true)
+    AccessibilityAccess.connected(context)
+    val lastHeartbeat = ShadowSystem.currentTimeMillis()
+    ShadowSystemClock.advanceBy(Duration.ofHours(4))
+    setEnabled(false)
+    assertEquals(
+      AccessibilityAccess.Status(false, AccessibilityAccess.OffPeriod(lastHeartbeat, ShadowSystem.currentTimeMillis())),
+      AccessibilityAccess.read(context),
+    )
+  }
+
   @Test fun `a reconnect on a new boot ignores the previous connection`() {
     setEnabled(true)
     AccessibilityAccess.connected(context)

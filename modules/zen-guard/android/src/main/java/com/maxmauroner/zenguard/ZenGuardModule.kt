@@ -1,6 +1,5 @@
 package com.maxmauroner.zenguard
 
-import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -19,6 +18,7 @@ class ZenGuardModule : Module() {
       val preferences = ZenGuardPreferences(context)
       val adultSites = AdultSiteRuleStore(context)
       val homeFeedStatus = HomeFeedStatusStore(context)
+      val access = AccessibilityAccess.read(context)
       val packageManager = context.packageManager
       val nowElapsedMs = SystemClock.elapsedRealtime()
       val instagramHome = homeFeedStatus.instagram(nowElapsedMs)
@@ -32,7 +32,9 @@ class ZenGuardModule : Module() {
       mapOf(
         "endScreen" to preferences.endScreen.name.lowercase(),
         "available" to true,
-        "serviceEnabled" to isServiceEnabled(context),
+        "serviceEnabled" to access.enabled,
+        "serviceDisabledAt" to access.offPeriod?.since?.toDouble(),
+        "serviceDisabledThrough" to access.offPeriod?.through?.toDouble(),
         "currentConsent" to preferences.hasCurrentConsent,
         "protectionEnabled" to (preferences.protectionEnabled && preferences.hasCurrentConsent),
         "observationMode" to preferences.observationMode,
@@ -87,9 +89,13 @@ class ZenGuardModule : Module() {
       ZenGuardPreferences(requireNotNull(appContext.reactContext)).endScreen = choice
     }
 
+    AsyncFunction("acknowledgeServiceDisabled") { disabledThrough: Double ->
+      AccessibilityAccess.acknowledge(requireNotNull(appContext.reactContext), disabledThrough.toLong())
+    }
+
     AsyncFunction("startDiagnostics") { durationSeconds: Int ->
       val context = requireNotNull(appContext.reactContext)
-      Diagnostics.start(context, isServiceEnabled(context), durationSeconds.toLong() * 1_000L)
+      Diagnostics.start(context, AccessibilityAccess.isEnabled(context), durationSeconds.toLong() * 1_000L)
     }.runOnQueue(Queues.MAIN)
 
     AsyncFunction("stopDiagnostics") {
@@ -129,6 +135,10 @@ class ZenGuardModule : Module() {
 
     AsyncFunction("setAdultSiteBlockingEnabled") { enabled: Boolean ->
       AdultSiteRuleStore(requireNotNull(appContext.reactContext)).enabled = enabled
+    }
+
+    AsyncFunction("enableDefaultAdultSiteBlocking") {
+      AdultSiteRuleStore(requireNotNull(appContext.reactContext)).enableDefault()
     }
 
     AsyncFunction("addBlockedDomain") { input: String ->
@@ -179,20 +189,26 @@ class ZenGuardModule : Module() {
           "label" to labelFor(context.packageManager, packageName),
           "minutes" to minutes,
           "usedMs" to (usage[packageName] ?: 0L).toDouble(),
+          "guidedVisitPending" to store.hasPendingGuidedVisit(packageName),
         )
       }.sortedBy { (it["label"] as String).lowercase() }
     }
 
-    AsyncFunction("setAppLimit") { packageName: String, minutes: Int ->
+    AsyncFunction("setAppLimit") { packageName: String, minutes: Int, guidedVisitPending: Boolean ->
       require(minutes in 1..480) { "A daily limit must be between 1 and 480 minutes" }
       val context = requireNotNull(appContext.reactContext)
       require(!AppRuleSafety.resolve(context).isExempt(packageName)) { RULE_EXEMPT_MESSAGE }
-      AppLimitStore(context).setLimit(packageName, minutes)
+      AppLimitStore(context).setLimit(packageName, minutes, guidedVisitPending)
     }
 
     AsyncFunction("removeAppLimit") { packageName: String ->
       val context = requireNotNull(appContext.reactContext)
       AppLimitStore(context).removeLimit(packageName)
+    }
+
+    AsyncFunction("removePendingGuidedCaps") {
+      val context = requireNotNull(appContext.reactContext)
+      AppLimitStore(context).removePendingGuidedCaps()
     }
 
     /** Each intent-gated app with its visit length and downtime. */
@@ -421,15 +437,6 @@ class ZenGuardModule : Module() {
     "absent"
   } catch (_: SecurityException) {
     "unknown"
-  }
-
-  private fun isServiceEnabled(context: android.content.Context): Boolean {
-    val expected = ComponentName(context, ZenGuardAccessibilityService::class.java)
-    val enabledServices = Settings.Secure.getString(
-      context.contentResolver,
-      Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-    ).orEmpty()
-    return enabledServices.split(':').any { ComponentName.unflattenFromString(it) == expected }
   }
 
   companion object {

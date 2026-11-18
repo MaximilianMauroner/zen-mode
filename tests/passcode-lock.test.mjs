@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import test, { after, beforeEach } from 'node:test';
+import vm from 'node:vm';
+import ts from 'typescript';
+
+import * as controlState from '../src/features/protection/control-state.ts';
+import { getProtectionOffNotice } from '../src/features/protection/overview-actions.ts';
 
 const secureStoreUrl = 'data:text/javascript,' + encodeURIComponent(`
   const values = new Map();
@@ -31,7 +37,8 @@ const hooks = registerHooks({
   },
 });
 const store = await import(secureStoreUrl);
-const { armLock, readLockState, requestUnlock, updatePasscode } = await import('../src/features/protection/lock.ts');
+const lock = await import('../src/features/protection/lock.ts');
+const { armLock, readLockState, requestUnlock, updatePasscode } = lock;
 const { authorizeWeakening } = await import('../src/features/protection/authorize-weakening.ts');
 after(() => hooks.deregister());
 
@@ -43,6 +50,105 @@ const authorizePause = (request) => authorizeWeakening(true, 'pause protection',
 beforeEach(async () => {
   store.setUnreadable(false);
   await store.deleteItemAsync(LOCK_KEY);
+});
+
+function findAction(node, title) {
+  if (node?.props?.title === title) return node.props.onPress;
+  for (const child of [node?.props?.children].flat(Infinity)) {
+    if (child == null || typeof child !== 'object') continue;
+    const action = findAction(child, title);
+    if (action) return action;
+  }
+}
+
+test('Home protects the notice when the user presses Dismiss notice', async () => {
+  const source = readFileSync(new URL('../src/app/(controls)/index.tsx', import.meta.url), 'utf8');
+  const { outputText } = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+  });
+  const disabledAt = Date.UTC(2026, 10, 18);
+  const status = { available: true, serviceEnabled: false, serviceDisabledAt: disabledAt, serviceDisabledThrough: disabledAt };
+  const values = [];
+  const prompts = [];
+  const acknowledgments = [];
+  let cursor = 0;
+  let focus;
+  let answer = false;
+  const react = {
+    useState(initial) {
+      const index = cursor++;
+      if (!(index in values)) values[index] = initial;
+      return [values[index], (value) => { values[index] = value; }];
+    },
+    useRef(initial) { return react.useState({ current: initial })[0]; },
+    useCallback: (callback) => callback,
+  };
+  const element = (type, props) => ({ type, props });
+  const imports = {
+    react,
+    'react/jsx-runtime': { jsx: element, jsxs: element },
+    'expo-router': { useLocalSearchParams: () => ({}), useFocusEffect: (callback) => { focus = callback; } },
+    'expo-router/js-top-tabs': { TopTabs: { Screen: 'TopTabs.Screen' } },
+    '@/components/ui/weakening-gate': { useWeakeningGate: () => ({
+      request: async ({ kind }) => { prompts.push(kind); return answer; },
+    }) },
+    '@/features/protection/authorize-weakening': { authorizeWeakening },
+    '@/features/protection/control-state': controlState,
+    '@/features/protection/guard-status-context': { useSharedGuardStatus: () => ({
+      read: { kind: 'ready', value: status, refreshing: false }, refresh: async () => {},
+    }) },
+    '@/features/protection/lock': lock,
+    '@/features/protection/feed-presentation': { getFeedPresentation: () => ({}) },
+    '@/features/protection/feed-status': { getFeedStatus: () => 'running', getFeedStatusDetail: () => '' },
+    '@/features/protection/home-feed-time': { getHomeFeedTimeLabel: () => null },
+    '@/features/protection/overview-actions': { getOverviewAction: () => null, getProtectionOffNotice },
+    '@/features/protection/adult-site-presentation': { getAdultSitePresentation: () => ({}) },
+    '@/features/protection/setup': { hasCompletedSetup: async () => true },
+    '@/features/protection/setup-policy': { shouldShowCustomizePrompt: () => false },
+    '@/features/protection/native': { acknowledgeServiceDisabled: async (through) => { acknowledgments.push(through); } },
+    '@/theme/colors': { colors: {} },
+  };
+  const exports = {};
+  const modules = new Proxy({}, { get: (_, key) => String(key) });
+  vm.runInNewContext(outputText, {
+    Error, exports, require: (name) => imports[name] ?? modules, setInterval: () => 1,
+  });
+  const render = () => {
+    cursor = 0;
+    return exports.default();
+  };
+  const dismiss = async () => {
+    const press = findAction(render(), 'Dismiss notice');
+    assert.ok(press);
+    press();
+    await new Promise(setImmediate);
+  };
+  render();
+  focus();
+  await new Promise(setImmediate);
+  assert.equal(findAction(render(), 'Dismiss notice'), undefined, 'the notice cannot be dismissed while access is still off');
+  status.serviceEnabled = true;
+
+  await dismiss();
+  assert.deepEqual(acknowledgments, [], 'canceling the challenge keeps the notice');
+  assert.deepEqual(prompts, ['challenge']);
+
+  await armLock(7);
+  await dismiss();
+  await requestUnlock();
+  await dismiss();
+  assert.deepEqual(acknowledgments, [], 'a time lock refuses dismissal before and after an unlock request');
+  assert.deepEqual(prompts, ['challenge']);
+
+  await store.deleteItemAsync(LOCK_KEY);
+  await updatePasscode(passcodeEntry());
+  answer = 'wrong code';
+  await dismiss();
+  assert.deepEqual(acknowledgments, []);
+  answer = PASSCODE;
+  await dismiss();
+  assert.deepEqual(acknowledgments, [disabledAt]);
+  assert.deepEqual(prompts, ['challenge', 'passcode', 'passcode']);
 });
 
 test('a wrong passcode refuses a weaker change', async () => {

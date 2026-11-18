@@ -15,6 +15,10 @@ internal class AdultSiteRuleStore(context: Context) {
     }
     set(value) = preferences.edit().putBoolean(KEY_ENABLED, value).apply()
 
+  fun enableDefault() {
+    if (!preferences.contains(KEY_ENABLED)) enabled = true
+  }
+
   val browserSignalMask: Int
     get() = try {
       preferences.getInt(KEY_BROWSER_SIGNAL_MASK, 0)

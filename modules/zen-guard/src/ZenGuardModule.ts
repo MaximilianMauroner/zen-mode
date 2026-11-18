@@ -10,6 +10,8 @@ export type ZenGuardStatus = {
   available: boolean;
   endScreen: EndScreen;
   serviceEnabled: boolean;
+  serviceDisabledAt: number | null;
+  serviceDisabledThrough: number | null;
   currentConsent: boolean;
   protectionEnabled: boolean;
   observationMode: boolean;
@@ -78,6 +80,7 @@ export type InstalledApp = {
 export type AppLimit = InstalledApp & {
   minutes: number;
   usedMs: number;
+  guidedVisitPending: boolean;
 };
 
 /** An app that asks first, with a fixed visit length and downtime between visits. */
@@ -104,6 +107,7 @@ export type EarnRule = InstalledApp & {
 
 declare class ZenGuardModule extends NativeModule<{}> {
   getStatus(): Promise<ZenGuardStatus>;
+  acknowledgeServiceDisabled(disabledThrough: number): Promise<void>;
   setEndScreen(value: EndScreen): Promise<void>;
   startDiagnostics(durationSeconds: number): Promise<void>;
   stopDiagnostics(): Promise<void>;
@@ -126,8 +130,9 @@ declare class ZenGuardModule extends NativeModule<{}> {
   setInstagramSettings(waitSeconds: number, reelsMinutes: number, homeMinutes: number, exploreBlocked: boolean): Promise<void>;
   getInstalledApps(): Promise<InstalledApp[]>;
   getAppLimits(): Promise<AppLimit[]>;
-  setAppLimit(packageName: string, minutes: number): Promise<void>;
+  setAppLimit(packageName: string, minutes: number, guidedVisitPending: boolean): Promise<void>;
   removeAppLimit(packageName: string): Promise<void>;
+  removePendingGuidedCaps(): Promise<void>;
   getIntentApps(): Promise<IntentApp[]>;
   setIntentApp(packageName: string, sessionMinutes: number, cooldownMinutes: number): Promise<void>;
   removeIntentApp(packageName: string): Promise<void>;
@@ -139,6 +144,7 @@ declare class ZenGuardModule extends NativeModule<{}> {
   removeEarnRule(packageName: string): Promise<void>;
   getAdultSiteSettings(): Promise<AdultSiteSettings>;
   setAdultSiteBlockingEnabled(enabled: boolean): Promise<void>;
+  enableDefaultAdultSiteBlocking(): Promise<void>;
   addBlockedDomain(input: string): Promise<string>;
   removeBlockedDomain(host: string): Promise<void>;
   openBrowserCheck(): Promise<void>;

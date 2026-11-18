@@ -13,6 +13,14 @@ export type OverviewAction =
   | 'set-up-x'
   | 'check-sites';
 
+export function getProtectionOffNotice(status: ZenGuardStatus | null): { disabledThrough: number; message: string } | null {
+  if (!status?.available || !status.serviceDisabledAt || !status.serviceDisabledThrough) return null;
+  return {
+    disabledThrough: status.serviceDisabledThrough,
+    message: `Protection was off at least once since ${new Date(status.serviceDisabledAt).toLocaleString()}.`,
+  };
+}
+
 /**
  * Selects the overview's highest-priority action from one native snapshot.
  * X setup includes a feed enabled after initial setup but still awaiting its

@@ -1,3 +1,10 @@
+import { DEFAULT_TIMED_VISIT } from './app-limits-state.ts';
+import type { ZenGuardStatus } from './native';
+import { getSupportedAppAvailability, SUPPORTED_APPS } from './target-availability.ts';
+
+export type GuidedSetupMode = 'kids' | 'focus';
+export const KIDS_DAILY_CAP_MINUTES = 60;
+
 /**
  * One-tap first-install rules. These mirror the native defaults so a fresh
  * install gets the same result whether it comes from storage defaults or
@@ -25,12 +32,6 @@ export const RECOMMENDED_DEFAULTS_SUMMARY: readonly string[] = [
   'Sites: block adult sites (built-in list)',
 ] as const;
 
-/**
- * Apply the recommended rules and start protection in observation mode.
- * Call after acceptSetupConsent(): enabling protection needs current consent.
- * Native access is imported lazily so unit tests can check the constants
- * without loading the Expo native module.
- */
 export async function applyRecommendedDefaults(): Promise<void> {
   const native = await import('./native');
   await native.setYouTubeSettings(RECOMMENDED_DEFAULTS.shortsEnabled, RECOMMENDED_DEFAULTS.youtubeHomeEnabled);
@@ -49,5 +50,21 @@ export async function applyRecommendedDefaults(): Promise<void> {
   await native.setInstagramObservationMode(true);
   await native.setObservationMode(true);
   await native.setAdultSiteBlockingEnabled(RECOMMENDED_DEFAULTS.adultSiteBlockingEnabled);
-  await native.setNativeProtectionEnabled(true);
+}
+
+export async function applyGuidedDefaults(mode: GuidedSetupMode, status: ZenGuardStatus): Promise<void> {
+  const native = await import('./native');
+  const [caps, visits, rolling, earn] = await Promise.all([
+    native.getAppLimits(), native.getIntentApps(), native.getRollingLimits(), native.getEarnRules(),
+  ]);
+  const configured = new Set([...visits, ...rolling, ...earn].map((rule) => rule.packageName));
+  await native.enableDefaultAdultSiteBlocking();
+  await native.setEndScreen(mode);
+  for (const app of SUPPORTED_APPS) {
+    if (configured.has(app.packageName) || getSupportedAppAvailability(status, app.key) !== 'installed') continue;
+    const cap = caps.find((rule) => rule.packageName === app.packageName);
+    if (cap && !cap.guidedVisitPending) continue;
+    if (mode === 'kids' && !cap) await native.setAppLimit(app.packageName, KIDS_DAILY_CAP_MINUTES, true);
+    await native.setIntentApp(app.packageName, DEFAULT_TIMED_VISIT.sessionMinutes, DEFAULT_TIMED_VISIT.cooldownMinutes);
+  }
 }

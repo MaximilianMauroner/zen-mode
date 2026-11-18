@@ -3,9 +3,9 @@ export type { PackageAvailability };
 
 /** The only app packages whose feed support is implemented by the service. */
 export const SUPPORTED_APPS = [
-  { key: 'youtube', label: 'YouTube' },
-  { key: 'instagram', label: 'Instagram' },
-  { key: 'x', label: 'X' },
+  { key: 'youtube', label: 'YouTube', packageName: 'com.google.android.youtube' },
+  { key: 'instagram', label: 'Instagram', packageName: 'com.instagram.android' },
+  { key: 'x', label: 'X', packageName: 'com.twitter.android' },
 ] as const;
 
 /** The only browser packages whose address bars have a conservative adapter. */

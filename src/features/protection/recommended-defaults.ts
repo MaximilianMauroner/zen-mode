@@ -54,13 +54,17 @@ export async function applyRecommendedDefaults(): Promise<void> {
 
 export async function applyGuidedDefaults(mode: GuidedSetupMode, status: ZenGuardStatus): Promise<void> {
   const native = await import('./native');
-  const rules = await Promise.all([native.getAppLimits(), native.getIntentApps(), native.getRollingLimits(), native.getEarnRules()]);
-  const configured = new Set(rules.flat().map((rule) => rule.packageName));
+  const [caps, visits, rolling, earn] = await Promise.all([
+    native.getAppLimits(), native.getIntentApps(), native.getRollingLimits(), native.getEarnRules(),
+  ]);
+  const configured = new Set([...visits, ...rolling, ...earn].map((rule) => rule.packageName));
   await native.enableDefaultAdultSiteBlocking();
   await native.setEndScreen(mode);
   for (const app of SUPPORTED_APPS) {
     if (configured.has(app.packageName) || getSupportedAppAvailability(status, app.key) !== 'installed') continue;
-    if (mode === 'kids') await native.setAppLimit(app.packageName, KIDS_DAILY_CAP_MINUTES);
+    const cap = caps.find((rule) => rule.packageName === app.packageName);
+    if (cap && !cap.guidedVisitPending) continue;
+    if (mode === 'kids' && !cap) await native.setAppLimit(app.packageName, KIDS_DAILY_CAP_MINUTES, true);
     await native.setIntentApp(app.packageName, DEFAULT_TIMED_VISIT.sessionMinutes, DEFAULT_TIMED_VISIT.cooldownMinutes);
   }
 }

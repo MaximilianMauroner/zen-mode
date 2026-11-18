@@ -6,12 +6,21 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import org.json.JSONObject
 
 class ZenGuardAccessibilityService : AccessibilityService() {
   private lateinit var preferences: ZenGuardPreferences
+  private val heartbeatHandler = Handler(Looper.getMainLooper())
+  private val heartbeat = object : Runnable {
+    override fun run() {
+      AccessibilityAccess.heartbeat(this@ZenGuardAccessibilityService)
+      heartbeatHandler.postDelayed(this, AccessibilityAccess.HEARTBEAT_INTERVAL_MS)
+    }
+  }
   private val stats = InterventionStats(null) { reason, outcome ->
     if (Diagnostics.isRecording(this)) Diagnostics.record(this, "intervention", JSONObject()
       .put("reason", reason.key).put("outcome", outcome.name))
@@ -58,6 +67,8 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   override fun onServiceConnected() {
     super.onServiceConnected()
     AccessibilityAccess.connected(this)
+    heartbeatHandler.removeCallbacks(heartbeat)
+    heartbeatHandler.postDelayed(heartbeat, AccessibilityAccess.HEARTBEAT_INTERVAL_MS)
     runCatching { Diagnostics.service(this, true, "connected") }
     preferences = ZenGuardPreferences(this)
     stats.replaceStore(
@@ -187,11 +198,13 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   }
 
   override fun onUnbind(intent: Intent?): Boolean {
+    heartbeatHandler.removeCallbacks(heartbeat)
     AccessibilityAccess.disconnected(this)
     return super.onUnbind(intent)
   }
 
   override fun onDestroy() {
+    heartbeatHandler.removeCallbacks(heartbeat)
     if (::preferences.isInitialized) AccessibilityAccess.disconnected(this)
     runCatching { Diagnostics.service(this, false, "destroy") }
     wholeApp.cancelVisitDeadline()

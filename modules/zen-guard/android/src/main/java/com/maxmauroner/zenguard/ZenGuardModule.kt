@@ -189,15 +189,16 @@ class ZenGuardModule : Module() {
           "label" to labelFor(context.packageManager, packageName),
           "minutes" to minutes,
           "usedMs" to (usage[packageName] ?: 0L).toDouble(),
+          "guidedVisitPending" to store.hasPendingGuidedVisit(packageName),
         )
       }.sortedBy { (it["label"] as String).lowercase() }
     }
 
-    AsyncFunction("setAppLimit") { packageName: String, minutes: Int ->
+    AsyncFunction("setAppLimit") { packageName: String, minutes: Int, guidedVisitPending: Boolean ->
       require(minutes in 1..480) { "A daily limit must be between 1 and 480 minutes" }
       val context = requireNotNull(appContext.reactContext)
       require(!AppRuleSafety.resolve(context).isExempt(packageName)) { RULE_EXEMPT_MESSAGE }
-      AppLimitStore(context).setLimit(packageName, minutes)
+      AppLimitStore(context).setLimit(packageName, minutes, guidedVisitPending)
     }
 
     AsyncFunction("removeAppLimit") { packageName: String ->
@@ -223,10 +224,12 @@ class ZenGuardModule : Module() {
       val context = requireNotNull(appContext.reactContext)
       require(!AppRuleSafety.resolve(context).isExempt(packageName)) { RULE_EXEMPT_MESSAGE }
       IntentAppStore(context).setIntent(packageName, sessionMinutes, cooldownMinutes)
+      AppLimitStore(context).clearPendingGuidedVisit(packageName)
     }
 
     AsyncFunction("removeIntentApp") { packageName: String ->
       val context = requireNotNull(appContext.reactContext)
+      AppLimitStore(context).clearPendingGuidedVisit(packageName)
       IntentAppStore(context).removeIntent(packageName)
     }
 

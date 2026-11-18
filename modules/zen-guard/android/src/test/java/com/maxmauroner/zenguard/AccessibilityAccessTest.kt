@@ -2,16 +2,19 @@ package com.maxmauroner.zenguard
 
 import android.content.ComponentName
 import android.content.Intent
+import android.os.Looper
 import android.provider.Settings
 import java.time.Duration
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowSystem
 import org.robolectric.shadows.ShadowSystemClock
@@ -20,6 +23,10 @@ import org.robolectric.shadows.ShadowSystemClock
 @Config(sdk = [35], instrumentedPackages = ["com.maxmauroner.zenguard"])
 class AccessibilityAccessTest {
   private val context = RuntimeEnvironment.getApplication()
+
+  @Before fun setBootCount() {
+    Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 7)
+  }
 
   @Test fun `first use and unrelated accessibility changes have no off period`() {
     assertEquals(AccessibilityAccess.Status(false, null), AccessibilityAccess.read(context))
@@ -69,7 +76,7 @@ class AccessibilityAccessTest {
     }
   }
 
-  @Test fun `a quick update or reboot reconnect leaves no notice`() {
+  @Test fun `a quick clean reconnect leaves no notice`() {
     val original = Robolectric.buildService(ZenGuardAccessibilityService::class.java).create()
     setEnabled(true)
     connect(original.get())
@@ -85,6 +92,61 @@ class AccessibilityAccessTest {
     } finally {
       replacement.destroy()
     }
+  }
+
+  @Test fun `a reconnect after a force stop reports the gap from the last idle heartbeat`() {
+    val original = Robolectric.buildService(ZenGuardAccessibilityService::class.java).create()
+    val replacement = Robolectric.buildService(ZenGuardAccessibilityService::class.java).create()
+    try {
+      setEnabled(true)
+      connect(original.get())
+      shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(90))
+      val lastHeartbeat = ShadowSystem.currentTimeMillis()
+      setEnabled(false)
+      ShadowSystemClock.advanceBy(Duration.ofSeconds(61))
+      setEnabled(true)
+      connect(replacement.get())
+      assertEquals(
+        AccessibilityAccess.Status(true, AccessibilityAccess.OffPeriod(lastHeartbeat, ShadowSystem.currentTimeMillis())),
+        AccessibilityAccess.read(context),
+      )
+    } finally {
+      replacement.destroy()
+      original.destroy()
+    }
+  }
+
+  @Test fun `a reconnect on a new boot ignores the previous connection`() {
+    setEnabled(true)
+    AccessibilityAccess.connected(context)
+    ShadowSystemClock.advanceBy(Duration.ofHours(1))
+    Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 8)
+    AccessibilityAccess.connected(context)
+    assertEquals(AccessibilityAccess.Status(true, null), AccessibilityAccess.read(context))
+  }
+
+  @Test fun `a quick unclean reconnect leaves no notice after deep sleep`() {
+    setEnabled(true)
+    AccessibilityAccess.connected(context)
+    ShadowSystemClock.simulateDeepSleep(Duration.ofHours(1))
+    ShadowSystemClock.advanceBy(Duration.ofSeconds(60))
+    AccessibilityAccess.connected(context)
+    assertEquals(AccessibilityAccess.Status(true, null), AccessibilityAccess.read(context))
+  }
+
+  @Test fun `dismissing while access is off retains the period after access returns`() {
+    setEnabled(true)
+    AccessibilityAccess.read(context)
+    setEnabled(false)
+    val open = requireNotNull(AccessibilityAccess.read(context).offPeriod)
+    AccessibilityAccess.acknowledge(context, open.through)
+    assertEquals(open, AccessibilityAccess.read(context).offPeriod)
+    ShadowSystemClock.advanceBy(Duration.ofMinutes(1))
+    setEnabled(true)
+    val closed = AccessibilityAccess.OffPeriod(open.since, ShadowSystem.currentTimeMillis())
+    assertEquals(AccessibilityAccess.Status(true, closed), AccessibilityAccess.read(context))
+    AccessibilityAccess.acknowledge(context, closed.through)
+    assertNull(AccessibilityAccess.read(context).offPeriod)
   }
 
   @Test fun `two off periods retain the earliest start and latest end and reject stale acknowledgment`() {

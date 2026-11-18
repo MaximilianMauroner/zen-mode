@@ -43,13 +43,26 @@ const nativeUrl = moduleUrl(`
   export async function openAccessibilitySettings() { calls.push('open settings'); }
   export async function setNativeProtectionEnabled(enabled) { status.protectionEnabled = enabled; }
   export async function setEndScreen(mode) { status.endScreen = mode; }
-  export async function getAppLimits() { return Object.keys(status.dailyCaps).map((packageName) => ({ packageName })); }
+  export async function getAppLimits() {
+    return Object.keys(status.dailyCaps).map((packageName) => ({
+      packageName, guidedVisitPending: status.pendingVisits.has(packageName),
+    }));
+  }
   export async function getIntentApps() { return Object.keys(status.visits).map((packageName) => ({ packageName })); }
   export async function getRollingLimits() { return status.rolling; }
   export async function getEarnRules() { return status.earn; }
-  export async function setAppLimit(packageName, minutes) { status.dailyCaps[packageName] = minutes; }
+  export async function setAppLimit(packageName, minutes, guidedVisitPending) {
+    status.dailyCaps[packageName] = minutes;
+    if (guidedVisitPending) status.pendingVisits.add(packageName);
+    else status.pendingVisits.delete(packageName);
+  }
   export async function setIntentApp(packageName, sessionMinutes, cooldownMinutes) {
+    if (status.failVisitFor === packageName) {
+      status.failVisitFor = undefined;
+      throw new Error('Could not save the timed visit');
+    }
     status.visits[packageName] = { sessionMinutes, cooldownMinutes };
+    status.pendingVisits.delete(packageName);
   }
   export async function setYouTubeSettings(...args) { status.rules.youtube = args; }
   export async function setXSettings(...args) { status.rules.x = args; }
@@ -104,6 +117,7 @@ async function setup({ activePasscode, platform = 'android', endScreen = 'off', 
   Object.assign(native.status, {
     available: true, serviceEnabled: false, currentConsent: false, protectionEnabled: false, endScreen,
     appAvailability, dailyCaps: {}, visits: {}, rules: {}, observation: {}, accessChecks: [], rolling: [], earn: [],
+    pendingVisits: new Set(), failVisitFor: undefined,
   });
   if (activePasscode) await lock.updatePasscode({ passcode: activePasscode, confirmation: activePasscode });
   return mountSetup();
@@ -366,6 +380,30 @@ test('a lock write failure leaves the saved rules paused and setup can finish on
   assert.equal(native.status.protectionEnabled, true);
   assert.equal(await setupActions.hasCompletedSetup(), true);
   assert.equal(view.destination, '/');
+});
+
+test('Kids setup retries an unfinished timed visit and preserves a user cap of the same length', async () => {
+  const view = await setup({ appAvailability: { youtube: 'installed', instagram: 'installed', x: 'absent' } });
+  const youtube = 'com.google.android.youtube';
+  const instagram = 'com.instagram.android';
+  native.status.dailyCaps[instagram] = 60;
+  native.status.failVisitFor = youtube;
+  await view.chooseMode('Kids');
+  await view.press('Time lock');
+  await view.press('Continue');
+  view.consent();
+  await view.press('Continue to Android access');
+  await view.returnToApp(true);
+  await view.press('Lock for 7 days and finish');
+
+  assert.ok(view.find((node) => node.props?.message === 'Could not save the timed visit'));
+  assert.deepEqual(native.status.dailyCaps, { [instagram]: 60, [youtube]: 60 });
+  assert.deepEqual(native.status.visits, {});
+
+  await view.press('Lock for 7 days and finish');
+  assert.deepEqual(native.status.dailyCaps, { [instagram]: 60, [youtube]: 60 });
+  assert.deepEqual(native.status.visits, { [youtube]: timedVisit });
+  assert.ok(view.props('Open Google Family Link'));
 });
 
 test('losing access after the lock is armed keeps the lock and lets setup resume after relaunch', async (t) => {

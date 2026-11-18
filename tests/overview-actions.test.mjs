@@ -69,14 +69,18 @@ const base = {
   appAvailability: { youtube: 'installed', instagram: 'installed', x: 'installed' },
 };
 
-test('home reports an actual off period even if access resumed, and clears it after acknowledgment', () => {
+test('home reports an actual off period before and after access resumes', (t) => {
   assert.equal(getProtectionOffNotice({ ...base, serviceEnabled: false }), null);
   assert.equal(getProtectionOffNotice({ ...base, protectionEnabled: false }), null);
 
   const disabledAt = Date.UTC(2026, 10, 18, 12);
   const disabledThrough = disabledAt + 120_000;
   const status = { ...base, serviceDisabledAt: disabledAt, serviceDisabledThrough: disabledThrough };
-  const message = `Protection was off at least once since ${new Date(disabledAt).toLocaleString()}.`;
+  t.mock.method(Date.prototype, 'toLocaleString', function () {
+    assert.equal(this.getTime(), disabledAt);
+    return '11/18/2026, 12:00:00 PM';
+  });
+  const message = 'Protection was off at least once since 11/18/2026, 12:00:00 PM.';
   assert.deepEqual(getProtectionOffNotice({ ...status, serviceEnabled: false }), { disabledThrough, message });
   assert.deepEqual(getProtectionOffNotice(status), { disabledThrough, message });
   assert.equal(getProtectionOffNotice(base), null);

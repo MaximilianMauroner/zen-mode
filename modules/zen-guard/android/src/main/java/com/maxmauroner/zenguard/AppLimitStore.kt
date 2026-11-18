@@ -1,6 +1,7 @@
 package com.maxmauroner.zenguard
 
 import android.content.Context
+import android.content.SharedPreferences
 import org.json.JSONObject
 import java.util.Calendar
 import java.util.TimeZone
@@ -22,12 +23,23 @@ internal class AppLimitStore(context: Context) {
     return raw.keys().asSequence().associateWith { raw.optInt(it, 0) }.filterValues { it > 0 }
   }
 
-  fun setLimit(packageName: String, minutes: Int) {
-    writeLimits(limits() + (packageName to minutes))
+  fun setLimit(packageName: String, minutes: Int, guidedVisitPending: Boolean = false) {
+    val update = editLimits(limits() + (packageName to minutes))
+    if (guidedVisitPending) {
+      check(update.putBoolean(guidedVisitKey(packageName), true).commit()) { "Could not save the daily cap" }
+    } else {
+      update.remove(guidedVisitKey(packageName)).apply()
+    }
   }
 
   fun removeLimit(packageName: String) {
-    writeLimits(limits() - packageName)
+    editLimits(limits() - packageName).remove(guidedVisitKey(packageName)).apply()
+  }
+
+  fun hasPendingGuidedVisit(packageName: String): Boolean = preferences.getBoolean(guidedVisitKey(packageName), false)
+
+  fun clearPendingGuidedVisit(packageName: String) {
+    if (hasPendingGuidedVisit(packageName)) preferences.edit().remove(guidedVisitKey(packageName)).apply()
   }
 
   /** Milliseconds each limited app has spent in the foreground today. */
@@ -71,11 +83,13 @@ internal class AppLimitStore(context: Context) {
   fun availableAgainAt(packageName: String, nowWallMs: Long): Long? =
     if (isOverBudget(packageName, nowWallMs)) nowWallMs + millisUntilLocalMidnight(nowWallMs) else null
 
-  private fun writeLimits(values: Map<String, Int>) {
+  private fun editLimits(values: Map<String, Int>): SharedPreferences.Editor {
     val next = JSONObject()
     values.forEach { (key, value) -> next.put(key, value) }
-    preferences.edit().putString(KEY_LIMITS, next.toString()).apply()
+    return preferences.edit().putString(KEY_LIMITS, next.toString())
   }
+
+  private fun guidedVisitKey(packageName: String) = "guided_visit_pending_$packageName"
 
   /** Local calendar day, so the reset lands at the user's midnight. */
   private fun dayOf(nowMs: Long): Int {

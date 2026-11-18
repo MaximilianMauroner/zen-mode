@@ -80,6 +80,7 @@ export type InstalledApp = {
 export type AppLimit = InstalledApp & {
   minutes: number;
   usedMs: number;
+  guidedVisitPending: boolean;
 };
 
 /** An app that asks first, with a fixed visit length and downtime between visits. */
@@ -129,7 +130,7 @@ declare class ZenGuardModule extends NativeModule<{}> {
   setInstagramSettings(waitSeconds: number, reelsMinutes: number, homeMinutes: number, exploreBlocked: boolean): Promise<void>;
   getInstalledApps(): Promise<InstalledApp[]>;
   getAppLimits(): Promise<AppLimit[]>;
-  setAppLimit(packageName: string, minutes: number): Promise<void>;
+  setAppLimit(packageName: string, minutes: number, guidedVisitPending: boolean): Promise<void>;
   removeAppLimit(packageName: string): Promise<void>;
   getIntentApps(): Promise<IntentApp[]>;
   setIntentApp(packageName: string, sessionMinutes: number, cooldownMinutes: number): Promise<void>;

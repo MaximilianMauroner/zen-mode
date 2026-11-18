@@ -34,7 +34,8 @@ export const setInstagramSettings = (
 
 export const getInstalledApps = () => ZenGuardModule.getInstalledApps();
 export const getAppLimits = () => ZenGuardModule.getAppLimits();
-export const setAppLimit = (packageName: string, minutes: number) => ZenGuardModule.setAppLimit(packageName, minutes);
+export const setAppLimit = (packageName: string, minutes: number, guidedVisitPending = false) =>
+  ZenGuardModule.setAppLimit(packageName, minutes, guidedVisitPending);
 export const removeAppLimit = (packageName: string) => ZenGuardModule.removeAppLimit(packageName);
 export const getIntentApps = () => ZenGuardModule.getIntentApps();
 export const setIntentApp = (packageName: string, sessionMinutes: number, cooldownMinutes: number) =>

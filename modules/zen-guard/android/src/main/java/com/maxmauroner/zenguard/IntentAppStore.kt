@@ -39,7 +39,7 @@ internal class IntentAppStore(context: Context) {
     require(cooldownMinutes in 0..MAX_COOLDOWN_MINUTES) { "Downtime must be between 0 and $MAX_COOLDOWN_MINUTES minutes" }
     val raw = JSONObject(preferences.getString(KEY_INTENTS, "{}") ?: "{}")
     raw.put(packageName, JSONObject().put(KEY_SESSION, sessionMinutes).put(KEY_COOLDOWN, cooldownMinutes))
-    preferences.edit().putString(KEY_INTENTS, raw.toString()).apply()
+    check(preferences.edit().putString(KEY_INTENTS, raw.toString()).commit()) { "Could not save the timed visit" }
   }
 
   fun removeIntent(packageName: String) {

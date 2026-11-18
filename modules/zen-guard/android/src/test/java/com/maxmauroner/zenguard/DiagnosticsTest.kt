@@ -14,6 +14,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.After
+import org.junit.Before
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -28,6 +29,10 @@ import java.time.Duration
 @LooperMode(LooperMode.Mode.PAUSED)
 class DiagnosticsTest {
   private val context: Context get() = RuntimeEnvironment.getApplication()
+
+  @Before fun setUp() {
+    Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 7)
+  }
 
   @After fun clearRecording() = Diagnostics.clear(context)
 
@@ -177,10 +182,22 @@ class DiagnosticsTest {
   }
 
   @Test fun rebootEndsTheRecordingEvenWhenElapsedTimeIsAmbiguous() {
-    Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 7)
     Diagnostics.start(context, true, 600_000L)
     Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 8)
     assertEquals("complete", Diagnostics.status(context)["state"])
+  }
+
+  @Test fun missingBootCountFallsBackToTheWallClockDeadline() {
+    Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)
+    Diagnostics.start(context, true, 2_000L)
+    val storage = context.getSharedPreferences("x_diagnostics", Context.MODE_PRIVATE)
+    val trace = JSONObject(storage.getString("trace", null)!!)
+    trace.put("startedAt", System.currentTimeMillis() - 60_000L)
+    check(storage.edit().putString("trace", trace.toString()).commit())
+    Diagnostics.record(context, "late", JSONObject(), true)
+    val status = Diagnostics.status(context)
+    assertEquals("complete", status["state"])
+    assertFalse(JSONObject(status["json"] as String).getJSONArray("events").toString().contains("late"))
   }
 
   @Test fun recordingIsBoundedAndRestartReplacesIt() {

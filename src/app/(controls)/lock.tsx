@@ -3,13 +3,16 @@ import { Card, CardHeader, SectionLabel } from '@/components/ui/card';
 import { ChipGroup } from '@/components/ui/choice';
 import { TopTabs } from 'expo-router/js-top-tabs';
 import { ErrorNote, Screen } from '@/components/ui/screen';
+import { PasscodeInput, useWeakeningGate, WeakeningGateDialog } from '@/components/ui/weakening-gate';
 import {
   armLock,
   cancelUnlock,
   formatRemaining,
   LOCK_DAY_OPTIONS,
+  passcodeEntryRefusal,
   readLockState,
   requestUnlock,
+  updatePasscode,
   type LockState,
 } from '@/features/protection/lock';
 import { colors } from '@/theme/colors';
@@ -18,31 +21,35 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 
-type ReadState = 'loading' | 'ready' | 'error';
+const LOCK_TITLES: Record<LockState['kind'], string> = {
+  open: 'Settings unlocked',
+  locked: 'Settings locked',
+  pending: 'Unlock requested',
+  passcode: 'Settings locked with a passcode',
+};
 
 export default function LockScreen() {
   const [lock, setLock] = useState<LockState | null>(null);
-  const [readState, setReadState] = useState<ReadState>('loading');
+  const [refreshing, setRefreshing] = useState(true);
   const [selectedDays, setSelectedDays] = useState(7);
+  const [passcode, setPasscode] = useState('');
+  const [confirmation, setConfirmation] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const busyRef = useRef(false);
   const refreshInFlightRef = useRef(false);
+  const gate = useWeakeningGate();
 
   const refresh = useCallback(async () => {
     if (refreshInFlightRef.current) return;
     refreshInFlightRef.current = true;
-    setReadState('loading');
+    setRefreshing(true);
     setError('');
     try {
       setLock(await readLockState());
-      setReadState('ready');
-    } catch {
-      setLock(null);
-      setReadState('error');
-      setError('The lock could not be read.');
     } finally {
+      setRefreshing(false);
       refreshInFlightRef.current = false;
     }
   }, []);
@@ -56,6 +63,10 @@ export default function LockScreen() {
   useFocusEffect(
     useCallback(() => {
       void refresh();
+      return () => {
+        setPasscode('');
+        setConfirmation('');
+      };
     }, [refresh]),
   );
 
@@ -101,68 +112,107 @@ export default function LockScreen() {
       await refresh();
     }, 'Could not keep it locked.');
 
-  const currentLock = lock;
-  const controlsDisabled = busy || readState !== 'ready';
+  const timeLock = lock?.kind === 'locked' || lock?.kind === 'pending' ? lock : null;
+  const hasPasscode = lock?.kind === 'passcode';
+  const controlsDisabled = busy || refreshing;
+  const update = (entry: { passcode: string; confirmation: string } | null) =>
+    runAction(async () => {
+      if (entry !== null) {
+        const refusal = passcodeEntryRefusal(entry.passcode, entry.confirmation);
+        if (refusal) throw new Error(refusal);
+      }
+      let currentPasscode: string | undefined;
+      if (hasPasscode) {
+        const answer = await gate.request({ kind: 'passcode', action: entry === null ? 'remove the passcode' : 'change the passcode' });
+        if (typeof answer !== 'string') return;
+        currentPasscode = answer;
+      }
+      await updatePasscode(entry, currentPasscode);
+      setPasscode('');
+      setConfirmation('');
+      await refresh();
+    }, 'The passcode lock could not be updated.');
 
   return (
     <Screen edges={[]}>
       <TopTabs.Screen options={{ swipeEnabled: !busy }} />
+      <WeakeningGateDialog gate={gate} />
 
-      <Text accessibilityRole="header" className="text-title font-semibold text-copy">{currentLock === null ? readState === 'loading' ? 'Reading lock…' : 'Lock unavailable' : currentLock.kind === 'pending' ? 'Unlock requested' : currentLock.kind === 'locked' ? 'Settings locked' : 'Settings unlocked'}</Text>
+      <Text accessibilityRole="header" className="text-title font-semibold text-copy">{lock ? LOCK_TITLES[lock.kind] : 'Reading lock…'}</Text>
+      {lock?.kind === 'open' ? <Text className="text-body text-muted">Choose a time lock or a passcode.</Text> : null}
 
-      {currentLock !== null && currentLock.kind !== 'open' ? (
-        <Card emphasis={currentLock.kind === 'locked'}>
+      {timeLock ? (
+        <Card emphasis={timeLock.kind === 'locked'}>
           <CardHeader
-            label={currentLock.kind === 'pending' ? 'Opens in' : 'Holds for'}
+            label={timeLock.kind === 'pending' ? 'Opens in' : 'Holds for'}
             icon={<Lock color={colors.accent} size={15} />}
           />
           <Text className="mt-2 text-metric font-semibold tracking-tight text-accent" style={{ fontVariant: ['tabular-nums'] }}>
-            {formatRemaining(currentLock.endsAt, now)}
+            {formatRemaining(timeLock.endsAt, now)}
           </Text>
           <Text className="mt-1 text-support text-muted">
-            {currentLock.kind === 'pending'
+            {timeLock.kind === 'pending'
               ? 'Changed your mind? Keep it locked and nothing happens.'
               : 'Tightening works right now. Loosening needs the wait.'}
           </Text>
-          {currentLock.kind === 'pending' ? (
+          {timeLock.kind === 'pending' ? (
             <PrimaryButton className="mt-4" title={busy ? 'Working…' : 'Keep it locked'} disabled={controlsDisabled} onPress={keepLocked} />
           ) : null}
         </Card>
       ) : null}
 
-      <View>
-        <SectionLabel className="mb-2">{currentLock !== null && currentLock.kind !== 'open' ? 'Extend' : 'Lock for'}</SectionLabel>
-        <Card>
-          <ChipGroup
-            label="Lock length"
-            options={LOCK_DAY_OPTIONS.map((days) => ({ value: days, label: `${days}d` }))}
-            selected={selectedDays}
-            disabled={controlsDisabled}
-            onSelect={setSelectedDays}
-          />
-          {currentLock !== null && currentLock.kind !== 'open' ? (
-            <SecondaryButton
-              className="mt-4"
-              title={busy ? 'Working…' : `Extend to ${selectedDays} days`}
+      {!hasPasscode ? (
+        <View>
+          <SectionLabel className="mb-2">{timeLock ? 'Extend' : 'Time lock'}</SectionLabel>
+          <Card>
+            <ChipGroup
+              label="Lock length"
+              options={LOCK_DAY_OPTIONS.map((days) => ({ value: days, label: `${days}d` }))}
+              selected={selectedDays}
               disabled={controlsDisabled}
-              onPress={arm}
+              onSelect={setSelectedDays}
             />
-          ) : (
-            <PrimaryButton
-              className="mt-4"
-              title={busy ? 'Working…' : `Lock for ${selectedDays} days`}
-              disabled={controlsDisabled}
-              onPress={arm}
-            />
-          )}
-        </Card>
-      </View>
+            {timeLock ? (
+              <SecondaryButton
+                className="mt-4"
+                title={busy ? 'Working…' : `Extend to ${selectedDays} days`}
+                disabled={controlsDisabled}
+                onPress={arm}
+              />
+            ) : (
+              <PrimaryButton
+                className="mt-4"
+                title={busy ? 'Working…' : `Lock for ${selectedDays} days`}
+                disabled={controlsDisabled}
+                onPress={arm}
+              />
+            )}
+          </Card>
+        </View>
+      ) : null}
 
-      {currentLock?.kind === 'locked' ? (
+      {timeLock?.kind === 'locked' ? (
         <DangerButton title={busy ? 'Working…' : 'Ask to unlock'} disabled={controlsDisabled} onPress={askToUnlock} />
       ) : null}
 
-      <Text className="text-caption text-muted">{currentLock?.kind === 'locked' || currentLock?.kind === 'pending' ? 'Unlocking takes at least 24 hours and cannot end before the lock expires.' : 'You can tighten limits while locked.'}</Text>
+      {hasPasscode || lock?.kind === 'open' ? (
+        <View>
+          <SectionLabel className="mb-2">Passcode</SectionLabel>
+          <Card className="gap-3">
+            <Text className="text-support text-muted">Use at least 6 characters.</Text>
+            <PasscodeInput label={hasPasscode ? 'New passcode' : 'Passcode'} value={passcode} onChangeText={setPasscode} editable={!controlsDisabled} />
+            <PasscodeInput label="Confirm passcode" value={confirmation} onChangeText={setConfirmation} editable={!controlsDisabled} />
+            <PrimaryButton
+              title={hasPasscode ? 'Change passcode' : 'Set passcode'}
+              disabled={controlsDisabled || !passcode || !confirmation}
+              onPress={() => update({ passcode, confirmation })}
+            />
+            {hasPasscode ? <DangerButton title="Remove passcode" disabled={controlsDisabled} onPress={() => update(null)} /> : null}
+          </Card>
+        </View>
+      ) : null}
+
+      <Text className="text-caption text-muted">{timeLock ? 'Unlocking takes at least 24 hours and cannot end before the lock expires.' : 'You can tighten limits while locked.'}</Text>
       <ErrorNote message={error} />
     </Screen>
   );

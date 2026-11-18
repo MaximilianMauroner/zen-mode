@@ -81,7 +81,15 @@ test('a non-finite stored time cannot masquerade as a lock', () => {
   assert.equal(parseLockRecord('{"version":1,"lockedUntil":1,"unlockRequestedAt":1e999}'), null);
 });
 
-test('a well-formed record round-trips, and a missing request field means none', () => {
+test('a damaged passcode record opens the settings', () => {
+  const salt = 'a'.repeat(32);
+  const hash = 'b'.repeat(64);
+  for (const record of [{ version: 2, salt }, { version: 2, hash }, { version: 2, salt, hash: 'not a hash' }]) {
+    assert.deepEqual(stateOf(parseLockRecord(JSON.stringify(record)), NOW), { kind: 'open' });
+  }
+});
+
+test('existing version 1 time locks still read correctly', () => {
   assert.deepEqual(parseLockRecord('{"version":1,"lockedUntil":1700,"unlockRequestedAt":null}'), {
     version: 1,
     lockedUntil: 1700,

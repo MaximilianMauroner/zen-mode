@@ -11,35 +11,33 @@ export const UNLOCK_DELAY_MS = DAY_MS;
 /** Lock lengths offered when arming or extending. */
 export const LOCK_DAY_OPTIONS = [1, 3, 7, 14, 30];
 
-export type LockRecord = {
+type TimeLockRecord = {
   version: 1;
   lockedUntil: number;
   unlockRequestedAt: number | null;
 };
 
+export type PasscodeLockRecord = { version: 2; salt: string; hash: string };
+export type LockRecord = TimeLockRecord | PasscodeLockRecord;
+
 export type LockState =
-  /** Nothing is holding the settings. Anything can be weakened right away. */
   | { kind: 'open' }
-  /** The lock is running. Weaker settings are refused until an unlock is asked for and waited out. */
+  | { kind: 'passcode'; endsAt: null }
   | { kind: 'locked'; lockedUntil: number; endsAt: number }
-  /** An unlock was asked for. The lock opens at `endsAt` and not before. */
   | { kind: 'pending'; lockedUntil: number; requestedAt: number; endsAt: number };
 
 /**
  * When the lock opens. Asking to unlock never shortens the term you chose: the
  * cooling-off runs alongside the remaining days, so the later of the two wins.
  */
-export function endOf(record: LockRecord): number {
+export function endOf(record: TimeLockRecord): number {
   if (record.unlockRequestedAt === null) return record.lockedUntil;
   return Math.max(record.lockedUntil, record.unlockRequestedAt + UNLOCK_DELAY_MS);
 }
 
-/**
- * The state a stored record describes at `now`. An expired record reads as
- * `open`; the caller is responsible for clearing it.
- */
 export function stateOf(record: LockRecord | null, now: number): LockState {
   if (record === null) return { kind: 'open' };
+  if (record.version === 2) return { kind: 'passcode', endsAt: null };
 
   const endsAt = endOf(record);
   if (now >= endsAt) return { kind: 'open' };
@@ -67,7 +65,12 @@ export function parseLockRecord(serialized: string | null): LockRecord | null {
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
 
-  const value = parsed as Partial<LockRecord>;
+  const value = parsed as Record<string, unknown>;
+  if (value.version === 2) {
+    if (typeof value.salt !== 'string' || !/^[a-f0-9]{32}$/.test(value.salt) ||
+        typeof value.hash !== 'string' || !/^[a-f0-9]{64}$/.test(value.hash)) return null;
+    return { version: 2, salt: value.salt, hash: value.hash };
+  }
   if (
     value.version !== 1 ||
     typeof value.lockedUntil !== 'number' ||
@@ -85,10 +88,12 @@ export function parseLockRecord(serialized: string | null): LockRecord | null {
  * request would shorten a live lock. Re-committing clears a pending unlock, so
  * arming only ever makes the commitment stronger.
  */
-export function armedRecord(state: LockState, days: number, now: number): LockRecord | { error: string } {
+export function armedRecord(state: LockState, days: number, now: number): TimeLockRecord | { error: string } {
   if (!Number.isInteger(days) || days < 1) {
     return { error: 'Choose a whole number of days.' };
   }
+
+  if (state.kind === 'passcode') return { error: 'Remove the passcode before you set a time lock.' };
 
   const lockedUntil = now + days * DAY_MS;
   if (state.kind !== 'open' && lockedUntil <= state.endsAt) {
@@ -96,6 +101,18 @@ export function armedRecord(state: LockState, days: number, now: number): LockRe
   }
 
   return { version: 1, lockedUntil, unlockRequestedAt: null };
+}
+
+export function passcodeUpdateRefusal(state: LockState, needsExistingPasscode: boolean): string | null {
+  if (state.kind === 'locked' || state.kind === 'pending') return 'The time lock is active. Ask to unlock it first.';
+  if (state.kind === 'open' && needsExistingPasscode) return 'The passcode lock changed. Try again.';
+  return null;
+}
+
+export function passcodeEntryRefusal(passcode: string, confirmation: string): string | null {
+  if (passcode.trim().length < 6) return 'Use at least 6 characters.';
+  if (passcode !== confirmation) return 'The passcodes do not match.';
+  return null;
 }
 
 /** Coarse "6d 4h" style remaining time. Never renders a stale zero. */

@@ -1,73 +1,106 @@
+import { CryptoDigestAlgorithm, digestStringAsync, getRandomValues } from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 
 import {
   armedRecord,
   formatRemaining as formatRemainingAt,
   parseLockRecord,
+  passcodeEntryRefusal,
+  passcodeUpdateRefusal,
   stateOf,
   type LockRecord,
   type LockState,
+  type PasscodeLockRecord,
 } from './lock-policy';
 
 const LOCK_KEY = 'zen-mode.commitment-lock.v1';
+let lockWrite = Promise.resolve();
 
-export { LOCK_DAY_OPTIONS, UNLOCK_DELAY_MS, type LockState } from './lock-policy';
+export { LOCK_DAY_OPTIONS, UNLOCK_DELAY_MS, passcodeEntryRefusal, type LockState } from './lock-policy';
 
-/**
- * Current lock state. An expired lock is cleared as a side effect, so callers
- * always see either a live lock or a clean `open`.
- */
 export async function readLockState(): Promise<LockState> {
-  const record = await readRecord();
-  if (record === null) return { kind: 'open' };
-
-  const state = stateOf(record, Date.now());
-  if (state.kind === 'open') await SecureStore.deleteItemAsync(LOCK_KEY);
-  return state;
+  return stateOf(await readLockRecord(), Date.now());
 }
 
-/** True while weaker settings must be refused. */
-export async function isChangeBlocked(): Promise<boolean> {
-  return (await readLockState()).kind !== 'open';
+export async function readLockRecord(): Promise<LockRecord | null> {
+  await lockWrite;
+  return readRecord();
 }
 
-/**
- * Start or extend the lock. Re-committing clears a pending unlock, so this only
- * ever makes the commitment stronger. Shortening a live lock is refused.
- */
-export async function armLock(days: number): Promise<void> {
-  const next = armedRecord(await readLockState(), days, Date.now());
-  if ('error' in next) throw new Error(next.error);
-
-  await writeRecord(next);
+export function armLock(days: number): Promise<void> {
+  return updateLock((current, now) => {
+    const next = armedRecord(stateOf(current, now), days, now);
+    if ('error' in next) throw new Error(next.error);
+    return next;
+  });
 }
 
-/** Start the cooling-off period. The lock stays closed until it runs out. */
-export async function requestUnlock(): Promise<void> {
-  const state = await readLockState();
-  if (state.kind === 'open') throw new Error('Nothing is locked.');
-  if (state.kind === 'pending') throw new Error('An unlock is already waiting.');
-
-  await writeRecord({ version: 1, lockedUntil: state.lockedUntil, unlockRequestedAt: Date.now() });
+export function requestUnlock(): Promise<void> {
+  return updateLock((current, now) => {
+    const state = stateOf(current, now);
+    if (state.kind === 'pending') throw new Error('An unlock is already waiting.');
+    if (state.kind !== 'locked') throw new Error('There is no active time lock.');
+    return { version: 1, lockedUntil: state.lockedUntil, unlockRequestedAt: now };
+  });
 }
 
-/** Withdraw a pending unlock and keep the original lock. Always allowed. */
-export async function cancelUnlock(): Promise<void> {
-  const state = await readLockState();
-  if (state.kind !== 'pending') throw new Error('No unlock is waiting.');
-
-  await writeRecord({ version: 1, lockedUntil: state.lockedUntil, unlockRequestedAt: null });
+export function cancelUnlock(): Promise<void> {
+  return updateLock((current, now) => {
+    const state = stateOf(current, now);
+    if (state.kind !== 'pending') throw new Error('No unlock is waiting.');
+    return { version: 1, lockedUntil: state.lockedUntil, unlockRequestedAt: null };
+  });
 }
 
-/** Coarse "6d 4h" style remaining time. Never renders a stale zero. */
-export function formatRemaining(target: number, now: number = Date.now()): string {
-  return formatRemainingAt(target, now);
+export function updatePasscode(
+  entry: { passcode: string; confirmation: string } | null,
+  currentPasscode?: string,
+): Promise<void> {
+  return updateLock(async (current, now) => {
+    const refusal = passcodeUpdateRefusal(stateOf(current, now), entry === null || currentPasscode !== undefined);
+    if (refusal) throw new Error(refusal);
+    if (current?.version === 2) {
+      if (currentPasscode === undefined) throw new Error('Enter the current passcode.');
+      await requirePasscode(current, currentPasscode);
+    }
+    if (entry === null) return null;
+
+    const { passcode, confirmation } = entry;
+    const entryRefusal = passcodeEntryRefusal(passcode, confirmation);
+    if (entryRefusal) throw new Error(entryRefusal);
+    const salt = Array.from(getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    return { version: 2, salt, hash: await hashPasscode(salt, passcode) };
+  });
+}
+
+export async function requirePasscode(record: PasscodeLockRecord, passcode: string): Promise<void> {
+  if (await hashPasscode(record.salt, passcode) !== record.hash) throw new Error('Incorrect passcode.');
+}
+
+export function formatRemaining(target: number | null, now: number = Date.now()): string {
+  return target === null ? 'Passcode required' : formatRemainingAt(target, now);
+}
+
+function hashPasscode(salt: string, passcode: string): Promise<string> {
+  return digestStringAsync(CryptoDigestAlgorithm.SHA256, salt + passcode);
 }
 
 async function readRecord(): Promise<LockRecord | null> {
-  return parseLockRecord(await SecureStore.getItemAsync(LOCK_KEY));
+  try {
+    return parseLockRecord(await SecureStore.getItemAsync(LOCK_KEY));
+  } catch {
+    return null;
+  }
 }
 
-async function writeRecord(record: LockRecord): Promise<void> {
-  await SecureStore.setItemAsync(LOCK_KEY, JSON.stringify(record));
+function updateLock(
+  update: (current: LockRecord | null, now: number) => LockRecord | null | Promise<LockRecord | null>,
+): Promise<void> {
+  const write = lockWrite.then(async () => {
+    const next = await update(await readRecord(), Date.now());
+    if (next === null) await SecureStore.deleteItemAsync(LOCK_KEY);
+    else await SecureStore.setItemAsync(LOCK_KEY, JSON.stringify(next));
+  });
+  lockWrite = write.catch(() => {});
+  return write;
 }

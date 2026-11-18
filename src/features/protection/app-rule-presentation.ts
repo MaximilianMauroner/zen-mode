@@ -39,7 +39,7 @@ function describeRule(rule: AppRule): string {
     case 'daily':
       return `a daily limit of ${describeMinutes(rule.minutes)}`;
     case 'visit':
-      return `a timed visit of ${describeMinutes(rule.sessionMinutes)} with a ${rule.cooldownMinutes}-minute cooldown`;
+      return `a timed visit of up to ${describeMinutes(rule.sessionMinutes)} with a ${rule.cooldownMinutes}-minute cooldown${rule.dailyMinutes === null ? '' : ` and a daily cap of ${describeMinutes(rule.dailyMinutes)}`}`;
     case 'rolling':
       return `a rolling allowance of ${describeMinutes(rule.allowanceMinutes)} per ${rule.windowMinutes}-minute window`;
     case 'earn':

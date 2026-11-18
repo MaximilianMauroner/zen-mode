@@ -72,16 +72,10 @@
   <!-- Intent question: one timed visit per answer. -->
   <string name="zen_guard_intent_eyebrow">CHECK IN FIRST</string>
   <string name="zen_guard_intent_eyebrow_cooldown">BETWEEN VISITS</string>
-  <string name="zen_guard_intent_state_ask">%1$d MIN VISIT</string>
-  <plurals name="zen_guard_intent_title">
-    <item quantity="one">Take %1$d\nminute.</item>
-    <item quantity="other">Take %1$d\nminutes.</item>
-  </plurals>
-  <plurals name="zen_guard_intent_detail">
-    <item quantity="one">%1$s stays open for %2$d minute. The clock runs from Start, even if you step out. When it ends, %1$s rests.</item>
-    <item quantity="other">%1$s stays open for %2$d minutes. The clock runs from Start, even if you step out. When it ends, %1$s rests.</item>
-  </plurals>
-  <string name="zen_guard_intent_start">Start %1$d min</string>
+  <string name="zen_guard_intent_state_ask">UP TO %1$d MIN</string>
+  <string name="zen_guard_intent_title">Pick a\nstop time.</string>
+  <string name="zen_guard_intent_detail">%1$s stays open until the time you pick. The clock runs from Start, even if you step out. When it ends, %1$s rests.</string>
+  <string name="zen_guard_intent_start">%1$d min · until %2$s</string>
   <string name="zen_guard_intent_leave">Not now</string>
   <string name="zen_guard_intent_cooldown_title">Still\nresting.</string>
   <string name="zen_guard_intent_cooldown_detail">%1$s opens again when the downtime ends. Until then, do the other thing.</string>

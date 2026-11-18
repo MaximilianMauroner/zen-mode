@@ -203,7 +203,7 @@ class AppRuleTimerServiceTest {
     assertEquals(AppRuleOverlayMode.COOLDOWN, overlay().mode)
     advance(Duration.ofSeconds(5))
     assertEquals(AppRuleOverlayMode.ASK, overlay().mode)
-    assertTrue(texts().contains("Start 1 min"))
+    assertTrue(texts().any { it.startsWith("1 min · until") })
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
   }
 
@@ -212,7 +212,7 @@ class AppRuleTimerServiceTest {
     openApp(APP)
     showOverlayWindow(APP)
     assertEquals(1L, count(EnforcementReason.TIMED_VISIT))
-    views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
+    views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }.performClick()
     assertNull(overlay().requestedPackage())
     showAppWindows(APP)
 
@@ -226,7 +226,52 @@ class AppRuleTimerServiceTest {
     assertEquals(2L, count(EnforcementReason.TIMED_VISIT))
     advance(Duration.ofSeconds(60))
     assertEquals(AppRuleOverlayMode.ASK, overlay().mode)
-    assertTrue(texts().contains("Start 1 min"))
+    assertTrue(texts().any { it.startsWith("1 min · until") })
+  }
+
+  @Test fun `a daily cap shortens the offered visits and the granted visit`() {
+    AppLimitStore(context).apply { setLimit(APP, 30); addUsage(APP, 25 * 60_000L, wallNow()) }
+    IntentAppStore(context).setIntent(APP, 60, 0)
+    openApp(APP)
+    showOverlayWindow(APP)
+
+    val starts = views().filterIsInstance<Button>().filter { it.text.contains(" min · until ") }.toList()
+    assertEquals(listOf("1 min", "2 min", "5 min"), starts.map { it.text.toString().substringBefore(" · ") })
+    val endsAt = android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(wallNow() + 5 * 60_000L))
+    assertEquals("5 min · until $endsAt", starts.last().text.toString())
+
+    starts.last().performClick()
+    assertNull(overlay().requestedPackage())
+    assertEquals(5 * 60_000L, wholeApp().privateField<IntentSessionTracker>("intentSessions").remainingMs(APP, SystemClock.elapsedRealtime()))
+  }
+
+  @Test fun `a part-minute left today names the cap end, not the rounded visit end`() {
+    // 4:01 is left, so the cap end and the rounded 5-minute end fall in different clock minutes.
+    AppLimitStore(context).apply { setLimit(APP, 30); addUsage(APP, 25 * 60_000L + 59_000L, wallNow()) }
+    IntentAppStore(context).setIntent(APP, 60, 0)
+    openApp(APP)
+    showOverlayWindow(APP)
+
+    val longest = views().filterIsInstance<Button>().single { it.text.startsWith("5 min · until") }
+    val format = android.text.format.DateFormat.getTimeFormat(context)
+    val capEndsAt = format.format(java.util.Date(wallNow() + 4 * 60_000L + 1_000L))
+    assertTrue(capEndsAt != format.format(java.util.Date(wallNow() + 5 * 60_000L)))
+    assertEquals("5 min · until $capEndsAt", longest.text.toString())
+  }
+
+  @Test fun `a visit that spends the daily cap ends on the limit card, not a new question`() {
+    AppLimitStore(context).setLimit(APP, 5)
+    IntentAppStore(context).setIntent(APP, 5, 0)
+    openApp(APP)
+    showOverlayWindow(APP)
+    views().filterIsInstance<Button>().single { it.text.startsWith("5 min · until") }.performClick()
+    showAppWindows(APP)
+
+    advance(Duration.ofMillis(5 * 60_000L + 20L))
+    showOverlayWindow(APP)
+
+    assertEquals(AppRuleOverlayMode.LIMIT, overlay().mode)
+    assertTrue(AppLimitStore(context).isOverBudget(APP, wallNow()))
   }
 
   @Test fun `overlay focus preserves the card and launcher escape closes it without a navigation action`() {
@@ -268,7 +313,7 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofSeconds(40))
     assertEquals(paused.usedMs, policy.homeRuntimeState(SystemClock.elapsedRealtime()).usedMs)
     assertEquals(paused.usedMs, HomeFeedStatusStore(context).instagram().usedMs)
-    views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
+    views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }.performClick()
     observeInstagramHome()
     val resumed = policy.homeRuntimeState(SystemClock.elapsedRealtime())
     assertEquals(paused.usedMs, resumed.usedMs)
@@ -300,7 +345,7 @@ class AppRuleTimerServiceTest {
     assertEquals(HomeFeedLockoutState.ACTIVE, stored.lockoutState)
     advance(Duration.ofSeconds(10))
     showOverlayWindow(instagramRoot("feed_recycler_view"))
-    views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
+    views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }.performClick()
     advance(Duration.ofMillis(20))
     assertEquals(InstagramBlockReason.HOME_LIMIT, policy.debugState(SystemClock.elapsedRealtime()).blockerReason)
     assertEquals(resting.blockedUntilElapsedMs, policy.homeRuntimeState(SystemClock.elapsedRealtime()).blockedUntilElapsedMs)
@@ -390,7 +435,7 @@ class AppRuleTimerServiceTest {
     openApp(CHROME)
     showOverlayWindow(browserRoot(CHROME))
 
-    views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
+    views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }.performClick()
     advance(Duration.ofMillis(20))
 
     assertNull(overlay().requestedPackage())
@@ -404,7 +449,7 @@ class AppRuleTimerServiceTest {
     IntentAppStore(context).setIntent(CHROME, 1, 1)
     openApp(CHROME)
     showOverlayWindow(browserRoot(CHROME))
-    val start = views().filterIsInstance<Button>().single { it.text == "Start 1 min" }
+    val start = views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }
     turnScreenOff()
 
     start.performClick()
@@ -419,7 +464,7 @@ class AppRuleTimerServiceTest {
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
 
     shadowOf(context.getSystemService(PowerManager::class.java)).setIsInteractive(true)
-    views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
+    views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }.performClick()
     advance(Duration.ofMillis(20))
 
     assertNull(overlay().requestedPackage())
@@ -432,7 +477,7 @@ class AppRuleTimerServiceTest {
     IntentAppStore(context).setIntent(APP, 1, 1)
     openApp(APP)
     showOverlayWindow(APP)
-    val start = views().filterIsInstance<Button>().single { it.text == "Start 1 min" }
+    val start = views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }
     views().filterIsInstance<Button>().single { it.text == "Not now" }.performClick()
     assertNull(overlay().requestedPackage())
     showAppWindows(APP)
@@ -451,7 +496,7 @@ class AppRuleTimerServiceTest {
     shadowOf(context.getSystemService(PowerManager::class.java)).setIsInteractive(true)
     openApp(APP)
     showOverlayWindow(APP)
-    views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
+    views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }.performClick()
     assertNull(overlay().requestedPackage())
     assertTrue(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(APP, SystemClock.elapsedRealtime()))
   }
@@ -540,7 +585,7 @@ class AppRuleTimerServiceTest {
     IntentAppStore(context).setIntent(INSTAGRAM, 1, 1)
     openApp(INSTAGRAM)
     showOverlayWindow(INSTAGRAM)
-    views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
+    views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }.performClick()
     showAppWindows(INSTAGRAM)
     addExpiringBudget(INSTAGRAM)
     windowEvent(INSTAGRAM)
@@ -667,7 +712,7 @@ class AppRuleTimerServiceTest {
     switchUnderCard(OTHER_APP)
 
     assertEquals(AppRuleOverlayMode.ASK, overlay().mode)
-    assertTrue(texts().contains("Start 2 min"))
+    assertTrue(texts().any { it.startsWith("2 min · until") })
     assertFalse(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(OTHER_APP, SystemClock.elapsedRealtime()))
     assertEquals(2L, count(EnforcementReason.TIMED_VISIT))
   }
@@ -708,7 +753,7 @@ class AppRuleTimerServiceTest {
     IntentAppStore(context).setIntent(APP, 1, 1)
     openApp(APP)
     showOverlayWindow(APP)
-    val start = views().filterIsInstance<Button>().single { it.text == "Start 1 min" }
+    val start = views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }
     turnScreenOff()
     setAppRuleSafety(AppRuleSafety.fromPackages(context.packageName, setOf("com.android.settings")))
     showOverlayWindow("com.android.settings")
@@ -726,7 +771,7 @@ class AppRuleTimerServiceTest {
     IntentAppStore(context).setIntent(APP, 1, 1)
     openApp(APP)
     showOverlayWindow(APP)
-    val start = views().filterIsInstance<Button>().single { it.text == "Start 1 min" }
+    val start = views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }
     turnScreenOff()
     ZenGuardPreferences(context).protectionEnabled = false
 
@@ -1033,7 +1078,7 @@ class AppRuleTimerServiceTest {
     IntentAppStore(context).setIntent(APP, 1, 1)
     openApp(APP)
     showOverlayWindow(APP)
-    views().filterIsInstance<Button>().single { it.text == "Start 1 min" }.performClick()
+    views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }.performClick()
     showAppWindows(APP)
   }
 

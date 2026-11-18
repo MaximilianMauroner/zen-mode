@@ -114,7 +114,8 @@ export function formatRemaining(target: number, now: number): string {
 /** One app rule, in whichever of the four shapes the user chose. */
 export type AppRule =
   | { mode: 'daily'; minutes: number }
-  | { mode: 'visit'; sessionMinutes: number; cooldownMinutes: number }
+  /** `sessionMinutes` is the longest visit. `dailyMinutes` caps all visits in one local day. */
+  | { mode: 'visit'; sessionMinutes: number; cooldownMinutes: number; dailyMinutes: number | null }
   | { mode: 'rolling'; allowanceMinutes: number; windowMinutes: number }
   | { mode: 'earn'; habitPackage: string; habitLabel: string; habitMinutes: number; rewardMinutes: number };
 
@@ -139,13 +140,16 @@ export type AppRule =
  * Inside one mode neither problem exists. The rule keeps its own store and its
  * own consumed time, and its parameters are directly comparable at every span:
  * fewer minutes, a smaller allowance in a window no shorter, or a shorter visit
- * with downtime no shorter is tighter everywhere, not just on average. An
+ * with downtime no shorter and a daily cap no larger is tighter everywhere, not
+ * just on average. Adding a cap tightens, and removing one loosens. An
  * earned-time rule is tighter only for the same habit app with more habit
  * minutes or fewer earned minutes. A different habit app is always looser,
  * because it can be an app the user already opens all day.
  *
  * `stored` is a list because the native stores can hold a daily, visit,
- * rolling, and earned-time rule for the same app at once. Saving replaces all of them, so a
+ * rolling, and earned-time rule for the same app at once. A visit with a daily
+ * cap keeps its cap in the daily store, and reads back as one visit rule.
+ * Saving replaces all of them, so a
  * second stored rule is always a guard the save would drop. An app with no rule
  * only gains one, so an empty list is never refused.
  */
@@ -168,7 +172,9 @@ function isLooserInMode(stored: AppRule, proposed: AppRule): boolean {
     return proposed.allowanceMinutes > stored.allowanceMinutes || proposed.windowMinutes < stored.windowMinutes;
   }
   if (stored.mode === 'visit' && proposed.mode === 'visit') {
-    return proposed.sessionMinutes > stored.sessionMinutes || proposed.cooldownMinutes < stored.cooldownMinutes;
+    return proposed.sessionMinutes > stored.sessionMinutes ||
+      proposed.cooldownMinutes < stored.cooldownMinutes ||
+      (stored.dailyMinutes !== null && (proposed.dailyMinutes === null || proposed.dailyMinutes > stored.dailyMinutes));
   }
   if (stored.mode === 'earn' && proposed.mode === 'earn') {
     return proposed.habitPackage !== stored.habitPackage ||

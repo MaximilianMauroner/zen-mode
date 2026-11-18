@@ -312,7 +312,15 @@ internal class WholeAppOwner(
       return
     }
     endExpiredIntentSession(packageName)
-    val cooldownMs = intentStore.cooldownRemainingMs(packageName, appRuleWallClock())
+    bankPendingUsage()
+    val wallNow = appRuleWallClock()
+    val cooldownMs = intentStore.cooldownRemainingMs(packageName, wallNow)
+    val capLeftMs = appLimits.leftTodayMs(packageName, wallNow)
+    val choices = visitChoices(rule.sessionMinutes, appLimits.minutesLeftToday(packageName, wallNow))
+    if (cooldownMs <= 0L && choices.isEmpty()) {
+      enforceAppLimits(packageName)
+      return
+    }
     val mode = if (cooldownMs > 0L) AppRuleOverlayMode.COOLDOWN else AppRuleOverlayMode.ASK
     prepareAppRuleOverlay(packageName, mode)
     val onAttached = {
@@ -328,8 +336,10 @@ internal class WholeAppOwner(
       appRuleOverlay.showAsk(
         packageName,
         labelFor(packageName),
-        rule.sessionMinutes,
-        onStart = { grantIntentSession(packageName, rule.sessionMinutes) },
+        choices,
+        wallNow,
+        capLeftMs,
+        onStart = { minutes -> grantIntentSession(packageName, minutes) },
         onLeave = ::leaveAppRule,
         onAttached = onAttached,
       )
@@ -348,9 +358,12 @@ internal class WholeAppOwner(
   private fun grantIntentSession(packageName: String, minutes: Int) {
     if (!canEnforce()) return
     if (foregroundAppPackage() != packageName || enforceAppLimits(packageName)) return
-    if (intentStore.cooldownRemainingMs(packageName, appRuleWallClock()) > 0L) return
+    val wallNow = appRuleWallClock()
+    if (intentStore.cooldownRemainingMs(packageName, wallNow) > 0L) return
+    val rule = intentStore.intents()[packageName] ?: return
+    val longest = visitChoices(rule.sessionMinutes, appLimits.minutesLeftToday(packageName, wallNow)).lastOrNull() ?: return
     if (!releaseAppRuleOverlay(packageName)) return
-    intentSessions.grant(packageName, minutes, SystemClock.elapsedRealtime())
+    intentSessions.grant(packageName, minOf(minutes, longest), SystemClock.elapsedRealtime())
     usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())
     scheduleIntentDeadline(packageName)
   }
@@ -381,7 +394,13 @@ internal class WholeAppOwner(
     if (!intentSessions.end(packageName)) return
     intentStore.recordSessionEnd(packageName, appRuleWallClock())
     stats.reset(EnforcementReason.TIMED_VISIT)
+    bankPendingUsage()
     if (!enforceAppLimits(packageName)) handleIntentForeground(packageName)
+  }
+
+  /** A daily cap is judged on banked time, and the tick banks only every [USAGE_TICK_MS]. */
+  private fun bankPendingUsage() {
+    usageTracker.tick(SystemClock.elapsedRealtime())?.let(::bankUsage)
   }
 
   private fun labelFor(packageName: String): String = try {

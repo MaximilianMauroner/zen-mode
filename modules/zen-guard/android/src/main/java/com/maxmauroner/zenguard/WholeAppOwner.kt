@@ -38,6 +38,7 @@ internal class WholeAppOwner(
   private val usageTracker = AppUsageTracker()
   private val usageHandler by lazy { Handler(Looper.getMainLooper()) }
   private var currentForegroundPackage: String? = null
+  private var timedEndPackage: String? = null
 
   /**
    * Banks foreground time every [USAGE_TICK_MS] so a long uninterrupted session
@@ -164,6 +165,7 @@ internal class WholeAppOwner(
       if (rollingAt != null) add(service.getString(R.string.zen_guard_rolling_limit_detail, appLabel))
       if (cooldownMs > 0L) add(service.getString(R.string.zen_guard_intent_cooldown_detail, appLabel))
     }
+    if (dailyAt != null && showAlternativeEndScreen(packageName, appLabel, EnforcementReason.APP_LIMIT)) return true
     prepareAppRuleOverlay(packageName, AppRuleOverlayMode.LIMIT)
     appRuleOverlay.showLimit(
       packageName = packageName,
@@ -182,6 +184,27 @@ internal class WholeAppOwner(
     )
     scheduleAppRuleRefresh()
     return true
+  }
+
+  private fun showAlternativeEndScreen(packageName: String, appLabel: String, reason: EnforcementReason): Boolean {
+    return when (ZenGuardPreferences(service).endScreen) {
+      EndScreen.FOCUS -> false
+      EndScreen.OFF -> {
+        pauseAppRuleUsage()
+        stats.record(reason, EnforcementStatsOutcome.SUCCESS, packageName)
+        leaveAppRule()
+        true
+      }
+      EndScreen.KIDS -> {
+        prepareAppRuleOverlay(packageName, AppRuleOverlayMode.KIDS_END)
+        appRuleOverlay.showKids(packageName, appLabel, ::leaveAppRule) {
+          pauseAppRuleUsage()
+          stats.record(reason, EnforcementStatsOutcome.SUCCESS, packageName)
+        }
+        if (reason == EnforcementReason.TIMED_VISIT) timedEndPackage = packageName else scheduleAppRuleRefresh()
+        true
+      }
+    }
   }
 
   /**
@@ -242,6 +265,7 @@ internal class WholeAppOwner(
   }
 
   fun closeAppRuleOverlay() {
+    timedEndPackage = null
     if (::appRuleOverlay.isInitialized) appRuleOverlay.hide()
     appCardRefresh.cancel()
     stats.reset(EnforcementReason.APP_LIMIT)
@@ -299,6 +323,7 @@ internal class WholeAppOwner(
       closeAppRuleOverlay()
       return
     }
+    if (timedEndPackage == packageName && appRuleOverlay.requestedPackage() == packageName) return
     val rule = intentStore.intents()[packageName]
     if (rule == null) {
       releaseAppRuleOverlay(packageName)
@@ -395,7 +420,10 @@ internal class WholeAppOwner(
     intentStore.recordSessionEnd(packageName, appRuleWallClock())
     stats.reset(EnforcementReason.TIMED_VISIT)
     bankPendingUsage()
-    if (!enforceAppLimits(packageName)) handleIntentForeground(packageName)
+    if (!enforceAppLimits(packageName) &&
+      !showAlternativeEndScreen(packageName, labelFor(packageName), EnforcementReason.TIMED_VISIT)) {
+      handleIntentForeground(packageName)
+    }
   }
 
   /** A daily cap is judged on banked time, and the tick banks only every [USAGE_TICK_MS]. */

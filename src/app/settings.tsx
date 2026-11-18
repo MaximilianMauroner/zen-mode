@@ -4,6 +4,7 @@ import Constants from 'expo-constants';
 import { router } from 'expo-router';
 
 import { DangerButton, PrimaryButton, SecondaryButton } from '@/components/ui/button';
+import { ChipGroup } from '@/components/ui/choice';
 import { Row, RowGroup } from '@/components/ui/card';
 import { GuardNotes } from '@/components/ui/guard-notes';
 import { Screen, ScreenHeader } from '@/components/ui/screen';
@@ -12,7 +13,7 @@ import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { authorizeWeakening } from '@/features/protection/authorize-weakening';
 import { actionFailure, IDLE_ACTION, isReading, readValue, RUNNING_ACTION, type ActionState } from '@/features/protection/control-state';
 import { useGuardStatusFocus, useSharedGuardStatus } from '@/features/protection/guard-status-context';
-import { diagnosticsAvailable, getZenGuardStatus, openAccessibilitySettings, openInstagram, openYouTube, openX, setNativeProtectionEnabled } from '@/features/protection/native';
+import { diagnosticsAvailable, getZenGuardStatus, openAccessibilitySettings, openInstagram, openYouTube, openX, setNativeProtectionEnabled, setEndScreen } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
 
 /** System controls stay separate from feed settings and whole-app budgets. */
@@ -71,6 +72,11 @@ export default function SettingsScreen() {
       <WeakeningGateDialog gate={gate} />
       {action.kind === 'refused' || action.kind === 'failed' ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
       {read.kind === 'failed' ? <SecondaryButton title="Try again" disabled={busy || loading} onPress={() => void refresh()} /> : null}
+      <View className="gap-3">
+        <Text accessibilityRole="header" className="text-title font-semibold text-copy">End screen</Text>
+        <Text className="text-body text-muted">Choose what appears when a visit or daily limit ends.</Text>
+        <ChipGroup label="End screen" options={[{ value: 'off', label: 'Off' }, { value: 'kids', label: 'Kids' }, { value: 'focus', label: 'Focus' }]} selected={status?.endScreen} disabled={disabled} fill onSelect={(value) => runAction(async () => { await setEndScreen(value); await refresh(); })} />
+      </View>
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">Guard details</Text>
         <RowGroup>

@@ -16,7 +16,7 @@ import android.widget.TextView
 import java.util.Date
 import kotlin.math.roundToInt
 
-internal enum class AppRuleOverlayMode { ASK, COOLDOWN, LIMIT, EARN }
+internal enum class AppRuleOverlayMode { ASK, COOLDOWN, LIMIT, KIDS_END, EARN }
 
 /** One whole-app boundary for daily budgets, rolling allowances, timed visits, and earned time. */
 internal class AppRuleOverlay(
@@ -89,6 +89,40 @@ internal class AppRuleOverlay(
       onLeave = onLeave,
       onAttached = onAttached,
     )
+  }
+
+  fun showKids(packageName: String, appLabel: String, onLeave: () -> Unit, onAttached: () -> Unit) {
+    if (shownFor == packageName && mode == AppRuleOverlayMode.KIDS_END) return
+    hide()
+    shownFor = packageName
+    mode = AppRuleOverlayMode.KIDS_END
+    val container = LinearLayout(service).apply {
+      orientation = LinearLayout.VERTICAL
+      gravity = Gravity.CENTER
+      setPadding(dp(24), dp(32), dp(24), dp(32))
+      setBackgroundColor(service.getColor(R.color.zen_accent))
+    }
+    container.addView(styledText("Time's up.\nGo play.", 40f, service.getColor(R.color.zen_on_accent), bold = true).apply {
+      gravity = Gravity.CENTER
+    }, matchWrap())
+    container.addView(styledText(appLabel, 20f, service.getColor(R.color.zen_on_accent)).apply {
+      gravity = Gravity.CENTER
+    }, matchWrap(topMargin = dp(16)))
+    container.addView(actionButton("Back home", primary = false).apply {
+      setOnClickListener { onLeave() }
+    }, matchWrap(topMargin = dp(32)))
+    val params = WindowManager.LayoutParams(
+      WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+      WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+      WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT,
+    )
+    root = container
+    container.doOnFirstAttach { if (root === container) onAttached() }
+    try {
+      windowManager.addView(container, params)
+    } catch (_: RuntimeException) {
+      hide()
+    }
   }
 
   fun showLimit(

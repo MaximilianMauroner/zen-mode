@@ -161,6 +161,51 @@ class AppRuleTimerServiceTest {
     assertEquals(0L, count(EnforcementReason.EARNED_TIME))
   }
 
+  @Test fun `end screen defaults to focus`() {
+    assertEquals(EndScreen.FOCUS, ZenGuardPreferences(context).endScreen)
+  }
+
+  @Test fun `daily limit shows the kids card`() {
+    ZenGuardPreferences(context).endScreen = EndScreen.KIDS
+    AppLimitStore(context).apply { setLimit(APP, 1); addUsage(APP, 60_000L, wallNow()) }
+    openApp(APP)
+    assertTrue(texts().contains("Time's up.\nGo play."))
+    views().filterIsInstance<Button>().single().performClick()
+    assertNull(overlay().requestedPackage())
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.contains(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME))
+  }
+
+  @Test fun `daily limit with end screen off goes home without a card`() {
+    ZenGuardPreferences(context).endScreen = EndScreen.OFF
+    AppLimitStore(context).apply { setLimit(APP, 1); addUsage(APP, 60_000L, wallNow()) }
+    showAppWindows(APP)
+    windowEvent(APP)
+    advance(Duration.ofMillis(20))
+    assertNull(overlay().requestedPackage())
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.contains(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME))
+  }
+
+  @Test fun `timed visit with kids end screen shows the kids card`() {
+    ZenGuardPreferences(context).endScreen = EndScreen.KIDS
+    IntentAppStore(context).setIntent(APP, 1, 1)
+    openApp(APP)
+    views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }.performClick()
+    showAppWindows(APP)
+    advance(Duration.ofMillis(60_020L))
+    assertTrue(texts().contains("Time's up.\nGo play."))
+  }
+
+  @Test fun `timed visit with end screen off goes home without a card`() {
+    ZenGuardPreferences(context).endScreen = EndScreen.OFF
+    IntentAppStore(context).setIntent(APP, 1, 1)
+    openApp(APP)
+    views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }.performClick()
+    showAppWindows(APP)
+    advance(Duration.ofMillis(60_020L))
+    assertNull(overlay().requestedPackage())
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.contains(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME))
+  }
+
   @Test fun `daily midnight reset closes an idle card and does not charge blocked time`() {
     val daily = AppLimitStore(context)
     daily.setLimit(APP, 1)

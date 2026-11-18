@@ -8,11 +8,8 @@ screen. The background and status vocabulary are in
 
 Dark, dense, and calm. Each screen shows what is saved, what is ready, and what
 is running, then gives one clear next action. Max decided to "allow animations
-in general as long as they are tasteful". Animation must play once, last under
-about 600 ms, never block input, and respect the system reduce-motion setting.
-On Android, respect Remove animations and animator duration scale 0. In React
-Native, use `useReducedMotion`. Do not use looping animation or a new color for
-each route.
+in general as long as they are tasteful". Do not use looping animation or a new
+color for each route.
 
 ## Color
 

@@ -30,6 +30,7 @@ class ZenGuardModule : Module() {
       val instagramUsedMs = if (instagramUsageState == HomeFeedUsageState.UNKNOWN) 0L else instagramHome.usedMs
       val xUsedMs = if (xUsageState == HomeFeedUsageState.UNKNOWN) 0L else xHome.usedMs
       mapOf(
+        "endScreen" to preferences.endScreen.name.lowercase(),
         "available" to true,
         "serviceEnabled" to isServiceEnabled(context),
         "currentConsent" to preferences.hasCurrentConsent,
@@ -78,6 +79,12 @@ class ZenGuardModule : Module() {
           "firefox" to packageAvailability(packageManager, FIREFOX_PACKAGE),
         ),
       )
+    }
+
+    AsyncFunction("setEndScreen") { value: String ->
+      val choice = EndScreen.entries.firstOrNull { it.name.lowercase() == value }
+        ?: throw IllegalArgumentException("Invalid end screen")
+      ZenGuardPreferences(requireNotNull(appContext.reactContext)).endScreen = choice
     }
 
     AsyncFunction("startDiagnostics") { durationSeconds: Int ->

@@ -4,6 +4,7 @@ import Constants from 'expo-constants';
 import { router } from 'expo-router';
 
 import { DangerButton, PrimaryButton, SecondaryButton } from '@/components/ui/button';
+import { ChoiceCard } from '@/components/ui/choice';
 import { Row, RowGroup } from '@/components/ui/card';
 import { GuardNotes } from '@/components/ui/guard-notes';
 import { Screen, ScreenHeader } from '@/components/ui/screen';
@@ -12,7 +13,7 @@ import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { authorizeWeakening } from '@/features/protection/authorize-weakening';
 import { actionFailure, IDLE_ACTION, isReading, readValue, RUNNING_ACTION, type ActionState } from '@/features/protection/control-state';
 import { useGuardStatusFocus, useSharedGuardStatus } from '@/features/protection/guard-status-context';
-import { diagnosticsAvailable, getZenGuardStatus, openAccessibilitySettings, openInstagram, openYouTube, openX, setNativeProtectionEnabled } from '@/features/protection/native';
+import { diagnosticsAvailable, getZenGuardStatus, openAccessibilitySettings, openInstagram, openYouTube, openX, setNativeProtectionEnabled, setEndScreen } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
 
 /** System controls stay separate from feed settings and whole-app budgets. */
@@ -71,6 +72,19 @@ export default function SettingsScreen() {
       <WeakeningGateDialog gate={gate} />
       {action.kind === 'refused' || action.kind === 'failed' ? <SecondaryButton title="Manage lock" disabled={busy} onPress={() => router.navigate('/lock')} /> : null}
       {read.kind === 'failed' ? <SecondaryButton title="Try again" disabled={busy || loading} onPress={() => void refresh()} /> : null}
+      <View className="gap-3">
+        <Text accessibilityRole="header" className="text-title font-semibold text-copy">End screen</Text>
+        <Text className="text-body text-muted">Choose what appears when a visit or daily limit ends.</Text>
+        <View accessibilityRole="radiogroup" accessibilityLabel="End screen" className="gap-2">
+          {([
+            { value: 'off', label: 'Off', detail: 'The app closes with no screen.' },
+            { value: 'kids', label: 'Kids', detail: 'Show a friendly full screen.' },
+            { value: 'focus', label: 'Focus', detail: 'Show the usual card.' },
+          ] as const).map(({ value, label, detail }) => (
+            <ChoiceCard key={value} title={label} detail={detail} selected={status?.endScreen === value} disabled={disabled} onPress={() => runAction(async () => { await setEndScreen(value); await refresh(); })} />
+          ))}
+        </View>
+      </View>
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">Guard details</Text>
         <RowGroup>

@@ -1,11 +1,14 @@
 import { NativeModule, requireNativeModule } from 'expo';
 
+export type EndScreen = 'off' | 'kids' | 'focus';
+
 export type PackageAvailability = 'installed' | 'disabled' | 'absent' | 'unknown' | 'unavailable';
 export type SupportedAppAvailability = Record<'youtube' | 'instagram' | 'x', PackageAvailability>;
 export type SupportedBrowserAvailability = Record<'chrome' | 'samsungInternet' | 'opera' | 'firefox', PackageAvailability>;
 
 export type ZenGuardStatus = {
   available: boolean;
+  endScreen: EndScreen;
   serviceEnabled: boolean;
   currentConsent: boolean;
   protectionEnabled: boolean;
@@ -101,6 +104,7 @@ export type EarnRule = InstalledApp & {
 
 declare class ZenGuardModule extends NativeModule<{}> {
   getStatus(): Promise<ZenGuardStatus>;
+  setEndScreen(value: EndScreen): Promise<void>;
   startDiagnostics(durationSeconds: number): Promise<void>;
   stopDiagnostics(): Promise<void>;
   clearDiagnostics(): Promise<void>;

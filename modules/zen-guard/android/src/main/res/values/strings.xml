@@ -79,6 +79,7 @@
   <string name="zen_guard_intent_leave">Not now</string>
   <string name="zen_guard_intent_cooldown_title">Still\nresting.</string>
   <string name="zen_guard_intent_cooldown_detail">%1$s opens again when the downtime ends. Until then, do the other thing.</string>
+  <string name="zen_guard_kids_end_title">Time\'s up.\nGo play.</string>
   <string name="zen_guard_intent_cooldown_leave">Back home</string>
   <string name="zen_guard_earn_eyebrow">EARN IT FIRST</string>
   <string name="zen_guard_earn_state">NO TIME LEFT</string>

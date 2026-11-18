@@ -2,6 +2,12 @@ package com.maxmauroner.zenguard
 
 import android.content.Context
 
+internal enum class EndScreen { OFF, KIDS, FOCUS;
+  companion object {
+    fun fromStored(value: String?): EndScreen = entries.firstOrNull { it.name.lowercase() == value } ?: FOCUS
+  }
+}
+
 internal class ZenGuardPreferences(context: Context) {
   private val preferences = context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
 
@@ -18,6 +24,10 @@ internal class ZenGuardPreferences(context: Context) {
   fun acceptCurrentConsent(): Boolean = preferences.edit()
     .putInt(KEY_CONSENT_VERSION, ConsentPolicy.CURRENT_VERSION)
     .commit()
+
+  var endScreen: EndScreen
+    get() = EndScreen.fromStored(preferences.getString(KEY_END_SCREEN, null))
+    set(value) = preferences.edit().putString(KEY_END_SCREEN, value.name.lowercase()).apply()
 
   var protectionEnabled: Boolean
     get() = preferences.getBoolean(KEY_PROTECTION_ENABLED, false)
@@ -137,6 +147,7 @@ internal class ZenGuardPreferences(context: Context) {
     const val X_VIDEO_SIGNAL = 2
 
     const val FILE_NAME = "zen_guard_preferences"
+    private const val KEY_END_SCREEN = "end_screen"
     private const val KEY_CONSENT_VERSION = "consent_version"
     private const val KEY_PROTECTION_ENABLED = "protection_enabled"
     private const val KEY_OBSERVATION_MODE = "observation_mode"

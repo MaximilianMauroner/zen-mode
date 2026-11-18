@@ -16,7 +16,7 @@ import android.widget.TextView
 import java.util.Date
 import kotlin.math.roundToInt
 
-internal enum class AppRuleOverlayMode { ASK, COOLDOWN, LIMIT, EARN }
+internal enum class AppRuleOverlayMode { ASK, COOLDOWN, LIMIT, KIDS_END, EARN }
 
 /** One whole-app boundary for daily budgets, rolling allowances, timed visits, and earned time. */
 internal class AppRuleOverlay(
@@ -89,6 +89,65 @@ internal class AppRuleOverlay(
       onLeave = onLeave,
       onAttached = onAttached,
     )
+  }
+
+  fun showKids(packageName: String, appLabel: String, onLeave: () -> Unit, onAttached: () -> Unit) {
+    if (shownFor == packageName && mode == AppRuleOverlayMode.KIDS_END) {
+      root?.let { container ->
+        if (container.isAttachedToWindow) onAttached()
+        else container.doOnFirstAttach { if (root === container) onAttached() }
+      }
+      return
+    }
+    hide()
+    shownFor = packageName
+    mode = AppRuleOverlayMode.KIDS_END
+    val container = LinearLayout(service).apply {
+      orientation = LinearLayout.VERTICAL
+      setBackgroundColor(service.getColor(R.color.zen_night))
+      setPadding(dp(24), dp(16), dp(24), dp(16))
+      setOnApplyWindowInsetsListener { v, insets ->
+        @Suppress("DEPRECATION")
+        val topInset = insets.systemWindowInsetTop
+        @Suppress("DEPRECATION")
+        val bottomInset = insets.systemWindowInsetBottom
+        v.setPadding(dp(24), dp(16) + topInset, dp(24), dp(16) + bottomInset)
+        insets
+      }
+    }
+    val scroll = ScrollView(service).apply {
+      isFillViewport = true
+      isVerticalScrollBarEnabled = false
+      overScrollMode = View.OVER_SCROLL_NEVER
+    }
+    container.addView(scroll, weightedHeight())
+    val content = LinearLayout(service).apply {
+      orientation = LinearLayout.VERTICAL
+      gravity = Gravity.CENTER
+      setPadding(0, dp(32), 0, dp(32))
+    }
+    scroll.addView(content, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+    content.addView(styledText(service.getString(R.string.zen_guard_kids_end_title), 40f, service.getColor(R.color.zen_copy), bold = true).apply {
+      gravity = Gravity.CENTER
+    }, matchWrap())
+    content.addView(styledText(appLabel, 20f, service.getColor(R.color.zen_muted)).apply {
+      gravity = Gravity.CENTER
+    }, matchWrap(topMargin = dp(16)))
+    content.addView(actionButton(service.getString(R.string.zen_guard_intent_cooldown_leave), primary = true).apply {
+      setOnClickListener { onLeave() }
+    }, matchWrap(topMargin = dp(32)))
+    val params = WindowManager.LayoutParams(
+      WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+      WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+      WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT,
+    )
+    root = container
+    container.doOnFirstAttach { if (root === container) onAttached() }
+    try {
+      windowManager.addView(container, params)
+    } catch (_: RuntimeException) {
+      hide()
+    }
   }
 
   fun showLimit(

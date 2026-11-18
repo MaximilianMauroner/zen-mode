@@ -1,10 +1,10 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-import ZenGuardModule, { type AdultSiteSettings, type AppLimit, type DiagnosticRecording, type EarnRule, type EnforcementStats, type InstalledApp, type IntentApp, type RollingLimit, type ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
+import ZenGuardModule, { type AdultSiteSettings, type AppLimit, type DiagnosticRecording, type EarnRule, type EnforcementStats, type EndScreen, type InstalledApp, type IntentApp, type RollingLimit, type ZenGuardStatus } from '../../../modules/zen-guard/src/ZenGuardModule';
 import { getAddDomainErrorMessage } from './site-rule-errors';
 
-export type { AdultSiteSettings, AppLimit, DiagnosticRecording, EarnRule, EnforcementStats, InstalledApp, IntentApp, RollingLimit, ZenGuardStatus };
+export type { EndScreen, AdultSiteSettings, AppLimit, DiagnosticRecording, EarnRule, EnforcementStats, InstalledApp, IntentApp, RollingLimit, ZenGuardStatus };
 
 export const diagnosticsAvailable = Platform.OS === 'android' && (__DEV__ || Constants.expoConfig?.extra?.testBuild === true);
 
@@ -13,6 +13,7 @@ export const stopDiagnostics = () => ZenGuardModule.stopDiagnostics();
 export const clearDiagnostics = () => ZenGuardModule.clearDiagnostics();
 export const getDiagnostics = () => ZenGuardModule.getDiagnostics();
 export const shareDiagnostics = (reportText = '') => ZenGuardModule.shareDiagnostics(reportText);
+export const setEndScreen = (value: EndScreen) => ZenGuardModule.setEndScreen(value);
 export const getZenGuardStatus = () => ZenGuardModule.getStatus();
 export const getEnforcementStats = () => ZenGuardModule.getEnforcementStats();
 export const openAccessibilitySettings = () => ZenGuardModule.openAccessibilitySettings();

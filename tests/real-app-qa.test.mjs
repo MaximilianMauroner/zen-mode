@@ -86,7 +86,7 @@ test('only actual app signers count, never the Play source stamp', () => {
 });
 
 // Build-tools 37 prints each signer by scheme, and adds an index only for several signers.
-// Recorded from apksigner 37.0.0 on a v2-only debug APK and on an APK with two signers.
+// The v2-only block is recorded from apksigner 37.0.0 on a QA debug APK. The other cases are built.
 test('scheme-qualified apksigner signer lines count once per certificate', () => {
   const v2Only = [
     'V2 Signer: certificate DN: CN=Android Debug, OU=Android, O=Unknown, L=Unknown, ST=Unknown, C=US',
@@ -110,6 +110,10 @@ test('scheme-qualified apksigner signer lines count once per certificate', () =>
     ...certificate('Source Stamp Signer:', chromeSigner),
   ].join('\n');
   assert.deepEqual(parseSignerDigests(multiScheme), [QA_SIGNER_SHA256]);
+
+  // v3.1 rotation output in the new format is no signer either, so such an APK stays blocked.
+  const rotation = certificate('V3.1 Signer (minSdkVersion=33, maxSdkVersion=2147483647):', chromeSigner).join('\n');
+  assert.throws(() => parseSignerDigests(rotation), /no SHA-256 signer/);
 });
 
 test('target APK sets must be one app and one signer set, signed by the pinned official signer', () => {

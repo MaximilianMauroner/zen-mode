@@ -95,7 +95,7 @@ export function FeedControlsDrawer({ feed, onClose }: Props) {
     <Modal visible={feed !== null} transparent animationType={reduceMotion ? 'none' : 'slide'} onRequestClose={() => { if (gate.session) gate.finish(false); else close(); }} onShow={() => { setAction(IDLE_ACTION); void refresh(); }} statusBarTranslucent>
       <View className="flex-1 justify-end bg-black/50">
         <Pressable accessibilityRole="button" accessibilityLabel="Close feed controls" onPress={close} disabled={busy} className="absolute inset-0" />
-        <SafeAreaView edges={['bottom']} style={{ maxHeight: '88%' }} className="rounded-t-3xl border-t border-line2 bg-panel pt-3">
+        <SafeAreaView edges={['bottom']} style={{ maxHeight: '88%' }} className="mx-auto w-full max-w-xl rounded-t-3xl border-t border-line2 bg-panel pt-3">
           <SheetHeader title={TITLES[feed ?? 'youtube']} closeLabel="Close feed controls" disabled={busy} onClose={close} />
           <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20 }}>
             {isX ? <>

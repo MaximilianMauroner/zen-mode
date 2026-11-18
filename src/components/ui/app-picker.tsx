@@ -31,7 +31,7 @@ export function AppPicker({ visible, disabled, apps, onRetry, configuredPackages
     <Modal visible={visible} transparent animationType={reduceMotion ? 'none' : 'slide'} onRequestClose={onClose} statusBarTranslucent>
       <View className="flex-1 justify-end bg-black/50">
         <Pressable accessibilityRole="button" accessibilityLabel="Close app picker" onPress={onClose} className="absolute inset-0" />
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ height: '80%' }}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ height: '80%' }} className="mx-auto w-full max-w-xl">
           <SafeAreaView edges={['bottom']} className="flex-1 rounded-t-3xl border-t border-line2 bg-panel pt-3">
             <SheetHeader title={title} closeLabel="Close app picker" onClose={onClose} />
             <View className="flex-1 px-5">

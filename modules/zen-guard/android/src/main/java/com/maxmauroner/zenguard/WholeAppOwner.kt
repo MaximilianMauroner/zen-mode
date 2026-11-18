@@ -38,6 +38,7 @@ internal class WholeAppOwner(
   private val usageTracker = AppUsageTracker()
   private val usageHandler by lazy { Handler(Looper.getMainLooper()) }
   private var currentForegroundPackage: String? = null
+  private var closingPackage: String? = null
   private var timedEndPackage: String? = null
 
   /**
@@ -91,6 +92,8 @@ internal class WholeAppOwner(
     if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return false
 
     var packageName = event.packageName?.toString() ?: return false
+    if (closingPackage == packageName) return true
+    closingPackage = null
     val blockedPackage = appRuleOverlay.requestedPackage()
     if (blockedPackage != null) {
       if (packageName == service.packageName) return false
@@ -116,6 +119,8 @@ internal class WholeAppOwner(
     }
     return false
   }
+
+  fun isClosingPackage(packageName: String?): Boolean = packageName != null && closingPackage == packageName
 
   private fun bankUsage(attribution: AppUsageTracker.Attribution) {
     if (!::appLimits.isInitialized || !::rollingLimits.isInitialized) return
@@ -193,6 +198,7 @@ internal class WholeAppOwner(
       EndScreen.OFF -> {
         pauseAppRuleUsage()
         stats.record(reason, EnforcementStatsOutcome.SUCCESS, packageName)
+        closingPackage = packageName
         leaveAppRule(preserveStats = true)
         true
       }
@@ -409,7 +415,7 @@ internal class WholeAppOwner(
     closeAppRuleOverlay(preserveStats)
     if (!canEnforce()) return
     usageTracker.reset()
-    currentForegroundPackage = null
+    if (!preserveStats) currentForegroundPackage = null
     service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
   }
 
@@ -446,12 +452,14 @@ internal class WholeAppOwner(
   fun enterSettings() {
     usageTracker.reset()
     currentForegroundPackage = null
+    closingPackage = null
     closeAppRuleOverlay()
   }
 
   fun disable() {
     usageTracker.reset()
     currentForegroundPackage = null
+    closingPackage = null
     intentSessions.reset()
     visitDeadline.cancel()
     closeAppRuleOverlay()

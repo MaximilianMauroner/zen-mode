@@ -163,6 +163,8 @@ class AppRuleTimerServiceTest {
 
   @Test fun `end screen defaults to focus`() {
     assertEquals(EndScreen.FOCUS, ZenGuardPreferences(context).endScreen)
+    context.getSharedPreferences("zen_guard_preferences", Context.MODE_PRIVATE).edit().putString("end_screen", "unknown").commit()
+    assertEquals(EndScreen.FOCUS, ZenGuardPreferences(context).endScreen)
   }
 
   @Test fun `daily limit shows the kids card`() {
@@ -183,6 +185,42 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofMillis(20))
     assertNull(overlay().requestedPackage())
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.contains(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME))
+  }
+
+  @Test fun `off retries home on the next tick when the capped app remains in front`() {
+    wholeApp().appRuleWallClock = { Instant.parse("2026-10-13T12:00:00Z").toEpochMilli() }
+    ZenGuardPreferences(context).endScreen = EndScreen.OFF
+    AppLimitStore(context).apply { setLimit(APP, 1); addUsage(APP, 60_000L, wallNow()) }
+    showAppWindows(APP)
+    windowEvent(APP)
+    advance(Duration.ofSeconds(16))
+    assertEquals(2, shadowOf(controller.get()).globalActionsPerformed.size)
+    assertEquals(1L, count(EnforcementReason.APP_LIMIT))
+  }
+
+  @Test fun `daily kids card survives window events and a tick`() {
+    wholeApp().appRuleWallClock = { Instant.parse("2026-10-13T12:00:00Z").toEpochMilli() }
+    ZenGuardPreferences(context).endScreen = EndScreen.KIDS
+    AppLimitStore(context).apply { setLimit(APP, 1); addUsage(APP, 60_000L, wallNow()) }
+    openApp(APP)
+    showOverlayWindow(APP)
+    windowEvent(APP)
+    advance(Duration.ofSeconds(16))
+    assertEquals(AppRuleOverlayMode.KIDS_END, overlay().mode)
+    assertTrue(overlay().isShowing())
+    assertEquals(1L, count(EnforcementReason.APP_LIMIT))
+  }
+
+  @Test fun `daily cap is recorded when a timed kids card is already showing`() {
+    wholeApp().appRuleWallClock = { Instant.parse("2026-10-13T12:00:00Z").toEpochMilli() }
+    ZenGuardPreferences(context).endScreen = EndScreen.KIDS
+    startTimedVisit()
+    advance(Duration.ofMillis(60_020))
+    showOverlayWindow(APP)
+    AppLimitStore(context).apply { setLimit(APP, 1); addUsage(APP, 60_000L, wallNow()) }
+    windowEvent(APP)
+    assertEquals(AppRuleOverlayMode.KIDS_END, overlay().mode)
+    assertEquals(1L, count(EnforcementReason.APP_LIMIT))
   }
 
   @Test fun `timed visit with kids end screen shows the kids card`() {
@@ -262,6 +300,8 @@ class AppRuleTimerServiceTest {
     showContentAppWindow(root)
     windowEvent(YOUTUBE)
     windowEvent(YOUTUBE)
+    contentEvent(YOUTUBE)
+    contentEvent(YOUTUBE)
     advance(Duration.ofMillis(20))
     assertTrue(shadowOf(home).performedActions.isEmpty())
     assertEquals(0, ZenGuardPreferences(context).detectionCount)
@@ -271,6 +311,22 @@ class AppRuleTimerServiceTest {
     showContentAppWindow(root)
     windowEvent(YOUTUBE)
     assertEquals(2L, count(EnforcementReason.APP_LIMIT))
+  }
+
+  @Test fun `off stops feed dispatch after a timed visit expires`() {
+    ZenGuardPreferences(context).apply { endScreen = EndScreen.OFF; observationMode = false; shortsEnabled = true }
+    IntentAppStore(context).setIntent(YOUTUBE, 1, 1)
+    openApp(YOUTUBE)
+    showOverlayWindow(YOUTUBE)
+    views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }.performClick()
+    val (root, home) = youtubeRoot(1)
+    showContentAppWindow(root)
+    advance(Duration.ofMillis(60_020))
+    contentEvent(YOUTUBE)
+    contentEvent(YOUTUBE)
+    assertTrue(shadowOf(home).performedActions.isEmpty())
+    assertEquals(0, ZenGuardPreferences(context).detectionCount)
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.contains(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME))
   }
 
   @Test fun `daily midnight reset closes an idle card and does not charge blocked time`() {

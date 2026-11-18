@@ -92,7 +92,13 @@ internal class AppRuleOverlay(
   }
 
   fun showKids(packageName: String, appLabel: String, onLeave: () -> Unit, onAttached: () -> Unit) {
-    if (shownFor == packageName && mode == AppRuleOverlayMode.KIDS_END) return
+    if (shownFor == packageName && mode == AppRuleOverlayMode.KIDS_END) {
+      root?.let { container ->
+        if (container.isAttachedToWindow) onAttached()
+        else container.doOnFirstAttach { if (root === container) onAttached() }
+      }
+      return
+    }
     hide()
     shownFor = packageName
     mode = AppRuleOverlayMode.KIDS_END

@@ -75,13 +75,15 @@ export default function SettingsScreen() {
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">End screen</Text>
         <Text className="text-body text-muted">Choose what appears when a visit or daily limit ends.</Text>
-        {([
-          { value: 'off', label: 'Off', detail: 'The app closes with no screen.' },
-          { value: 'kids', label: 'Kids', detail: 'Show a friendly full screen.' },
-          { value: 'focus', label: 'Focus', detail: 'Show the usual card.' },
-        ] as const).map(({ value, label, detail }) => (
-          <ChoiceCard key={value} title={label} detail={detail} selected={status?.endScreen === value} disabled={disabled} onPress={() => runAction(async () => { await setEndScreen(value); await refresh(); })} />
-        ))}
+        <View accessibilityRole="radiogroup" accessibilityLabel="End screen" className="gap-2">
+          {([
+            { value: 'off', label: 'Off', detail: 'The app closes with no screen.' },
+            { value: 'kids', label: 'Kids', detail: 'Show a friendly full screen.' },
+            { value: 'focus', label: 'Focus', detail: 'Show the usual card.' },
+          ] as const).map(({ value, label, detail }) => (
+            <ChoiceCard key={value} title={label} detail={detail} selected={status?.endScreen === value} disabled={disabled} onPress={() => runAction(async () => { await setEndScreen(value); await refresh(); })} />
+          ))}
+        </View>
       </View>
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">Guard details</Text>

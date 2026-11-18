@@ -130,7 +130,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
 
     val appRuleEnforced = wholeApp.trackForegroundApp(event)
     if (rootInActiveWindow?.packageName?.toString() != YOUTUBE_PACKAGE) youtube.cancelHomeVisit()
-    if (appRuleEnforced || wholeApp.hasRequestedCard) return
+    if (appRuleEnforced || wholeApp.hasRequestedCard || wholeApp.isClosingPackage(eventPackage)) return
     // The blocker is an accessibility overlay owned by this package. Ignore its own focus and
     // content events; treating them as an external app would immediately remove the blocker.
     if (eventPackage == packageName) {

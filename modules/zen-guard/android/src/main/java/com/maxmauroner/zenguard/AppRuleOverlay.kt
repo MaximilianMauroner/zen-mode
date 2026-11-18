@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.text.format.DateFormat
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -12,6 +13,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import java.util.Date
 import kotlin.math.roundToInt
 
 internal enum class AppRuleOverlayMode { ASK, COOLDOWN, LIMIT, EARN }
@@ -29,6 +31,7 @@ internal class AppRuleOverlay(
   private var descriptionView: TextView? = null
   private var stateView: TextView? = null
   private var availabilityView: TextView? = null
+  private var startButtons: List<Pair<Int, Button>> = emptyList()
 
   fun isShowing(): Boolean = root?.isAttachedToWindow == true
   fun requestedPackage(): String? = shownFor
@@ -39,23 +42,28 @@ internal class AppRuleOverlay(
     availabilityView?.text = service.getString(R.string.zen_guard_available_again_in, clock)
   }
 
+  /** Asks how long to stay. Each of [choices] is one Start button that names its end time. */
   fun showAsk(
     packageName: String,
     appLabel: String,
-    sessionMinutes: Int,
-    onStart: () -> Unit,
+    choices: List<Int>,
+    nowWallMs: Long,
+    onStart: (Int) -> Unit,
     onLeave: () -> Unit,
     onAttached: () -> Unit,
   ) {
+    require(choices.isNotEmpty()) { "The ask card needs at least one visit length." }
     show(
       packageName = packageName,
       mode = AppRuleOverlayMode.ASK,
       appLabel = appLabel,
       cooldownRemainingMs = 0L,
-      sessionMinutes = sessionMinutes,
-      onPrimary = onStart,
+      onPrimary = {},
       onLeave = onLeave,
       onAttached = onAttached,
+      choices = choices,
+      nowWallMs = nowWallMs,
+      onChoose = onStart,
     )
   }
 
@@ -71,7 +79,6 @@ internal class AppRuleOverlay(
       mode = AppRuleOverlayMode.COOLDOWN,
       appLabel = appLabel,
       cooldownRemainingMs = cooldownRemainingMs,
-      sessionMinutes = 0,
       onPrimary = {},
       onLeave = onLeave,
       onAttached = onAttached,
@@ -87,7 +94,7 @@ internal class AppRuleOverlay(
     onAttached: () -> Unit,
   ) {
     show(
-      packageName, AppRuleOverlayMode.LIMIT, "", remainingMs, 0, {}, onLeave, onAttached, title, detail,
+      packageName, AppRuleOverlayMode.LIMIT, "", remainingMs, {}, onLeave, onAttached, title, detail,
     )
   }
 
@@ -102,7 +109,7 @@ internal class AppRuleOverlay(
     onAttached: () -> Unit,
   ) {
     show(
-      packageName, AppRuleOverlayMode.EARN, "", 0L, 0, onOpenHabit, onLeave, onAttached, title, detail, habitAction,
+      packageName, AppRuleOverlayMode.EARN, "", 0L, onOpenHabit, onLeave, onAttached, title, detail, habitAction,
     )
   }
 
@@ -111,19 +118,22 @@ internal class AppRuleOverlay(
     mode: AppRuleOverlayMode,
     appLabel: String,
     cooldownRemainingMs: Long,
-    sessionMinutes: Int,
     onPrimary: () -> Unit,
     onLeave: () -> Unit,
     onAttached: () -> Unit,
     limitTitle: String = "",
     limitDetail: String = "",
     habitAction: String = "",
+    choices: List<Int> = emptyList(),
+    nowWallMs: Long = 0L,
+    onChoose: (Int) -> Unit = {},
   ) {
     val cooldown = mode == AppRuleOverlayMode.COOLDOWN || mode == AppRuleOverlayMode.LIMIT
     val isEarn = mode == AppRuleOverlayMode.EARN
     val isLimit = mode == AppRuleOverlayMode.LIMIT || isEarn
     if (shownFor == packageName && this.mode == mode) {
       if (cooldown) updateCountdown(cooldownRemainingMs)
+      if (mode == AppRuleOverlayMode.ASK) showEndTimes(nowWallMs)
       if (isLimit) {
         titleView?.text = titleText(limitTitle, service.getColor(R.color.zen_accent))
         descriptionView?.text = limitDetail
@@ -178,7 +188,7 @@ internal class AppRuleOverlay(
       when {
         cooldown -> formatAvailabilityCountdown(cooldownRemainingMs)
         isEarn -> service.getString(R.string.zen_guard_earn_state)
-        else -> service.getString(R.string.zen_guard_intent_state_ask, sessionMinutes)
+        else -> service.getString(R.string.zen_guard_intent_state_ask, choices.last())
       },
       11f,
       if (cooldown) muted else accent,
@@ -233,7 +243,7 @@ internal class AppRuleOverlay(
     centerBody.addView(eyebrow, matchWrap(topMargin = dp(12)))
 
     val title = styledTitle(
-      if (isLimit) limitTitle else if (cooldown) service.getString(R.string.zen_guard_intent_cooldown_title) else service.resources.getQuantityString(R.plurals.zen_guard_intent_title, sessionMinutes, sessionMinutes),
+      if (isLimit) limitTitle else if (cooldown) service.getString(R.string.zen_guard_intent_cooldown_title) else service.getString(R.string.zen_guard_intent_title),
       copy,
       accent,
     ).apply {
@@ -243,7 +253,7 @@ internal class AppRuleOverlay(
     centerBody.addView(title, matchWrap(topMargin = dp(8)))
 
     val description = styledText(
-      if (isLimit) limitDetail else if (cooldown) service.getString(R.string.zen_guard_intent_cooldown_detail, appLabel) else service.resources.getQuantityString(R.plurals.zen_guard_intent_detail, sessionMinutes, appLabel, sessionMinutes),
+      if (isLimit) limitDetail else if (cooldown) service.getString(R.string.zen_guard_intent_cooldown_detail, appLabel) else service.getString(R.string.zen_guard_intent_detail, appLabel),
       15f,
       muted,
     ).apply {
@@ -265,12 +275,21 @@ internal class AppRuleOverlay(
       orientation = LinearLayout.VERTICAL
     }
 
-    if (!cooldown) {
-      val primaryLabel = if (isEarn) habitAction else service.getString(R.string.zen_guard_intent_start, sessionMinutes)
-      val primary = actionButton(primaryLabel, primary = true).apply {
+    if (isEarn) {
+      val primary = actionButton(habitAction, primary = true).apply {
         setOnClickListener { onPrimary() }
       }
       actions.addView(primary, matchWrap())
+    }
+    if (mode == AppRuleOverlayMode.ASK) {
+      startButtons = choices.mapIndexed { index, minutes ->
+        val start = actionButton("", primary = index == 0).apply {
+          setOnClickListener { onChoose(minutes) }
+        }
+        actions.addView(start, matchWrap(topMargin = if (index == 0) 0 else dp(10)))
+        minutes to start
+      }
+      showEndTimes(nowWallMs)
     }
 
     val leave = actionButton(
@@ -309,6 +328,14 @@ internal class AppRuleOverlay(
     }
   }
 
+  /** The card stays open while the clock moves, so each Start names the end time it would give now. */
+  private fun showEndTimes(nowWallMs: Long) {
+    val timeFormat = DateFormat.getTimeFormat(service)
+    startButtons.forEach { (minutes, button) ->
+      button.text = service.getString(R.string.zen_guard_intent_start, minutes, timeFormat.format(Date(nowWallMs + minutes * 60_000L)))
+    }
+  }
+
   fun hide() {
     val existingRoot = root
     root = null
@@ -318,6 +345,7 @@ internal class AppRuleOverlay(
     descriptionView = null
     stateView = null
     availabilityView = null
+    startButtons = emptyList()
     existingRoot?.let {
       try {
         windowManager.removeView(it)

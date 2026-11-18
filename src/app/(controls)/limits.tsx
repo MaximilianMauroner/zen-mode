@@ -42,8 +42,10 @@ import type { ReadResult } from '@/features/protection/protection-reads';
 import { useScreenRead } from '@/features/protection/use-protection-read';
 
 const MINUTE_OPTIONS = [5, 15, 30, 45, 60, 90, 120];
-/** Fixed visit lengths for the intent question. */
-const SESSION_OPTIONS = [1, 2, 5, 10];
+/** The longest visit the intent question offers. Shorter lengths are offered too. */
+const SESSION_OPTIONS = [1, 2, 5, 10, 15, 30, 60];
+/** Daily caps for timed visits. Zero means no cap. */
+const DAILY_CAP_OPTIONS = [0, 15, 30, 45, 60, 90, 120];
 /** Downtime between intent visits. Zero asks again on every open. */
 const COOLDOWN_OPTIONS = [0, 5, 15, 30, 60];
 const ALLOWANCE_OPTIONS = [1, 2, 5, 10, 15, 30, 60];
@@ -89,13 +91,12 @@ const WINDOW_LABEL: Record<number, string> = { 30: '30 min', 60: 'hour', 180: '3
 async function readStoredRules(packageName: string): Promise<AppRule[]> {
   const [limits, intents, rollingRules, earnRules] = await Promise.all([getAppLimits(), getIntentApps(), getRollingLimits(), getEarnRules()]);
   const stored: AppRule[] = [];
-  for (const limit of limits) {
-    if (limit.packageName === packageName) stored.push({ mode: 'daily', minutes: limit.minutes });
-  }
-  for (const intent of intents) {
-    if (intent.packageName === packageName) {
-      stored.push({ mode: 'visit', sessionMinutes: intent.sessionMinutes, cooldownMinutes: intent.cooldownMinutes });
-    }
+  const limit = limits.find((entry) => entry.packageName === packageName);
+  const intent = intents.find((entry) => entry.packageName === packageName);
+  if (intent) {
+    stored.push({ mode: 'visit', sessionMinutes: intent.sessionMinutes, cooldownMinutes: intent.cooldownMinutes, dailyMinutes: limit?.minutes ?? null });
+  } else if (limit) {
+    stored.push({ mode: 'daily', minutes: limit.minutes });
   }
   for (const rule of rollingRules) {
     if (rule.packageName === packageName) {
@@ -130,6 +131,7 @@ export default function AppLimitsScreen() {
   const [minutes, setMinutes] = useState(15);
   const [session, setSession] = useState(5);
   const [cooldown, setCooldown] = useState(5);
+  const [dailyCap, setDailyCap] = useState(0);
   const [allowance, setAllowance] = useState(5);
   const [window, setWindow] = useState(60);
   const [habit, setHabit] = useState<InstalledApp | null>(null);
@@ -201,13 +203,14 @@ export default function AppLimitsScreen() {
   const selectApp = (app: InstalledApp) => {
     if (controlsDisabled) return false;
     const entry = guardedByPackage.get(app.packageName);
-    if (entry?.limit) {
-      setMode('daily');
-      setMinutes(entry.limit.minutes);
-    } else if (entry?.intent) {
+    if (entry?.intent) {
       setMode('visit');
       setSession(entry.intent.sessionMinutes);
       setCooldown(entry.intent.cooldownMinutes);
+      setDailyCap(entry.limit?.minutes ?? 0);
+    } else if (entry?.limit) {
+      setMode('daily');
+      setMinutes(entry.limit.minutes);
     } else if (entry?.rolling) {
       setMode('rolling');
       setAllowance(entry.rolling.allowanceMinutes);
@@ -222,6 +225,7 @@ export default function AppLimitsScreen() {
       setMinutes(15);
       setSession(5);
       setCooldown(5);
+      setDailyCap(0);
       setAllowance(5);
       setWindow(60);
       setHabit(null);
@@ -238,7 +242,7 @@ export default function AppLimitsScreen() {
       case 'daily':
         return { mode: 'daily', minutes };
       case 'visit':
-        return { mode: 'visit', sessionMinutes: session, cooldownMinutes: cooldown };
+        return { mode: 'visit', sessionMinutes: session, cooldownMinutes: cooldown, dailyMinutes: dailyCap === 0 ? null : dailyCap };
       case 'rolling':
         return { mode: 'rolling', allowanceMinutes: allowance, windowMinutes: window };
       case 'earn':
@@ -270,7 +274,8 @@ export default function AppLimitsScreen() {
       if (JSON.stringify(await readStoredRules(packageName)) !== JSON.stringify(stored)) {
         throw new Error('The app rule changed. Review it and try again.');
       }
-      if (proposed.mode === 'daily') await setAppLimit(packageName, proposed.minutes);
+      const dailyMinutes = proposed.mode === 'daily' ? proposed.minutes : proposed.mode === 'visit' ? proposed.dailyMinutes : null;
+      if (dailyMinutes !== null) await setAppLimit(packageName, dailyMinutes);
       else await removeAppLimit(packageName);
       if (proposed.mode === 'visit') await setIntentApp(packageName, proposed.sessionMinutes, proposed.cooldownMinutes);
       else await removeIntentApp(packageName);
@@ -331,12 +336,14 @@ export default function AppLimitsScreen() {
               <SectionLabel className="mb-2">Timed visit</SectionLabel>
               <Card>
                 <Text className="mb-3 text-support text-muted">
-                  Opening the app asks first. Confirming starts one visit of this length, then the app rests.
+                  Opening the app asks for a stop time first. The visit ends at that time, then the app rests.
                 </Text>
-                <SectionLabel className="mb-2">Visit length</SectionLabel>
+                <SectionLabel className="mb-2">Longest visit</SectionLabel>
                 <MinuteRow options={SESSION_OPTIONS} selected={session} disabled={controlsDisabled} onSelect={setSession} />
                 <SectionLabel className="mb-2 mt-4">Downtime</SectionLabel>
                 <CooldownRow selected={cooldown} disabled={controlsDisabled} onSelect={setCooldown} />
+                <SectionLabel className="mb-2 mt-4">Daily cap</SectionLabel>
+                <OptionRow options={DAILY_CAP_OPTIONS} selected={dailyCap} disabled={controlsDisabled} onSelect={setDailyCap} format={(value) => (value === 0 ? 'No cap' : `${value}m`)} />
               </Card>
             </View>
           ) : mode === 'earn' ? (
@@ -458,9 +465,9 @@ function GuardedRow({ entry, disabled, onEdit }: { entry: GuardedEntry; disabled
   }
   if (entry.intent) {
     summaries.push(
-      `${entry.intent.sessionMinutes}m visits${entry.intent.cooldownMinutes === 0 ? ' · asks every time' : ` · ${entry.intent.cooldownMinutes}m rest`}`,
+      `Up to ${entry.intent.sessionMinutes}m visits${entry.intent.cooldownMinutes === 0 ? ' · asks every time' : ` · ${entry.intent.cooldownMinutes}m rest`}`,
     );
-    pill = MODE_LABEL.visit;
+    if (pill !== 'Spent') pill = MODE_LABEL.visit;
   }
   if (entry.rolling) {
     const used = Math.floor(entry.rolling.usedMs / 60_000);

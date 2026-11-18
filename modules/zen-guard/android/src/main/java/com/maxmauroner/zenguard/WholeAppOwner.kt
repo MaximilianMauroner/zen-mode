@@ -312,7 +312,10 @@ internal class WholeAppOwner(
       return
     }
     endExpiredIntentSession(packageName)
-    val cooldownMs = intentStore.cooldownRemainingMs(packageName, appRuleWallClock())
+    val wallNow = appRuleWallClock()
+    val cooldownMs = intentStore.cooldownRemainingMs(packageName, wallNow)
+    val choices = visitChoices(rule.sessionMinutes, appLimits.minutesLeftToday(packageName, wallNow))
+    if (cooldownMs <= 0L && choices.isEmpty()) return
     val mode = if (cooldownMs > 0L) AppRuleOverlayMode.COOLDOWN else AppRuleOverlayMode.ASK
     prepareAppRuleOverlay(packageName, mode)
     val onAttached = {
@@ -328,8 +331,9 @@ internal class WholeAppOwner(
       appRuleOverlay.showAsk(
         packageName,
         labelFor(packageName),
-        rule.sessionMinutes,
-        onStart = { grantIntentSession(packageName, rule.sessionMinutes) },
+        choices,
+        wallNow,
+        onStart = { minutes -> grantIntentSession(packageName, minutes) },
         onLeave = ::leaveAppRule,
         onAttached = onAttached,
       )
@@ -348,9 +352,12 @@ internal class WholeAppOwner(
   private fun grantIntentSession(packageName: String, minutes: Int) {
     if (!canEnforce()) return
     if (foregroundAppPackage() != packageName || enforceAppLimits(packageName)) return
-    if (intentStore.cooldownRemainingMs(packageName, appRuleWallClock()) > 0L) return
+    val wallNow = appRuleWallClock()
+    if (intentStore.cooldownRemainingMs(packageName, wallNow) > 0L) return
+    val rule = intentStore.intents()[packageName] ?: return
+    val longest = visitChoices(rule.sessionMinutes, appLimits.minutesLeftToday(packageName, wallNow)).lastOrNull() ?: return
     if (!releaseAppRuleOverlay(packageName)) return
-    intentSessions.grant(packageName, minutes, SystemClock.elapsedRealtime())
+    intentSessions.grant(packageName, minOf(minutes, longest), SystemClock.elapsedRealtime())
     usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())
     scheduleIntentDeadline(packageName)
   }

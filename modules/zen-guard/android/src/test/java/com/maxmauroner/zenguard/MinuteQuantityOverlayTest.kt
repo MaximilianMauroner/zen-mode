@@ -6,7 +6,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
-import android.widget.TextView
 import java.time.Duration
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -53,12 +52,28 @@ class MinuteQuantityOverlayTest {
     controller.destroy()
   }
 
-  @Test fun `one-minute app question uses singular copy and keeps its title line break`() {
-    assertAppQuestion(1, "Take 1\nminute.", "Chrome stays open for 1 minute.")
+  @Test fun `app question offers one Start per visit length and reports the chosen length`() {
+    var chosen: Int? = null
+    appOverlay.showAsk("com.android.chrome", "Chrome", listOf(1, 5), 0L, { chosen = it }, {}, {})
+    shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
+    assertTrue(appOverlay.isShowing())
+    val starts = views().filterIsInstance<Button>().filter { it.text.contains(" min · until ") }.toList()
+    assertEquals(listOf("1 min", "5 min"), starts.map { it.text.toString().substringBefore(" · ") })
+
+    starts.last().performClick()
+    assertEquals(5, chosen)
   }
 
-  @Test fun `five-minute app question uses plural copy and keeps its title line break`() {
-    assertAppQuestion(5, "Take 5\nminutes.", "Chrome stays open for 5 minutes.")
+  @Test fun `an open app question moves each end time forward with the clock`() {
+    val format = android.text.format.DateFormat.getTimeFormat(controller.get())
+    val endsAt = { wallMs: Long -> "5 min · until ${format.format(java.util.Date(wallMs + 5 * 60_000L))}" }
+    appOverlay.showAsk("com.android.chrome", "Chrome", listOf(5), 0L, {}, {}, {})
+    shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
+    val start = views().filterIsInstance<Button>().single { it.text.startsWith("5 min") }
+    assertEquals(endsAt(0L), start.text.toString())
+
+    appOverlay.showAsk("com.android.chrome", "Chrome", listOf(5), 10 * 60_000L, {}, {}, {})
+    assertEquals(endsAt(10 * 60_000L), start.text.toString())
   }
 
   @Test fun `unlocked one-minute Reels action uses singular copy`() {
@@ -67,15 +82,6 @@ class MinuteQuantityOverlayTest {
 
   @Test fun `unlocked five-minute Reels action uses plural copy`() {
     assertReelsAction(5, "Continue for 5 minutes")
-  }
-
-  private fun assertAppQuestion(minutes: Int, expectedTitle: String, expectedDetail: String) {
-    appOverlay.showAsk("com.android.chrome", "Chrome", minutes, {}, {}, {})
-    shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
-    assertTrue(appOverlay.isShowing())
-    val texts = views().filterIsInstance<TextView>().map { it.text.toString() }.toList()
-    assertTrue(texts.toString(), texts.contains(expectedTitle))
-    assertTrue(texts.toString(), texts.any { it.startsWith(expectedDetail) })
   }
 
   private fun assertReelsAction(minutes: Int, expectedLabel: String) {

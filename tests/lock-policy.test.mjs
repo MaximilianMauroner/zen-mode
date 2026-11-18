@@ -143,7 +143,7 @@ test('remaining time reads coarsely and never renders a stale zero', () => {
 
 test('an app with no rule only gains one, so nothing is refused', () => {
   assert.equal(appRuleLockRefusal([], { mode: 'daily', minutes: 480 }), null);
-  assert.equal(appRuleLockRefusal([], { mode: 'visit', sessionMinutes: 60, cooldownMinutes: 0 }), null);
+  assert.equal(appRuleLockRefusal([], { mode: 'visit', sessionMinutes: 60, cooldownMinutes: 0, dailyMinutes: null }), null);
 });
 
 test('a daily budget may be lowered but not raised', () => {
@@ -164,12 +164,21 @@ test('a rolling rule may shrink its allowance or widen its window', () => {
 });
 
 test('a timed visit may shorten its session or lengthen its downtime', () => {
-  const stored = [{ mode: 'visit', sessionMinutes: 5, cooldownMinutes: 30 }];
-  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 10, cooldownMinutes: 30 }), true);
-  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 5, cooldownMinutes: 0 }), true);
-  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 5, cooldownMinutes: 60 }), false);
-  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 2, cooldownMinutes: 30 }), false);
-  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 5, cooldownMinutes: 30 }), false);
+  const stored = [{ mode: 'visit', sessionMinutes: 5, cooldownMinutes: 30, dailyMinutes: null }];
+  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 10, cooldownMinutes: 30, dailyMinutes: null }), true);
+  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 5, cooldownMinutes: 0, dailyMinutes: null }), true);
+  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 5, cooldownMinutes: 60, dailyMinutes: null }), false);
+  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 2, cooldownMinutes: 30, dailyMinutes: null }), false);
+  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 5, cooldownMinutes: 30, dailyMinutes: null }), false);
+});
+
+test('a timed visit may add or lower its daily cap, but not raise or remove it', () => {
+  const visit = (dailyMinutes) => ({ mode: 'visit', sessionMinutes: 30, cooldownMinutes: 60, dailyMinutes });
+  assert.equal(refused([visit(null)], visit(60)), false);
+  assert.equal(refused([visit(60)], visit(30)), false);
+  assert.equal(refused([visit(60)], visit(60)), false);
+  assert.equal(refused([visit(60)], visit(90)), true);
+  assert.equal(refused([visit(60)], visit(null)), true);
 });
 
 test('an earned-time rule may ask for more habit time or give less, for the same habit app only', () => {
@@ -189,20 +198,20 @@ test('a change of mode is refused however tight the replacement reads', () => {
   // back a spent allowance in full. None of these may pass while locked.
   const daily = [{ mode: 'daily', minutes: 5 }];
   const rolling = [{ mode: 'rolling', allowanceMinutes: 5, windowMinutes: 60 }];
-  const visit = [{ mode: 'visit', sessionMinutes: 5, cooldownMinutes: 60 }];
+  const visit = [{ mode: 'visit', sessionMinutes: 5, cooldownMinutes: 60, dailyMinutes: null }];
 
   assert.equal(refused(rolling, { mode: 'daily', minutes: 5 }), true);
   assert.equal(refused(rolling, { mode: 'daily', minutes: 1 }), true);
   assert.equal(refused(daily, { mode: 'rolling', allowanceMinutes: 1, windowMinutes: 1440 }), true);
   assert.equal(refused(visit, { mode: 'daily', minutes: 1 }), true);
-  assert.equal(refused(daily, { mode: 'visit', sessionMinutes: 1, cooldownMinutes: 600 }), true);
+  assert.equal(refused(daily, { mode: 'visit', sessionMinutes: 1, cooldownMinutes: 600, dailyMinutes: null }), true);
 });
 
 test('a mode change cannot trade a sub-day guarantee for the same daily total', () => {
   // 15m an hour and 10m with 30m off both come to 360 minutes a day with a
   // shorter sitting, yet two visits fit inside one hour and give 20.
   const stored = [{ mode: 'rolling', allowanceMinutes: 15, windowMinutes: 60 }];
-  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 10, cooldownMinutes: 30 }), true);
+  assert.equal(refused(stored, { mode: 'visit', sessionMinutes: 10, cooldownMinutes: 30, dailyMinutes: null }), true);
 });
 
 test('a rolling day cannot become a calendar day with the same minutes', () => {

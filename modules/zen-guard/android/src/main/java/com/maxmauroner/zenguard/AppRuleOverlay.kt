@@ -1,9 +1,14 @@
 package com.maxmauroner.zenguard
 
 import android.accessibilityservice.AccessibilityService
+import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
+import android.animation.ValueAnimator
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
+import android.provider.Settings
 import android.text.format.DateFormat
 import android.view.Gravity
 import android.view.View
@@ -33,6 +38,7 @@ internal class AppRuleOverlay(
   private var availabilityView: TextView? = null
   private var startButtons: List<Pair<Int, Button>> = emptyList()
   private var capLeftMs: Long? = null
+  private var entranceAnimators: List<ObjectAnimator> = emptyList()
 
   fun isShowing(): Boolean = root?.isAttachedToWindow == true
   fun requestedPackage(): String? = shownFor
@@ -127,15 +133,43 @@ internal class AppRuleOverlay(
       setPadding(0, dp(32), 0, dp(32))
     }
     scroll.addView(content, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
-    content.addView(styledText(service.getString(R.string.zen_guard_kids_end_title), 40f, service.getColor(R.color.zen_copy), bold = true).apply {
+    val title = styledText(service.getString(R.string.zen_guard_kids_end_title), 40f, service.getColor(R.color.zen_copy), bold = true).apply {
       gravity = Gravity.CENTER
-    }, matchWrap())
+    }
+    content.addView(title, matchWrap())
     content.addView(styledText(appLabel, 20f, service.getColor(R.color.zen_muted)).apply {
       gravity = Gravity.CENTER
     }, matchWrap(topMargin = dp(16)))
-    content.addView(actionButton(service.getString(R.string.zen_guard_intent_cooldown_leave), primary = true).apply {
+    val leave = actionButton(service.getString(R.string.zen_guard_intent_cooldown_leave), primary = true).apply {
       setOnClickListener { onLeave() }
-    }, matchWrap(topMargin = dp(32)))
+    }
+    content.addView(leave, matchWrap(topMargin = dp(32)))
+    val animationsEnabled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      ValueAnimator.areAnimatorsEnabled()
+    } else {
+      Settings.Global.getFloat(service.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
+    }
+    if (animationsEnabled) {
+      title.alpha = 0f
+      title.scaleX = 0.92f
+      title.scaleY = 0.92f
+      leave.alpha = 0f
+      entranceAnimators = listOf(
+        ObjectAnimator.ofPropertyValuesHolder(
+          title,
+          PropertyValuesHolder.ofFloat(View.ALPHA, 1f),
+          PropertyValuesHolder.ofFloat(View.SCALE_X, 1f),
+          PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f),
+        ).apply { duration = 300L },
+        ObjectAnimator.ofFloat(leave, View.ALPHA, 1f).apply {
+          startDelay = 150L
+          duration = 200L
+        },
+      )
+      container.doOnFirstAttach {
+        if (root === container) entranceAnimators.forEach { it.start() }
+      }
+    }
     val params = WindowManager.LayoutParams(
       WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
       WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
@@ -409,6 +443,8 @@ internal class AppRuleOverlay(
   fun hide() {
     val existingRoot = root
     root = null
+    entranceAnimators.forEach { it.end() }
+    entranceAnimators = emptyList()
     shownFor = null
     mode = null
     titleView = null

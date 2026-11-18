@@ -1,5 +1,6 @@
 package com.maxmauroner.zenguard
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -209,6 +210,88 @@ class AppRuleTimerServiceTest {
     assertEquals(AppRuleOverlayMode.KIDS_END, overlay().mode)
     assertTrue(overlay().isShowing())
     assertEquals(1L, count(EnforcementReason.APP_LIMIT))
+  }
+
+  @Test fun `kids entrance plays once across window events and refresh`() {
+    wholeApp().appRuleWallClock = { Instant.parse("2026-10-13T12:00:00Z").toEpochMilli() }
+    ZenGuardPreferences(context).endScreen = EndScreen.KIDS
+    AppLimitStore(context).apply { setLimit(APP, 1); addUsage(APP, 60_000L, wallNow()) }
+    ValueAnimator::class.java.getDeclaredMethod("setDurationScale", Float::class.javaPrimitiveType).invoke(null, 1f)
+    showAppWindows(APP)
+    windowEvent(APP)
+    val root = overlay().privateField<View>("root")
+    val title = views().filterIsInstance<TextView>().single { it.text == "Time's up.\nGo play." }
+    val button = views().filterIsInstance<Button>().single()
+    assertTrue(title.alpha < 1f)
+    assertTrue(title.scaleX < 1f)
+    assertTrue(button.isEnabled)
+    showOverlayWindow(APP)
+    windowEvent(APP)
+    advance(Duration.ofSeconds(2))
+    assertEquals(1f, title.alpha, 0f)
+    assertEquals(1f, title.scaleX, 0f)
+    assertEquals(1f, title.scaleY, 0f)
+    assertEquals(1f, button.alpha, 0f)
+    windowEvent(APP)
+    advance(Duration.ofMillis(20))
+    assertTrue(root === overlay().privateField<View>("root"))
+    val currentTitle = views().filterIsInstance<TextView>().single { it.text == "Time's up.\nGo play." }
+    val currentButton = views().filterIsInstance<Button>().single()
+    assertEquals(1f, currentTitle.alpha, 0f)
+    assertEquals(1f, currentTitle.scaleX, 0f)
+    assertEquals(1f, currentButton.alpha, 0f)
+  }
+
+  @Test fun `hiding kids card ends entrance animators`() {
+    ValueAnimator::class.java.getDeclaredMethod("setDurationScale", Float::class.javaPrimitiveType).invoke(null, 1f)
+    ZenGuardPreferences(context).endScreen = EndScreen.KIDS
+    AppLimitStore(context).apply { setLimit(APP, 1); addUsage(APP, 60_000L, wallNow()) }
+    openApp(APP)
+    val title = views().filterIsInstance<TextView>().single { it.text == "Time's up.\nGo play." }
+    val button = views().filterIsInstance<Button>().single()
+    val animators = overlay().privateField<List<android.animation.ObjectAnimator>>("entranceAnimators")
+    animators.forEach { it.start() }
+    assertTrue(animators.any { it.isStarted })
+    overlay().hide()
+    assertTrue(animators.none { it.isStarted })
+    assertEquals(1f, title.alpha, 0f)
+    assertEquals(1f, title.scaleX, 0f)
+    assertEquals(1f, title.scaleY, 0f)
+    assertEquals(1f, button.alpha, 0f)
+  }
+
+  @Test fun `kids entrance is immediate when animations are disabled`() {
+    val setScale = ValueAnimator::class.java.getDeclaredMethod("setDurationScale", Float::class.javaPrimitiveType)
+    setScale.invoke(null, 0f)
+    try {
+      ZenGuardPreferences(context).endScreen = EndScreen.KIDS
+      AppLimitStore(context).apply { setLimit(APP, 1); addUsage(APP, 60_000L, wallNow()) }
+      openApp(APP)
+      val title = views().filterIsInstance<TextView>().single { it.text == "Time's up.\nGo play." }
+      val button = views().filterIsInstance<Button>().single()
+      assertEquals(1f, title.alpha, 0f)
+      assertEquals(1f, title.scaleX, 0f)
+      assertEquals(1f, title.scaleY, 0f)
+      assertEquals(1f, button.alpha, 0f)
+      assertTrue(button.isEnabled)
+    } finally {
+      setScale.invoke(null, 1f)
+    }
+  }
+
+  @Test @Config(sdk = [24]) fun `kids entrance respects disabled animation on Android 7`() {
+    Settings.Global.putFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
+    try {
+      overlay().showKids(APP, APP, {}, {})
+      val title = views().filterIsInstance<TextView>().single { it.text == "Time's up.\nGo play." }
+      val button = views().filterIsInstance<Button>().single()
+      assertEquals(1f, title.alpha, 0f)
+      assertEquals(1f, title.scaleX, 0f)
+      assertEquals(1f, button.alpha, 0f)
+      assertTrue(button.isEnabled)
+    } finally {
+      Settings.Global.putFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+    }
   }
 
   @Test fun `daily cap is recorded when a timed kids card is already showing`() {

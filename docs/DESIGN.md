@@ -7,8 +7,9 @@ screen. The background and status vocabulary are in
 ## Direction
 
 Dark, dense, and calm. Each screen shows what is saved, what is ready, and what
-is running, then gives one clear next action. Do not use looping animation,
-decorative motion, or a new color for each route.
+is running, then gives one clear next action. Max decided to "allow animations
+in general as long as they are tasteful". Do not use looping animation or a new
+color for each route.
 
 ## Color
 

@@ -111,8 +111,8 @@ test('scheme-qualified apksigner signer lines count once per certificate', () =>
   ].join('\n');
   assert.deepEqual(parseSignerDigests(multiScheme), [QA_SIGNER_SHA256]);
 
-  // v3.1 rotation output in the new format is no signer either, so such an APK stays blocked.
-  const rotation = certificate('V3.1 Signer (minSdkVersion=33, maxSdkVersion=2147483647):', chromeSigner).join('\n');
+  // apksigner 37.0.0 prints a rotated v3.1 signer with its SDK range. It is no app signer, so such an APK stays blocked.
+  const rotation = certificate('V3.1 Signer: (minSdkVersion=33, maxSdkVersion=2147483647)', chromeSigner).join('\n');
   assert.throws(() => parseSignerDigests(rotation), /no SHA-256 signer/);
 });
 

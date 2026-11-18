@@ -10,6 +10,8 @@ import { GuardNotes } from '@/components/ui/guard-notes';
 import { TopTabs } from 'expo-router/js-top-tabs';
 import { Card, Row, RowGroup } from '@/components/ui/card';
 import { Screen } from '@/components/ui/screen';
+import { useWeakeningGate, WeakeningGateDialog } from '@/components/ui/weakening-gate';
+import { authorizeWeakening } from '@/features/protection/authorize-weakening';
 import { formatRemaining, readLockState, type LockState } from '@/features/protection/lock';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { getFeedStatus, getFeedStatusDetail } from '@/features/protection/feed-status';
@@ -36,6 +38,7 @@ export default function FeedsScreen() {
   const [siteDrawerOpen, setSiteDrawerOpen] = useState(false);
   const busy = action.kind === 'running';
   const busyRef = useRef(false);
+  const gate = useWeakeningGate();
 
   useFocusEffect(useCallback(() => {
     let active = true;
@@ -105,7 +108,8 @@ export default function FeedsScreen() {
           <Text accessibilityRole="header" className="text-item font-semibold text-copy">Protection was off</Text>
           <Text accessibilityLiveRegion="polite" className="text-support text-muted">{offNotice.message}</Text>
           <SecondaryButton title="Dismiss notice" disabled={busy} onPress={() => runAction(async () => {
-            await acknowledgeServiceDisabled(offNotice.disabledAt);
+            if (!await authorizeWeakening(true, 'dismiss the protection notice', gate.request)) return;
+            await acknowledgeServiceDisabled(offNotice.disabledThrough);
             await refresh();
           })} />
         </Card>
@@ -117,6 +121,7 @@ export default function FeedsScreen() {
         </View>
       ) : null}
       <GuardNotes reads={[statusRead, setupRead]} action={action} />
+      <WeakeningGateDialog gate={gate} />
 
       <RowGroup>
         <Row icon={Play} label="YouTube" detail={`Home: ${getFeedPresentation(status, 'youtubeHome', loading).statusLabel} · Shorts: ${getFeedPresentation(status, 'shorts', loading).statusLabel}`} onPress={() => setDrawer('youtube')} disabled={!editable} />

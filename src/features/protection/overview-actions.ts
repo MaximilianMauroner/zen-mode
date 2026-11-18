@@ -13,10 +13,12 @@ export type OverviewAction =
   | 'set-up-x'
   | 'check-sites';
 
-export function getProtectionOffNotice(status: ZenGuardStatus | null): { disabledAt: number; message: string } | null {
-  if (!status?.available || !status.serviceDisabledAt) return null;
-  const disabledAt = status.serviceDisabledAt;
-  return { disabledAt, message: `Accessibility access was off at ${new Date(disabledAt).toLocaleString()}.` };
+export function getProtectionOffNotice(status: ZenGuardStatus | null): { disabledThrough: number; message: string } | null {
+  if (!status?.available || !status.serviceDisabledAt || !status.serviceDisabledThrough) return null;
+  return {
+    disabledThrough: status.serviceDisabledThrough,
+    message: `Protection was off at least once since ${new Date(status.serviceDisabledAt).toLocaleString()}.`,
+  };
 }
 
 /**

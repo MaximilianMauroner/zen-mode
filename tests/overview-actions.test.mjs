@@ -36,6 +36,7 @@ const base = {
   available: true,
   serviceEnabled: true,
   serviceDisabledAt: null,
+  serviceDisabledThrough: null,
   currentConsent: true,
   protectionEnabled: true,
   observationMode: false,
@@ -73,9 +74,11 @@ test('home reports an actual off period even if access resumed, and clears it af
   assert.equal(getProtectionOffNotice({ ...base, protectionEnabled: false }), null);
 
   const disabledAt = Date.UTC(2026, 10, 18, 12);
-  const message = `Accessibility access was off at ${new Date(disabledAt).toLocaleString()}.`;
-  assert.deepEqual(getProtectionOffNotice({ ...base, serviceEnabled: false, serviceDisabledAt: disabledAt }), { disabledAt, message });
-  assert.deepEqual(getProtectionOffNotice({ ...base, serviceDisabledAt: disabledAt }), { disabledAt, message });
+  const disabledThrough = disabledAt + 120_000;
+  const status = { ...base, serviceDisabledAt: disabledAt, serviceDisabledThrough: disabledThrough };
+  const message = `Protection was off at least once since ${new Date(disabledAt).toLocaleString()}.`;
+  assert.deepEqual(getProtectionOffNotice({ ...status, serviceEnabled: false }), { disabledThrough, message });
+  assert.deepEqual(getProtectionOffNotice(status), { disabledThrough, message });
   assert.equal(getProtectionOffNotice(base), null);
 });
 

@@ -32,7 +32,7 @@ export const RECOMMENDED_DEFAULTS_SUMMARY: readonly string[] = [
   'Sites: block adult sites (built-in list)',
 ] as const;
 
-export async function applyRecommendedDefaults(guided?: { mode: GuidedSetupMode; status: ZenGuardStatus }): Promise<void> {
+export async function applyRecommendedDefaults(): Promise<void> {
   const native = await import('./native');
   await native.setYouTubeSettings(RECOMMENDED_DEFAULTS.shortsEnabled, RECOMMENDED_DEFAULTS.youtubeHomeEnabled);
   await native.setXSettings(
@@ -50,12 +50,17 @@ export async function applyRecommendedDefaults(guided?: { mode: GuidedSetupMode;
   await native.setInstagramObservationMode(true);
   await native.setObservationMode(true);
   await native.setAdultSiteBlockingEnabled(RECOMMENDED_DEFAULTS.adultSiteBlockingEnabled);
-  if (!guided) return;
+}
 
-  await native.setEndScreen(guided.mode);
+export async function applyGuidedDefaults(mode: GuidedSetupMode, status: ZenGuardStatus): Promise<void> {
+  const native = await import('./native');
+  const rules = await Promise.all([native.getAppLimits(), native.getIntentApps(), native.getRollingLimits(), native.getEarnRules()]);
+  const configured = new Set(rules.flat().map((rule) => rule.packageName));
+  await native.enableDefaultAdultSiteBlocking();
+  await native.setEndScreen(mode);
   for (const app of SUPPORTED_APPS) {
-    if (getSupportedAppAvailability(guided.status, app.key) !== 'installed') continue;
-    if (guided.mode === 'kids') await native.setAppLimit(app.packageName, KIDS_DAILY_CAP_MINUTES);
+    if (configured.has(app.packageName) || getSupportedAppAvailability(status, app.key) !== 'installed') continue;
+    if (mode === 'kids') await native.setAppLimit(app.packageName, KIDS_DAILY_CAP_MINUTES);
     await native.setIntentApp(app.packageName, DEFAULT_TIMED_VISIT.sessionMinutes, DEFAULT_TIMED_VISIT.cooldownMinutes);
   }
 }

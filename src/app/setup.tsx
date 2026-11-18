@@ -4,7 +4,7 @@ import { PrimaryButton, SecondaryButton } from '@/components/ui/button';
 import { ErrorNote, Screen, ScreenTitle } from '@/components/ui/screen';
 import { PasscodeInput } from '@/components/ui/weakening-gate';
 import { LOCK_DAY_OPTIONS, passcodeEntryRefusal, readLockState } from '@/features/protection/lock';
-import { acceptSetupConsent, finishAndroidSetup, hasCompletedSetup, type SetupLock, type SetupPlan } from '@/features/protection/setup';
+import { acceptSetupConsent, finishAndroidSetup, markSetupComplete, readSetupProgress, type SetupLock, type SetupPlan } from '@/features/protection/setup';
 import { KIDS_DAILY_CAP_MINUTES, RECOMMENDED_DEFAULTS_SUMMARY, type GuidedSetupMode } from '@/features/protection/recommended-defaults';
 import { openAccessibilitySettings } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
@@ -37,7 +37,7 @@ const STARTING_RULES = [
 
 export default function SetupScreen() {
   const android = Platform.OS === 'android';
-  const [flow, setFlow] = useState<SetupStep>(android ? { step: 'loading' } : { step: 'mode' });
+  const [flow, setFlow] = useState<SetupStep>({ step: 'loading' });
   const [consented, setConsented] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -46,14 +46,21 @@ export default function SetupScreen() {
   const working = useRef(false);
 
   useEffect(() => {
-    if (!android) return;
     let mounted = true;
     void (async () => {
       try {
-        const completed = await hasCompletedSetup();
+        const progress = await readSetupProgress();
         if (!mounted) return;
-        if (completed) {
+        if (progress === 'complete') {
           router.replace('/');
+          return;
+        }
+        if (progress === 'family-link') {
+          setFlow({ step: 'family-link' });
+          return;
+        }
+        if (!android) {
+          setFlow({ step: 'mode' });
           return;
         }
         const lock = await readLockState();
@@ -97,24 +104,33 @@ export default function SetupScreen() {
     }, 'Could not finish setup. Try again.');
   }, [flow, run]);
 
+  const timeLockDays = flow.step === 'access' && 'lock' in flow.plan && flow.plan.lock.kind === 'time'
+    ? flow.plan.lock.days : null;
+
   useEffect(() => {
-    if (flow.step !== 'access' || !flow.requested) return;
+    if (flow.step !== 'access' || !flow.requested || timeLockDays !== null) return;
     const listener = AppState.addEventListener('change', (state) => {
       if (state === 'active') void checkAccess();
     });
     return () => listener.remove();
-  }, [checkAccess, flow]);
+  }, [checkAccess, flow, timeLockDays]);
 
   const moveTo = (next: SetupStep) => {
     setError('');
     setFlow(next);
   };
 
-  const continueToAccess = (plan: SetupPlan) => {
+  const finishSetup = () => run(async () => {
+    await markSetupComplete();
+    router.replace('/');
+  }, 'Could not finish setup. Try again.');
+
+  const continueSetup = (plan: SetupPlan) => {
     if ('lock' in plan && plan.lock.kind === 'passcode') {
       const refusal = passcodeEntryRefusal(plan.lock.passcode, plan.lock.confirmation);
       if (refusal) return setError(refusal);
     }
+    if (!android) return finishSetup();
     moveTo({ step: 'access', plan, requested: false });
   };
 
@@ -168,7 +184,8 @@ export default function SetupScreen() {
             ))}
           </View>
         ) : choice === 'customize' ? <Text className="text-support text-muted">Protection stays paused while you choose rules.</Text> : null}
-        <PrimaryButton title="Continue" disabled={!choice} onPress={() => { if (choice) continueToAccess({ mode: choice }); }} />
+        <ErrorNote message={error} />
+        <PrimaryButton title={android ? 'Continue' : 'Finish setup'} disabled={!choice || saving} onPress={() => { if (choice) return continueSetup({ mode: choice }); }} />
         <SecondaryButton title="Back" onPress={() => moveTo({ step: 'mode', mode: 'customize' })} />
       </Screen>
     );
@@ -199,7 +216,7 @@ export default function SetupScreen() {
           <ChipGroup label="Lock length" options={LOCK_DAY_OPTIONS.map((days) => ({ value: days, label: `${days}d` }))} selected={lock.days} onSelect={(days) => selectLock({ kind: 'time', days })} />
         ) : null}
         <ErrorNote message={error} />
-        <PrimaryButton title="Continue" disabled={!lock} onPress={() => { if (lock) continueToAccess({ mode, lock }); }} />
+        <PrimaryButton title={android ? 'Continue' : 'Finish setup'} disabled={!lock || saving} onPress={() => { if (lock) return continueSetup({ mode, lock }); }} />
         <SecondaryButton title="Back" onPress={() => moveTo({ step: 'mode', mode })} />
       </Screen>
     );
@@ -215,7 +232,7 @@ export default function SetupScreen() {
           'Could not open Google Family Link.',
         )} />
         <ErrorNote message={error} />
-        <PrimaryButton title="Finish setup" disabled={saving} onPress={() => router.replace('/')} />
+        <PrimaryButton title="Finish setup" disabled={saving} onPress={finishSetup} />
       </Screen>
     );
   }
@@ -233,12 +250,14 @@ export default function SetupScreen() {
     if ('lock' in plan) moveTo({ step: 'lock', mode: plan.mode, lock: plan.lock });
     else if (plan.mode !== 'restore') moveTo({ step: 'starting-rules', choice: plan.mode });
   };
-  const selectionDisabled = !android || saving || requested;
+  const selectionDisabled = saving || requested;
+  const checkAccessTitle = timeLockDays === null
+    ? 'Check Android access again'
+    : `Lock for ${timeLockDays} ${timeLockDays === 1 ? 'day' : 'days'} and finish`;
 
   return (
     <Screen key="access">
       <ScreenTitle title="Set up Android access" />
-      {!android ? <Text className="text-body text-muted">Protection requires the Android app.</Text> : null}
       {plan.mode === 'restore' ? <Text className="text-body text-muted">Grant access again to use your saved rules and settings lock.</Text> : null}
       <Card>
         <View className="flex-row items-center">
@@ -269,8 +288,8 @@ export default function SetupScreen() {
       {requested ? <Text className="text-support text-muted">Setup is pending until Zen Mode confirms Android accessibility access. If you did not grant it, open Settings and try again.</Text> : null}
       <View className="gap-3">
         <PrimaryButton
-          title={saving ? 'Checking access…' : requested ? 'Check Android access again' : 'Continue to Android access'}
-          disabled={!android || saving}
+          title={saving ? 'Checking access…' : requested ? checkAccessTitle : 'Continue to Android access'}
+          disabled={saving}
           onPress={requested ? checkAccess : openAccess}
         />
         {requested ? <SecondaryButton title="Open Android settings" disabled={saving} onPress={() => run(openAccessibilitySettings, 'Could not open Android settings.')} /> : null}

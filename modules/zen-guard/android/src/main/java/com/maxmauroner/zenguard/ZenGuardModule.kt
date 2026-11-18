@@ -33,7 +33,8 @@ class ZenGuardModule : Module() {
         "endScreen" to preferences.endScreen.name.lowercase(),
         "available" to true,
         "serviceEnabled" to access.enabled,
-        "serviceDisabledAt" to access.disabledAt?.toDouble(),
+        "serviceDisabledAt" to access.offPeriod?.since?.toDouble(),
+        "serviceDisabledThrough" to access.offPeriod?.through?.toDouble(),
         "currentConsent" to preferences.hasCurrentConsent,
         "protectionEnabled" to (preferences.protectionEnabled && preferences.hasCurrentConsent),
         "observationMode" to preferences.observationMode,
@@ -88,8 +89,8 @@ class ZenGuardModule : Module() {
       ZenGuardPreferences(requireNotNull(appContext.reactContext)).endScreen = choice
     }
 
-    AsyncFunction("acknowledgeServiceDisabled") { disabledAt: Double ->
-      AccessibilityAccess.acknowledge(requireNotNull(appContext.reactContext), disabledAt.toLong())
+    AsyncFunction("acknowledgeServiceDisabled") { disabledThrough: Double ->
+      AccessibilityAccess.acknowledge(requireNotNull(appContext.reactContext), disabledThrough.toLong())
     }
 
     AsyncFunction("startDiagnostics") { durationSeconds: Int ->
@@ -134,6 +135,10 @@ class ZenGuardModule : Module() {
 
     AsyncFunction("setAdultSiteBlockingEnabled") { enabled: Boolean ->
       AdultSiteRuleStore(requireNotNull(appContext.reactContext)).enabled = enabled
+    }
+
+    AsyncFunction("enableDefaultAdultSiteBlocking") {
+      AdultSiteRuleStore(requireNotNull(appContext.reactContext)).enableDefault()
     }
 
     AsyncFunction("addBlockedDomain") { input: String ->

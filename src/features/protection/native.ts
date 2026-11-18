@@ -15,7 +15,7 @@ export const getDiagnostics = () => ZenGuardModule.getDiagnostics();
 export const shareDiagnostics = (reportText = '') => ZenGuardModule.shareDiagnostics(reportText);
 export const setEndScreen = (value: EndScreen) => ZenGuardModule.setEndScreen(value);
 export const getZenGuardStatus = () => ZenGuardModule.getStatus();
-export const acknowledgeServiceDisabled = (disabledAt: number) => ZenGuardModule.acknowledgeServiceDisabled(disabledAt);
+export const acknowledgeServiceDisabled = (disabledThrough: number) => ZenGuardModule.acknowledgeServiceDisabled(disabledThrough);
 export const getEnforcementStats = () => ZenGuardModule.getEnforcementStats();
 export const openAccessibilitySettings = () => ZenGuardModule.openAccessibilitySettings();
 export const openYouTube = () => ZenGuardModule.openYouTube();
@@ -55,6 +55,7 @@ export const setXSettings = (homeEnabled: boolean, videosEnabled: boolean, homeM
 export const setXObservationMode = (enabled: boolean) => ZenGuardModule.setXObservationMode(enabled);
 export const getAdultSiteSettings = () => ZenGuardModule.getAdultSiteSettings();
 export const setAdultSiteBlockingEnabled = (enabled: boolean) => ZenGuardModule.setAdultSiteBlockingEnabled(enabled);
+export const enableDefaultAdultSiteBlocking = () => ZenGuardModule.enableDefaultAdultSiteBlocking();
 export const addBlockedDomain = (input: string) =>
   ZenGuardModule.addBlockedDomain(input).catch((cause: unknown) => {
     throw new Error(getAddDomainErrorMessage(cause));

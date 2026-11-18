@@ -57,7 +57,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
 
   override fun onServiceConnected() {
     super.onServiceConnected()
-    AccessibilityAccess.read(this)
+    AccessibilityAccess.connected(this)
     runCatching { Diagnostics.service(this, true, "connected") }
     preferences = ZenGuardPreferences(this)
     stats.replaceStore(
@@ -187,11 +187,12 @@ class ZenGuardAccessibilityService : AccessibilityService() {
   }
 
   override fun onUnbind(intent: Intent?): Boolean {
-    AccessibilityAccess.read(this)
+    AccessibilityAccess.disconnected(this)
     return super.onUnbind(intent)
   }
 
   override fun onDestroy() {
+    if (::preferences.isInitialized) AccessibilityAccess.disconnected(this)
     runCatching { Diagnostics.service(this, false, "destroy") }
     wholeApp.cancelVisitDeadline()
     browserIntervention?.end()

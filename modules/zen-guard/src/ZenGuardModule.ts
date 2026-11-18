@@ -11,6 +11,7 @@ export type ZenGuardStatus = {
   endScreen: EndScreen;
   serviceEnabled: boolean;
   serviceDisabledAt: number | null;
+  serviceDisabledThrough: number | null;
   currentConsent: boolean;
   protectionEnabled: boolean;
   observationMode: boolean;
@@ -105,7 +106,7 @@ export type EarnRule = InstalledApp & {
 
 declare class ZenGuardModule extends NativeModule<{}> {
   getStatus(): Promise<ZenGuardStatus>;
-  acknowledgeServiceDisabled(disabledAt: number): Promise<void>;
+  acknowledgeServiceDisabled(disabledThrough: number): Promise<void>;
   setEndScreen(value: EndScreen): Promise<void>;
   startDiagnostics(durationSeconds: number): Promise<void>;
   stopDiagnostics(): Promise<void>;
@@ -141,6 +142,7 @@ declare class ZenGuardModule extends NativeModule<{}> {
   removeEarnRule(packageName: string): Promise<void>;
   getAdultSiteSettings(): Promise<AdultSiteSettings>;
   setAdultSiteBlockingEnabled(enabled: boolean): Promise<void>;
+  enableDefaultAdultSiteBlocking(): Promise<void>;
   addBlockedDomain(input: string): Promise<string>;
   removeBlockedDomain(host: string): Promise<void>;
   openBrowserCheck(): Promise<void>;

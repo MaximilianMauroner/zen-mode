@@ -9,6 +9,7 @@ class ZenGuardModule extends NativeModule<{}> {
       endScreen: 'focus',
       serviceEnabled: false,
       serviceDisabledAt: null,
+      serviceDisabledThrough: null,
       currentConsent: false,
       protectionEnabled: false,
       observationMode: true,
@@ -75,6 +76,7 @@ class ZenGuardModule extends NativeModule<{}> {
   async setInstagramSettings() {}
   async getAdultSiteSettings() { return { available: false, enabled: false, customHosts: [], browserSignalMask: 0 }; }
   async setAdultSiteBlockingEnabled() {}
+  async enableDefaultAdultSiteBlocking() {}
   async addBlockedDomain(input: string) { return input; }
   async removeBlockedDomain() {}
   async openBrowserCheck() {}

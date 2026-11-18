@@ -10,8 +10,17 @@ import { RECOMMENDED_DEFAULTS_SUMMARY } from '../src/features/protection/recomme
 const moduleUrl = (source) => 'data:text/javascript,' + encodeURIComponent(source);
 const secureStoreUrl = moduleUrl(`
   export const values = new Map();
+  export let nextWriteError;
+  export function failNextWrite(error) { nextWriteError = error; }
   export async function getItemAsync(key) { return values.get(key) ?? null; }
-  export async function setItemAsync(key, value) { values.set(key, value); }
+  export async function setItemAsync(key, value) {
+    if (nextWriteError) {
+      const error = nextWriteError;
+      nextWriteError = undefined;
+      throw error;
+    }
+    values.set(key, value);
+  }
 `);
 const cryptoUrl = moduleUrl(`
   import { createHash, getRandomValues } from 'node:crypto';
@@ -25,12 +34,19 @@ const reactNativeUrl = moduleUrl("export const Platform = { OS: 'android' };");
 const nativeUrl = moduleUrl(`
   export const status = {};
   export const calls = [];
-  export async function getZenGuardStatus() { return { ...status }; }
+  export async function getZenGuardStatus() {
+    if (status.accessChecks.length > 0) status.serviceEnabled = status.accessChecks.shift();
+    return { ...status };
+  }
   export async function hasCurrentNativeConsent() { return status.currentConsent; }
   export async function acceptCurrentNativeConsent() { status.currentConsent = true; calls.push('consent'); }
   export async function openAccessibilitySettings() { calls.push('open settings'); }
   export async function setNativeProtectionEnabled(enabled) { status.protectionEnabled = enabled; }
   export async function setEndScreen(mode) { status.endScreen = mode; }
+  export async function getAppLimits() { return Object.keys(status.dailyCaps).map((packageName) => ({ packageName })); }
+  export async function getIntentApps() { return Object.keys(status.visits).map((packageName) => ({ packageName })); }
+  export async function getRollingLimits() { return status.rolling; }
+  export async function getEarnRules() { return status.earn; }
   export async function setAppLimit(packageName, minutes) { status.dailyCaps[packageName] = minutes; }
   export async function setIntentApp(packageName, sessionMinutes, cooldownMinutes) {
     status.visits[packageName] = { sessionMinutes, cooldownMinutes };
@@ -39,6 +55,7 @@ const nativeUrl = moduleUrl(`
   export async function setXSettings(...args) { status.rules.x = args; }
   export async function setInstagramSettings(...args) { status.rules.instagram = args; }
   export async function setAdultSiteBlockingEnabled(enabled) { status.rules.adultSites = enabled; }
+  export async function enableDefaultAdultSiteBlocking() { status.rules.adultSites ??= true; }
   export async function setObservationMode(enabled) { status.observation.youtube = enabled; }
   export async function setInstagramObservationMode(enabled) { status.observation.instagram = enabled; }
   export async function setXObservationMode(enabled) { status.observation.x = enabled; }
@@ -59,6 +76,7 @@ const hooks = registerHooks({
 
 const store = await import(secureStoreUrl);
 const native = await import(nativeUrl);
+const { Platform } = await import(reactNativeUrl);
 const lock = await import('../src/features/protection/lock.ts');
 const setupActions = await import('../src/features/protection/setup.ts');
 after(() => hooks.deregister());
@@ -76,15 +94,22 @@ function find(node, predicate) {
   }
 }
 
+const previewStorage = new Map();
+
 async function setup({ activePasscode, platform = 'android', endScreen = 'off', appAvailability = { youtube: 'installed', instagram: 'installed', x: 'installed' } } = {}) {
+  Platform.OS = platform;
+  previewStorage.clear();
   store.values.clear();
   native.calls.length = 0;
   Object.assign(native.status, {
     available: true, serviceEnabled: false, currentConsent: false, protectionEnabled: false, endScreen,
-    appAvailability, dailyCaps: {}, visits: {}, rules: {}, observation: {},
+    appAvailability, dailyCaps: {}, visits: {}, rules: {}, observation: {}, accessChecks: [], rolling: [], earn: [],
   });
   if (activePasscode) await lock.updatePasscode({ passcode: activePasscode, confirmation: activePasscode });
+  return mountSetup();
+}
 
+async function mountSetup() {
   const values = [];
   const effects = [];
   const pendingEffects = [];
@@ -114,7 +139,7 @@ async function setup({ activePasscode, platform = 'android', endScreen = 'off', 
   const imports = {
     react: reactHooks,
     'react/jsx-runtime': { jsx: element, jsxs: element },
-    'react-native': { Platform: { OS: platform }, AppState: { addEventListener: (_event, callback) => {
+    'react-native': { Platform, AppState: { addEventListener: (_event, callback) => {
       onAppState = callback;
       return { remove() { onAppState = undefined; } };
     } } },
@@ -155,7 +180,7 @@ async function setup({ activePasscode, platform = 'android', endScreen = 'off', 
     returnToApp: async (enabled) => {
       native.status.serviceEnabled = enabled;
       render();
-      onAppState('active');
+      onAppState?.('active');
       await new Promise(setImmediate);
     },
     get destination() { return destination; },
@@ -189,20 +214,21 @@ test('Kids setup confirms a passcode, waits for access, and caps only installed 
   assert.equal((await lock.readLockState()).kind, 'open');
 
   await view.returnToApp(true);
-  assert.equal(await setupActions.hasCompletedSetup(), true);
+  assert.equal(await setupActions.hasCompletedSetup(), false);
   assert.equal(native.status.protectionEnabled, true);
-  assert.deepEqual(native.status.rules, recommendedRules);
-  assert.deepEqual(native.status.observation, { youtube: true, instagram: true, x: true });
+  assert.deepEqual(native.status.rules, { adultSites: true });
   assert.equal(native.status.endScreen, 'kids');
   assert.deepEqual(native.status.dailyCaps, { 'com.google.android.youtube': 60, 'com.instagram.android': 60 });
   assert.deepEqual(native.status.visits, { 'com.google.android.youtube': timedVisit, 'com.instagram.android': timedVisit });
   assert.equal((await lock.readLockState()).kind, 'passcode');
   await lock.requirePasscode('family code');
   assert.equal(view.destination, undefined);
-  await view.press('Open Google Family Link');
-  assert.equal(view.openedUrl, 'https://families.google/familylink/');
-  await view.press('Finish setup');
-  assert.equal(view.destination, '/');
+  const relaunched = await mountSetup();
+  await relaunched.press('Open Google Family Link');
+  assert.equal(relaunched.openedUrl, 'https://families.google/familylink/');
+  await relaunched.press('Finish setup');
+  assert.equal(relaunched.destination, '/');
+  assert.equal(await setupActions.hasCompletedSetup(), true);
 });
 
 test('Focus setup keeps the recommended rules, adds timed visits and arms the chosen time lock', async (t) => {
@@ -216,8 +242,10 @@ test('Focus setup keeps the recommended rules, adds timed visits and arms the ch
   view.consent();
   await view.press('Continue to Android access');
   await view.returnToApp(true);
+  assert.equal((await lock.readLockState()).kind, 'open');
+  await view.press('Lock for 3 days and finish');
 
-  assert.deepEqual(native.status.rules, recommendedRules);
+  assert.deepEqual(native.status.rules, { adultSites: true });
   assert.deepEqual(native.status.dailyCaps, {});
   assert.deepEqual(native.status.visits, {
     'com.google.android.youtube': timedVisit,
@@ -283,12 +311,113 @@ test('setup with an existing lock restores access without replacing rules or the
   assert.ok(view.props('Open Google Family Link'));
 });
 
-test('Kids on web can preview the setup choices without requesting Android access or showing Family Link', async () => {
-  const view = await setup({ platform: 'web' });
+test('guided setup with no lock leaves existing rules and feed observation unchanged', async () => {
+  const view = await setup();
+  const youtube = 'com.google.android.youtube';
+  const instagram = 'com.instagram.android';
+  const x = 'com.twitter.android';
+  native.status.dailyCaps = { [youtube]: 15 };
+  native.status.visits = { [youtube]: { sessionMinutes: 2, cooldownMinutes: 30 } };
+  native.status.rolling = [{ packageName: instagram, allowanceMinutes: 2, windowMinutes: 60 }];
+  const feedAndSiteRules = { youtube: [true, true], x: [true, true, 1], instagram: [60, 1, 1, true], adultSites: false };
+  const observation = { youtube: false, instagram: false, x: false };
+  native.status.rules = { ...feedAndSiteRules };
+  native.status.observation = { ...observation };
+  assert.equal((await lock.readLockState()).kind, 'open');
+
   await view.chooseMode('Kids');
   await view.press('Time lock');
   await view.press('Continue');
-  assert.equal(view.props('Continue to Android access').disabled, true);
+  view.consent();
+  await view.press('Continue to Android access');
+  await view.returnToApp(true);
+  await view.press('Lock for 7 days and finish');
+
+  assert.deepEqual(native.status.dailyCaps, { [youtube]: 15, [x]: 60 });
+  assert.deepEqual(native.status.visits, { [youtube]: { sessionMinutes: 2, cooldownMinutes: 30 }, [x]: timedVisit });
+  assert.deepEqual(native.status.rolling, [{ packageName: instagram, allowanceMinutes: 2, windowMinutes: 60 }]);
+  assert.deepEqual(native.status.rules, feedAndSiteRules);
+  assert.deepEqual(native.status.observation, observation);
+  assert.ok(view.props('Open Google Family Link'));
+});
+
+test('a lock write failure leaves the saved rules paused and setup can finish on retry', async () => {
+  const view = await setup();
+  await view.chooseMode('Focus');
+  await view.press('Time lock');
+  await view.press('Continue');
+  view.consent();
+  await view.press('Continue to Android access');
+  await view.returnToApp(true);
+  store.failNextWrite(new Error('Could not save the lock'));
+  await view.press('Lock for 7 days and finish');
+
+  assert.ok(view.find((node) => node.props?.message === 'Could not save the lock'));
+  assert.equal(view.destination, undefined);
+  assert.equal(native.status.protectionEnabled, false);
+  assert.equal(await setupActions.hasCompletedSetup(), false);
+  assert.equal((await lock.readLockState()).kind, 'open');
+  const visits = { ...native.status.visits };
+  assert.equal(Object.keys(visits).length, 3);
+
+  await view.press('Lock for 7 days and finish');
+  assert.equal((await lock.readLockState()).kind, 'locked');
+  assert.deepEqual(native.status.visits, visits);
+  assert.equal(native.status.protectionEnabled, true);
+  assert.equal(await setupActions.hasCompletedSetup(), true);
+  assert.equal(view.destination, '/');
+});
+
+test('losing access after the lock is armed keeps the lock and lets setup resume after relaunch', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 10, 18) });
+  const view = await setup();
+  await view.chooseMode('Kids');
+  await view.press('Time lock');
+  view.selectDays(1);
+  await view.press('Continue');
+  view.consent();
+  await view.press('Continue to Android access');
+  native.status.accessChecks = [true, false];
+  await view.press('Lock for 1 day and finish');
+
+  assert.ok(view.find((node) => /Enable Zen Mode in Android/.test(node.props?.message)));
+  assert.equal(view.destination, undefined);
+  assert.equal(native.status.protectionEnabled, false);
+  assert.equal(await setupActions.hasCompletedSetup(), false);
+  const savedLock = await lock.readLockState();
+  assert.equal(savedLock.kind, 'locked');
+  const caps = { ...native.status.dailyCaps };
+  const visits = { ...native.status.visits };
+  assert.equal(Object.keys(caps).length, 3);
+
+  t.mock.timers.tick(60_000);
+  const relaunched = await mountSetup();
+  relaunched.consent();
+  await relaunched.press('Continue to Android access');
+  await relaunched.returnToApp(true);
+  assert.deepEqual(await lock.readLockState(), savedLock);
+  assert.deepEqual(native.status.dailyCaps, caps);
+  assert.deepEqual(native.status.visits, visits);
+  assert.equal(native.status.protectionEnabled, true);
+  await relaunched.press('Finish setup');
+  assert.equal(await setupActions.hasCompletedSetup(), true);
+  assert.equal(relaunched.destination, '/');
+});
+
+test('Kids on web can finish setup and reach Home without Android access or Family Link', async (t) => {
+  globalThis.localStorage = {
+    getItem: (key) => previewStorage.get(key) ?? null,
+    setItem: (key, value) => { previewStorage.set(key, value); },
+  };
+  t.after(() => { delete globalThis.localStorage; });
+  const view = await setup({ platform: 'web' });
+  await view.chooseMode('Kids');
+  await view.press('Time lock');
+  await view.press('Finish setup');
+  assert.equal(view.destination, '/');
+  assert.equal(await setupActions.hasCompletedSetup(), true);
   assert.equal(view.props('Open Google Family Link'), undefined);
   assert.deepEqual(native.calls, []);
+  assert.deepEqual(native.status.visits, {});
+  assert.equal((await lock.readLockState()).kind, 'open');
 });

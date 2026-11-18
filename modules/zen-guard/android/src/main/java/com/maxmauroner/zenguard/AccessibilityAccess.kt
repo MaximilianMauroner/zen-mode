@@ -61,7 +61,7 @@ internal object AccessibilityAccess {
       if (nextDisconnectedAt == null) update.remove(DISCONNECTED_AT)
       else update.putLong(DISCONNECTED_AT, nextDisconnectedAt)
       if (connecting) {
-        update.putInt(BOOT_COUNT, bootCount).putHeartbeat(now)
+        update.putInt(BOOT_COUNT, bootCount).putHeartbeat(now).remove(CLEAN_SHUTDOWN_BOOT_COUNT)
       } else if (!enabled || !wasEnabled) {
         update.remove(BOOT_COUNT).remove(HEARTBEAT_AT).remove(HEARTBEAT_UPTIME).remove(CLEAN_SHUTDOWN_BOOT_COUNT)
       }

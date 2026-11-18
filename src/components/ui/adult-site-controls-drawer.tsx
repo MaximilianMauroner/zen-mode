@@ -109,7 +109,7 @@ export function AdultSiteControlsDrawer({ visible, onClose }: Props) {
         style={{ flex: 1 }}
         className="justify-end bg-black/50">
         <Pressable accessibilityRole="button" accessibilityLabel="Close site controls" onPress={close} disabled={busy} className="absolute inset-0" />
-        <SafeAreaView edges={['bottom']} style={{ maxHeight: '88%' }} className="rounded-t-3xl border-t border-line2 bg-panel pt-3">
+        <SafeAreaView edges={['bottom']} style={{ maxHeight: '88%' }} className="mx-auto w-full max-w-xl rounded-t-3xl border-t border-line2 bg-panel pt-3">
           <SheetHeader title="Sites" closeLabel="Close site controls" disabled={busy} onClose={close} />
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20 }}>
             <View className="min-h-14 flex-row items-center justify-between gap-4 rounded-3xl border border-line bg-panel2 px-4 py-3">

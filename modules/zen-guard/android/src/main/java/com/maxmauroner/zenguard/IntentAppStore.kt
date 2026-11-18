@@ -19,7 +19,7 @@ internal data class IntentRule(val sessionMinutes: Int, val cooldownMinutes: Int
  * package name. Active visits stay in memory in [IntentSessionTracker], so a
  * service restart only ever re-asks, never grants extra time.
  */
-internal class IntentAppStore(context: Context) {
+internal class IntentAppStore(private val context: Context) {
   private val preferences = context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
 
   /** Package name to its intent rule. Entries in the old shape are skipped. */
@@ -40,9 +40,11 @@ internal class IntentAppStore(context: Context) {
     val raw = JSONObject(preferences.getString(KEY_INTENTS, "{}") ?: "{}")
     raw.put(packageName, JSONObject().put(KEY_SESSION, sessionMinutes).put(KEY_COOLDOWN, cooldownMinutes))
     check(preferences.edit().putString(KEY_INTENTS, raw.toString()).commit()) { "Could not save the timed visit" }
+    AppLimitStore(context).clearPendingGuidedVisit(packageName)
   }
 
   fun removeIntent(packageName: String) {
+    AppLimitStore(context).clearPendingGuidedVisit(packageName)
     val raw = JSONObject(preferences.getString(KEY_INTENTS, "{}") ?: "{}")
     if (raw.remove(packageName) == null) return
     preferences.edit().putString(KEY_INTENTS, raw.toString()).apply()

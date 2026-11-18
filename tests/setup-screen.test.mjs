@@ -56,6 +56,10 @@ const nativeUrl = moduleUrl(`
     if (guidedVisitPending) status.pendingVisits.add(packageName);
     else status.pendingVisits.delete(packageName);
   }
+  export async function removePendingGuidedCaps() {
+    for (const packageName of status.pendingVisits) delete status.dailyCaps[packageName];
+    status.pendingVisits.clear();
+  }
   export async function setIntentApp(packageName, sessionMinutes, cooldownMinutes) {
     if (status.failVisitFor === packageName) {
       status.failVisitFor = undefined;
@@ -404,6 +408,38 @@ test('Kids setup retries an unfinished timed visit and preserves a user cap of t
   assert.deepEqual(native.status.dailyCaps, { [instagram]: 60, [youtube]: 60 });
   assert.deepEqual(native.status.visits, { [youtube]: timedVisit });
   assert.ok(view.props('Open Google Family Link'));
+});
+
+test('switching from an unfinished Kids setup to Focus removes only the pending daily cap', async () => {
+  const kids = await setup({ appAvailability: { youtube: 'installed', instagram: 'installed', x: 'absent' } });
+  const youtube = 'com.google.android.youtube';
+  const instagram = 'com.instagram.android';
+  native.status.dailyCaps[instagram] = 60;
+  native.status.failVisitFor = youtube;
+  await kids.chooseMode('Kids');
+  await kids.press('Time lock');
+  await kids.press('Continue');
+  kids.consent();
+  await kids.press('Continue to Android access');
+  await kids.returnToApp(true);
+  await kids.press('Lock for 7 days and finish');
+  assert.deepEqual(native.status.dailyCaps, { [instagram]: 60, [youtube]: 60 });
+  assert.deepEqual(native.status.visits, {});
+  assert.equal((await lock.readLockState()).kind, 'open');
+
+  const focus = await mountSetup();
+  await focus.chooseMode('Focus');
+  await focus.press('Time lock');
+  await focus.press('Continue');
+  focus.consent();
+  await focus.press('Continue to Android access');
+  await focus.returnToApp(true);
+  await focus.press('Lock for 7 days and finish');
+
+  assert.deepEqual(native.status.dailyCaps, { [instagram]: 60 });
+  assert.deepEqual(native.status.visits, { [youtube]: timedVisit });
+  assert.equal((await lock.readLockState()).kind, 'locked');
+  assert.equal(focus.destination, '/');
 });
 
 test('losing access after the lock is armed keeps the lock and lets setup resume after relaunch', async (t) => {

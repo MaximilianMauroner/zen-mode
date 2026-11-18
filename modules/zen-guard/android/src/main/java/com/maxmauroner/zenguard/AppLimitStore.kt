@@ -36,6 +36,15 @@ internal class AppLimitStore(context: Context) {
     editLimits(limits() - packageName).remove(guidedVisitKey(packageName)).apply()
   }
 
+  fun removePendingGuidedCaps() {
+    val current = limits()
+    val pending = current.keys.filter(::hasPendingGuidedVisit)
+    if (pending.isEmpty()) return
+    val update = editLimits(current - pending)
+    pending.forEach { update.remove(guidedVisitKey(it)) }
+    check(update.commit()) { "Could not remove unfinished setup caps" }
+  }
+
   fun hasPendingGuidedVisit(packageName: String): Boolean = preferences.getBoolean(guidedVisitKey(packageName), false)
 
   fun clearPendingGuidedVisit(packageName: String) {

@@ -206,6 +206,11 @@ class ZenGuardModule : Module() {
       AppLimitStore(context).removeLimit(packageName)
     }
 
+    AsyncFunction("removePendingGuidedCaps") {
+      val context = requireNotNull(appContext.reactContext)
+      AppLimitStore(context).removePendingGuidedCaps()
+    }
+
     /** Each intent-gated app with its visit length and downtime. */
     AsyncFunction("getIntentApps") {
       val context = requireNotNull(appContext.reactContext)
@@ -224,12 +229,10 @@ class ZenGuardModule : Module() {
       val context = requireNotNull(appContext.reactContext)
       require(!AppRuleSafety.resolve(context).isExempt(packageName)) { RULE_EXEMPT_MESSAGE }
       IntentAppStore(context).setIntent(packageName, sessionMinutes, cooldownMinutes)
-      AppLimitStore(context).clearPendingGuidedVisit(packageName)
     }
 
     AsyncFunction("removeIntentApp") { packageName: String ->
       val context = requireNotNull(appContext.reactContext)
-      AppLimitStore(context).clearPendingGuidedVisit(packageName)
       IntentAppStore(context).removeIntent(packageName)
     }
 

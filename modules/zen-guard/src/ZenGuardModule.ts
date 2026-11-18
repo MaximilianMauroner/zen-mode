@@ -132,6 +132,7 @@ declare class ZenGuardModule extends NativeModule<{}> {
   getAppLimits(): Promise<AppLimit[]>;
   setAppLimit(packageName: string, minutes: number, guidedVisitPending: boolean): Promise<void>;
   removeAppLimit(packageName: string): Promise<void>;
+  removePendingGuidedCaps(): Promise<void>;
   getIntentApps(): Promise<IntentApp[]>;
   setIntentApp(packageName: string, sessionMinutes: number, cooldownMinutes: number): Promise<void>;
   removeIntentApp(packageName: string): Promise<void>;

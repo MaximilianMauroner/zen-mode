@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { armLock, readLockState, updatePasscode } from './lock';
-import { acceptCurrentNativeConsent, getZenGuardStatus, hasCurrentNativeConsent, setNativeProtectionEnabled } from './native';
+import { acceptCurrentNativeConsent, getZenGuardStatus, hasCurrentNativeConsent, removePendingGuidedCaps, setNativeProtectionEnabled } from './native';
 import { applyGuidedDefaults, applyRecommendedDefaults, type GuidedSetupMode } from './recommended-defaults';
 import { canFinishAndroidSetup, CONSENT_VERSION, isSetupComplete } from './setup-policy';
 
@@ -60,6 +60,7 @@ export async function finishAndroidSetup(plan: SetupPlan): Promise<'home' | 'cus
   const preserveRules = plan.mode === 'restore' || (await readLockState()).kind !== 'open';
   const customize = !preserveRules && plan.mode === 'customize';
   if (!preserveRules) {
+    if (plan.mode !== 'kids') await removePendingGuidedCaps();
     if (plan.mode === 'recommended') await applyRecommendedDefaults();
     if (plan.mode === 'kids' || plan.mode === 'focus') {
       await applyGuidedDefaults(plan.mode, status);

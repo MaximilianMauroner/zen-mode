@@ -54,7 +54,7 @@ class MinuteQuantityOverlayTest {
 
   @Test fun `app question offers one Start per visit length and reports the chosen length`() {
     var chosen: Int? = null
-    appOverlay.showAsk("com.android.chrome", "Chrome", listOf(1, 5), 0L, { chosen = it }, {}, {})
+    appOverlay.showAsk("com.android.chrome", "Chrome", listOf(1, 5), 0L, null, { chosen = it }, {}, {})
     shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
     assertTrue(appOverlay.isShowing())
     val starts = views().filterIsInstance<Button>().filter { it.text.contains(" min · until ") }.toList()
@@ -67,13 +67,23 @@ class MinuteQuantityOverlayTest {
   @Test fun `an open app question moves each end time forward with the clock`() {
     val format = android.text.format.DateFormat.getTimeFormat(controller.get())
     val endsAt = { wallMs: Long -> "5 min · until ${format.format(java.util.Date(wallMs + 5 * 60_000L))}" }
-    appOverlay.showAsk("com.android.chrome", "Chrome", listOf(5), 0L, {}, {}, {})
+    appOverlay.showAsk("com.android.chrome", "Chrome", listOf(5), 0L, null, {}, {}, {})
     shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
     val start = views().filterIsInstance<Button>().single { it.text.startsWith("5 min") }
     assertEquals(endsAt(0L), start.text.toString())
 
-    appOverlay.showAsk("com.android.chrome", "Chrome", listOf(5), 10 * 60_000L, {}, {}, {})
+    appOverlay.showAsk("com.android.chrome", "Chrome", listOf(5), 10 * 60_000L, null, {}, {}, {})
     assertEquals(endsAt(10 * 60_000L), start.text.toString())
+  }
+
+  @Test fun `an open app question rebuilds its buttons when the lengths change`() {
+    appOverlay.showAsk("com.android.chrome", "Chrome", listOf(15, 20, 30), 0L, null, {}, {}, {})
+    shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
+    appOverlay.showAsk("com.android.chrome", "Chrome", listOf(1, 2), 0L, null, {}, {}, {})
+    shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
+
+    val starts = views().filterIsInstance<Button>().filter { it.isAttachedToWindow && it.text.contains(" min · until ") }.toList()
+    assertEquals(listOf("1 min", "2 min"), starts.map { it.text.toString().substringBefore(" · ") })
   }
 
   @Test fun `unlocked one-minute Reels action uses singular copy`() {

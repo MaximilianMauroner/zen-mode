@@ -245,6 +245,32 @@ class AppRuleTimerServiceTest {
     assertEquals(5 * 60_000L, wholeApp().privateField<IntentSessionTracker>("intentSessions").remainingMs(APP, SystemClock.elapsedRealtime()))
   }
 
+  @Test fun `a part-minute left today names the cap end, not the rounded visit end`() {
+    AppLimitStore(context).apply { setLimit(APP, 30); addUsage(APP, 25 * 60_000L + 30_000L, wallNow()) }
+    IntentAppStore(context).setIntent(APP, 60, 0)
+    openApp(APP)
+    showOverlayWindow(APP)
+
+    val longest = views().filterIsInstance<Button>().single { it.text.startsWith("5 min · until") }
+    val capEndsAt = android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(wallNow() + 4 * 60_000L + 30_000L))
+    assertEquals("5 min · until $capEndsAt", longest.text.toString())
+  }
+
+  @Test fun `a visit that spends the daily cap ends on the limit card, not a new question`() {
+    AppLimitStore(context).setLimit(APP, 5)
+    IntentAppStore(context).setIntent(APP, 5, 0)
+    openApp(APP)
+    showOverlayWindow(APP)
+    views().filterIsInstance<Button>().single { it.text.startsWith("5 min · until") }.performClick()
+    showAppWindows(APP)
+
+    advance(Duration.ofMillis(5 * 60_000L + 20L))
+    showOverlayWindow(APP)
+
+    assertEquals(AppRuleOverlayMode.LIMIT, overlay().mode)
+    assertTrue(AppLimitStore(context).isOverBudget(APP, wallNow()))
+  }
+
   @Test fun `overlay focus preserves the card and launcher escape closes it without a navigation action`() {
     IntentAppStore(context).setIntent(APP, 1, 1)
     openApp(APP)

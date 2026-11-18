@@ -58,12 +58,15 @@ internal class AppLimitStore(context: Context) {
     return used >= budgetMinutes * 60_000L
   }
 
-  /** Whole minutes left in today's budget, rounded up, or null when [packageName] has no budget. */
-  fun minutesLeftToday(packageName: String, nowMs: Long): Int? {
+  /** Time left in today's budget, or null when [packageName] has no budget. */
+  fun leftTodayMs(packageName: String, nowMs: Long): Long? {
     val budgetMinutes = limits()[packageName] ?: return null
-    val leftMs = (budgetMinutes * 60_000L - (usageToday(nowMs)[packageName] ?: 0L)).coerceAtLeast(0L)
-    return ((leftMs + 59_999L) / 60_000L).toInt()
+    return (budgetMinutes * 60_000L - (usageToday(nowMs)[packageName] ?: 0L)).coerceAtLeast(0L)
   }
+
+  /** Whole minutes left in today's budget, rounded up so a part-minute still offers a visit. */
+  fun minutesLeftToday(packageName: String, nowMs: Long): Int? =
+    leftTodayMs(packageName, nowMs)?.let { ((it + 59_999L) / 60_000L).toInt() }
 
   fun availableAgainAt(packageName: String, nowWallMs: Long): Long? =
     if (isOverBudget(packageName, nowWallMs)) nowWallMs + millisUntilLocalMidnight(nowWallMs) else null

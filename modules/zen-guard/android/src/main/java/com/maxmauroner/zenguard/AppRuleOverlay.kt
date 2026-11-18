@@ -32,6 +32,7 @@ internal class AppRuleOverlay(
   private var stateView: TextView? = null
   private var availabilityView: TextView? = null
   private var startButtons: List<Pair<Int, Button>> = emptyList()
+  private var capLeftMs: Long? = null
 
   fun isShowing(): Boolean = root?.isAttachedToWindow == true
   fun requestedPackage(): String? = shownFor
@@ -42,12 +43,16 @@ internal class AppRuleOverlay(
     availabilityView?.text = service.getString(R.string.zen_guard_available_again_in, clock)
   }
 
-  /** Asks how long to stay. Each of [choices] is one Start button that names its end time. */
+  /**
+   * Asks how long to stay. Each of [choices] is one Start button that names its end time. A daily
+   * cap with [capLeftMs] left ends a visit early, so no button names a time after the cap runs out.
+   */
   fun showAsk(
     packageName: String,
     appLabel: String,
     choices: List<Int>,
     nowWallMs: Long,
+    capLeftMs: Long?,
     onStart: (Int) -> Unit,
     onLeave: () -> Unit,
     onAttached: () -> Unit,
@@ -63,6 +68,7 @@ internal class AppRuleOverlay(
       onAttached = onAttached,
       choices = choices,
       nowWallMs = nowWallMs,
+      capLeftMs = capLeftMs,
       onChoose = onStart,
     )
   }
@@ -126,12 +132,15 @@ internal class AppRuleOverlay(
     habitAction: String = "",
     choices: List<Int> = emptyList(),
     nowWallMs: Long = 0L,
+    capLeftMs: Long? = null,
     onChoose: (Int) -> Unit = {},
   ) {
+    this.capLeftMs = capLeftMs
     val cooldown = mode == AppRuleOverlayMode.COOLDOWN || mode == AppRuleOverlayMode.LIMIT
     val isEarn = mode == AppRuleOverlayMode.EARN
     val isLimit = mode == AppRuleOverlayMode.LIMIT || isEarn
-    if (shownFor == packageName && this.mode == mode) {
+    val sameChoices = mode != AppRuleOverlayMode.ASK || startButtons.map { it.first } == choices
+    if (shownFor == packageName && this.mode == mode && sameChoices) {
       if (cooldown) updateCountdown(cooldownRemainingMs)
       if (mode == AppRuleOverlayMode.ASK) showEndTimes(nowWallMs)
       if (isLimit) {
@@ -332,7 +341,8 @@ internal class AppRuleOverlay(
   private fun showEndTimes(nowWallMs: Long) {
     val timeFormat = DateFormat.getTimeFormat(service)
     startButtons.forEach { (minutes, button) ->
-      button.text = service.getString(R.string.zen_guard_intent_start, minutes, timeFormat.format(Date(nowWallMs + minutes * 60_000L)))
+      val visitMs = minOf(minutes * 60_000L, capLeftMs ?: Long.MAX_VALUE)
+      button.text = service.getString(R.string.zen_guard_intent_start, minutes, timeFormat.format(Date(nowWallMs + visitMs)))
     }
   }
 
@@ -346,6 +356,7 @@ internal class AppRuleOverlay(
     stateView = null
     availabilityView = null
     startButtons = emptyList()
+    capLeftMs = null
     existingRoot?.let {
       try {
         windowManager.removeView(it)

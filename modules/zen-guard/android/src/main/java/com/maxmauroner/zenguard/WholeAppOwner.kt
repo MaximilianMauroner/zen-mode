@@ -312,10 +312,15 @@ internal class WholeAppOwner(
       return
     }
     endExpiredIntentSession(packageName)
+    bankPendingUsage()
     val wallNow = appRuleWallClock()
     val cooldownMs = intentStore.cooldownRemainingMs(packageName, wallNow)
+    val capLeftMs = appLimits.leftTodayMs(packageName, wallNow)
     val choices = visitChoices(rule.sessionMinutes, appLimits.minutesLeftToday(packageName, wallNow))
-    if (cooldownMs <= 0L && choices.isEmpty()) return
+    if (cooldownMs <= 0L && choices.isEmpty()) {
+      enforceAppLimits(packageName)
+      return
+    }
     val mode = if (cooldownMs > 0L) AppRuleOverlayMode.COOLDOWN else AppRuleOverlayMode.ASK
     prepareAppRuleOverlay(packageName, mode)
     val onAttached = {
@@ -333,6 +338,7 @@ internal class WholeAppOwner(
         labelFor(packageName),
         choices,
         wallNow,
+        capLeftMs,
         onStart = { minutes -> grantIntentSession(packageName, minutes) },
         onLeave = ::leaveAppRule,
         onAttached = onAttached,
@@ -388,7 +394,13 @@ internal class WholeAppOwner(
     if (!intentSessions.end(packageName)) return
     intentStore.recordSessionEnd(packageName, appRuleWallClock())
     stats.reset(EnforcementReason.TIMED_VISIT)
+    bankPendingUsage()
     if (!enforceAppLimits(packageName)) handleIntentForeground(packageName)
+  }
+
+  /** A daily cap is judged on banked time, and the tick banks only every [USAGE_TICK_MS]. */
+  private fun bankPendingUsage() {
+    usageTracker.tick(SystemClock.elapsedRealtime())?.let(::bankUsage)
   }
 
   private fun labelFor(packageName: String): String = try {

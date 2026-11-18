@@ -135,12 +135,12 @@ internal class AppRuleOverlay(
     capLeftMs: Long? = null,
     onChoose: (Int) -> Unit = {},
   ) {
-    this.capLeftMs = capLeftMs
     val cooldown = mode == AppRuleOverlayMode.COOLDOWN || mode == AppRuleOverlayMode.LIMIT
     val isEarn = mode == AppRuleOverlayMode.EARN
     val isLimit = mode == AppRuleOverlayMode.LIMIT || isEarn
     val sameChoices = mode != AppRuleOverlayMode.ASK || startButtons.map { it.first } == choices
     if (shownFor == packageName && this.mode == mode && sameChoices) {
+      this.capLeftMs = capLeftMs
       if (cooldown) updateCountdown(cooldownRemainingMs)
       if (mode == AppRuleOverlayMode.ASK) showEndTimes(nowWallMs)
       if (isLimit) {
@@ -152,6 +152,7 @@ internal class AppRuleOverlay(
     hide()
     shownFor = packageName
     this.mode = mode
+    this.capLeftMs = capLeftMs
 
     val accent = service.getColor(R.color.zen_accent)
     val copy = service.getColor(R.color.zen_copy)

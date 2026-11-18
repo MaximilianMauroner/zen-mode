@@ -246,13 +246,16 @@ class AppRuleTimerServiceTest {
   }
 
   @Test fun `a part-minute left today names the cap end, not the rounded visit end`() {
-    AppLimitStore(context).apply { setLimit(APP, 30); addUsage(APP, 25 * 60_000L + 30_000L, wallNow()) }
+    // 4:01 is left, so the cap end and the rounded 5-minute end fall in different clock minutes.
+    AppLimitStore(context).apply { setLimit(APP, 30); addUsage(APP, 25 * 60_000L + 59_000L, wallNow()) }
     IntentAppStore(context).setIntent(APP, 60, 0)
     openApp(APP)
     showOverlayWindow(APP)
 
     val longest = views().filterIsInstance<Button>().single { it.text.startsWith("5 min · until") }
-    val capEndsAt = android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(wallNow() + 4 * 60_000L + 30_000L))
+    val format = android.text.format.DateFormat.getTimeFormat(context)
+    val capEndsAt = format.format(java.util.Date(wallNow() + 4 * 60_000L + 1_000L))
+    assertTrue(capEndsAt != format.format(java.util.Date(wallNow() + 5 * 60_000L)))
     assertEquals("5 min · until $capEndsAt", longest.text.toString())
   }
 

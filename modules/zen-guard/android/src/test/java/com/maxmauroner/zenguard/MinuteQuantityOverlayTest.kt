@@ -76,14 +76,19 @@ class MinuteQuantityOverlayTest {
     assertEquals(endsAt(10 * 60_000L), start.text.toString())
   }
 
-  @Test fun `an open app question rebuilds its buttons when the lengths change`() {
+  @Test fun `an open app question rebuilds its buttons, cap, and callback when the lengths change`() {
+    var chosen: Int? = null
     appOverlay.showAsk("com.android.chrome", "Chrome", listOf(15, 20, 30), 0L, null, {}, {}, {})
     shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
-    appOverlay.showAsk("com.android.chrome", "Chrome", listOf(1, 2), 0L, null, {}, {}, {})
+    appOverlay.showAsk("com.android.chrome", "Chrome", listOf(1, 2), 0L, 90_000L, { chosen = it }, {}, {})
     shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
 
     val starts = views().filterIsInstance<Button>().filter { it.isAttachedToWindow && it.text.contains(" min · until ") }.toList()
     assertEquals(listOf("1 min", "2 min"), starts.map { it.text.toString().substringBefore(" · ") })
+    val capEndsAt = android.text.format.DateFormat.getTimeFormat(controller.get()).format(java.util.Date(90_000L))
+    assertEquals("2 min · until $capEndsAt", starts.last().text.toString())
+    starts.last().performClick()
+    assertEquals(2, chosen)
   }
 
   @Test fun `unlocked one-minute Reels action uses singular copy`() {

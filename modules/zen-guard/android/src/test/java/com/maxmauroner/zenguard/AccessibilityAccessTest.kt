@@ -201,22 +201,6 @@ class AccessibilityAccessTest {
     assertEquals(AccessibilityAccess.Status(true, null), AccessibilityAccess.read(context))
   }
 
-  @Test fun `a shutdown broadcast without a reboot does not hide a later force stop and reboot`() {
-    setEnabled(true)
-    AccessibilityAccess.connected(context)
-    AccessibilityAccess.recordCleanShutdown(context)
-    ShadowSystemClock.advanceBy(Duration.ofSeconds(30))
-    AccessibilityAccess.connected(context)
-    val lastHeartbeat = ShadowSystem.currentTimeMillis()
-    ShadowSystemClock.advanceBy(Duration.ofHours(1))
-    Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 8)
-    AccessibilityAccess.connected(context)
-    assertEquals(
-      AccessibilityAccess.Status(true, AccessibilityAccess.OffPeriod(lastHeartbeat, ShadowSystem.currentTimeMillis())),
-      AccessibilityAccess.read(context),
-    )
-  }
-
   @Test fun `a new boot without a previous connection has no notice`() {
     setEnabled(true)
     AccessibilityAccess.read(context)

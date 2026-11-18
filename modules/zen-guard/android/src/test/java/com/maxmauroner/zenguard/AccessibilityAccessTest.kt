@@ -205,8 +205,10 @@ class AccessibilityAccessTest {
     setEnabled(true)
     AccessibilityAccess.connected(context)
     AccessibilityAccess.recordCleanShutdown(context)
-    ShadowSystemClock.advanceBy(Duration.ofSeconds(30))
+    AccessibilityAccess.disconnected(context)
+    ShadowSystemClock.advanceBy(Duration.ofMinutes(5))
     AccessibilityAccess.connected(context)
+    AccessibilityAccess.read(context).offPeriod?.let { AccessibilityAccess.acknowledge(context, it.through) }
     val lastHeartbeat = ShadowSystem.currentTimeMillis()
     ShadowSystemClock.advanceBy(Duration.ofHours(1))
     Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 8)
@@ -215,6 +217,18 @@ class AccessibilityAccessTest {
       AccessibilityAccess.Status(true, AccessibilityAccess.OffPeriod(lastHeartbeat, ShadowSystem.currentTimeMillis())),
       AccessibilityAccess.read(context),
     )
+  }
+
+  @Test fun `a reconnect just before power off keeps the clean shutdown`() {
+    setEnabled(true)
+    AccessibilityAccess.connected(context)
+    AccessibilityAccess.recordCleanShutdown(context)
+    ShadowSystemClock.advanceBy(Duration.ofSeconds(5))
+    AccessibilityAccess.connected(context)
+    ShadowSystemClock.advanceBy(Duration.ofHours(8))
+    Settings.Global.putInt(context.contentResolver, Settings.Global.BOOT_COUNT, 8)
+    AccessibilityAccess.connected(context)
+    assertEquals(AccessibilityAccess.Status(true, null), AccessibilityAccess.read(context))
   }
 
   @Test fun `a new boot without a previous connection has no notice`() {

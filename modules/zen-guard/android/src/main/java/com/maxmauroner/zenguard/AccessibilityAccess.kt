@@ -61,9 +61,11 @@ internal object AccessibilityAccess {
       if (nextDisconnectedAt == null) update.remove(DISCONNECTED_AT)
       else update.putLong(DISCONNECTED_AT, nextDisconnectedAt)
       if (connecting) {
-        update.putInt(BOOT_COUNT, bootCount).putHeartbeat(now).remove(CLEAN_SHUTDOWN_BOOT_COUNT)
+        update.putInt(BOOT_COUNT, bootCount).putHeartbeat(now)
+        val shutdownAge = SystemClock.elapsedRealtime() - preferences.getLong(CLEAN_SHUTDOWN_ELAPSED, 0L)
+        if (bootCount != lastBoot || shutdownAge > RECONNECT_GRACE_MS) update.removeCleanShutdown()
       } else if (!enabled || !wasEnabled) {
-        update.remove(BOOT_COUNT).remove(HEARTBEAT_AT).remove(HEARTBEAT_UPTIME).remove(CLEAN_SHUTDOWN_BOOT_COUNT)
+        update.remove(BOOT_COUNT).remove(HEARTBEAT_AT).remove(HEARTBEAT_UPTIME).removeCleanShutdown()
       }
       update.commit()
     }
@@ -85,7 +87,10 @@ internal object AccessibilityAccess {
     val preferences = store(context)
     val bootCount = preferences.getInt(BOOT_COUNT, -1)
     if (bootCount >= 0 && preferences.getBoolean(ENABLED, false)) {
-      preferences.edit().putInt(CLEAN_SHUTDOWN_BOOT_COUNT, bootCount).commit()
+      preferences.edit()
+        .putInt(CLEAN_SHUTDOWN_BOOT_COUNT, bootCount)
+        .putLong(CLEAN_SHUTDOWN_ELAPSED, SystemClock.elapsedRealtime())
+        .commit()
     }
   }
 
@@ -118,6 +123,9 @@ internal object AccessibilityAccess {
     }
   }
 
+  private fun SharedPreferences.Editor.removeCleanShutdown() =
+    remove(CLEAN_SHUTDOWN_BOOT_COUNT).remove(CLEAN_SHUTDOWN_ELAPSED)
+
   private fun SharedPreferences.Editor.putHeartbeat(now: Long) =
     putLong(HEARTBEAT_AT, now).putLong(HEARTBEAT_UPTIME, SystemClock.uptimeMillis())
 
@@ -130,6 +138,7 @@ internal object AccessibilityAccess {
   private const val DISCONNECTED_AT = "disconnected_at"
   private const val BOOT_COUNT = "boot_count"
   private const val CLEAN_SHUTDOWN_BOOT_COUNT = "clean_shutdown_boot_count"
+  private const val CLEAN_SHUTDOWN_ELAPSED = "clean_shutdown_elapsed"
   private const val HEARTBEAT_AT = "heartbeat_at"
   private const val HEARTBEAT_UPTIME = "heartbeat_uptime"
   private const val RECONNECT_GRACE_MS = 60_000L

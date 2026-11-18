@@ -85,7 +85,8 @@ export function parseBadging(text) {
  * App signers from `apksigner verify --print-certs`. Build-tools 36 and older print
  * `Signer #N`, and build-tools 37 prints `V<n> Signer`, with an index only for several
  * signers. Only a real signer certificate counts: the `Source Stamp Signer` certificate
- * records the distribution channel, and a v3.1 rotation line with an SDK range is not the app signer.
+ * records the distribution channel. A v3.1 rotation signer signs only for an SDK range, so
+ * this QA parser ignores SDK-range lines and rejects output with no recognized signer digest.
  */
 export function parseSignerDigests(apksignerOutput) {
   const digests = [...apksignerOutput.matchAll(/^(?:Signer #\d+|V\d+(?:\.\d+)? Signer(?: #\d+)?:) certificate SHA-256 digest: ([0-9a-fA-F]{64})$/gm)]

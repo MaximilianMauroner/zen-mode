@@ -107,6 +107,6 @@ weight here, check the overlays for the same change.
 
 Problem and idea reports use the phone's share sheet. In a test build, a
 person can review a diagnostic recording and choose whether to include it with
-a problem report. Store builds have no diagnostic recording.
+a problem report. Store builds do not offer diagnostic recordings.
 
 Reason: people should control what they share. Zen Mode has no analytics.

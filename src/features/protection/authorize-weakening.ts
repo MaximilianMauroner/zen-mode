@@ -12,9 +12,10 @@ export async function authorizeWeakening(
 
   const record = await readLockRecord();
   if (record?.version === 2) {
-    const answer = await request({ kind: 'passcode', action });
+    const verifyPasscode = (passcode: string) => requirePasscode(passcode, record);
+    const answer = await request({ kind: 'passcode', action, verifyPasscode });
     if (typeof answer !== 'string') return false;
-    await requirePasscode(record, answer);
+    await verifyPasscode(answer);
     const current = await readLockRecord();
     if (current?.version !== 2 || current.salt !== record.salt || current.hash !== record.hash) {
       throw new Error('The passcode lock changed. Try again.');

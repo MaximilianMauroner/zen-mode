@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
-import test, { beforeEach } from 'node:test';
+import test, { after, beforeEach } from 'node:test';
 
 const secureStoreUrl = 'data:text/javascript,' + encodeURIComponent(`
   const values = new Map();
@@ -33,7 +33,7 @@ const hooks = registerHooks({
 const store = await import(secureStoreUrl);
 const { armLock, readLockState, requestUnlock, updatePasscode } = await import('../src/features/protection/lock.ts');
 const { authorizeWeakening } = await import('../src/features/protection/authorize-weakening.ts');
-hooks.deregister();
+after(() => hooks.deregister());
 
 const LOCK_KEY = 'zen-mode.commitment-lock.v1';
 const PASSCODE = 'my focus code';
@@ -58,8 +58,48 @@ test('the right passcode allows a weaker change after a single passcode prompt',
     return PASSCODE;
   });
   assert.equal(allowed, true);
-  assert.deepEqual(prompts, [{ kind: 'passcode', action: 'pause protection' }]);
+  assert.deepEqual(prompts.map(({ kind, action }) => ({ kind, action })), [{ kind: 'passcode', action: 'pause protection' }]);
   assert.equal(await authorizePause(async () => false), false);
+});
+
+test('attempt delays survive reloading the lock and increase up to 15 minutes', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_700_000_000_000 });
+  await updatePasscode(passcodeEntry());
+  const wrong = () => authorizePause(async () => 'wrong code');
+  const firstGuesses = await Promise.allSettled(Array.from({ length: 5 }, wrong));
+  assert.deepEqual(firstGuesses.map(({ status }) => status), Array(5).fill('rejected'));
+  assert.deepEqual(firstGuesses.map(({ reason }) => reason.message).sort(), [
+    ...Array(4).fill('Incorrect passcode.'),
+    'Too many incorrect passcodes. Try again in 30 seconds.',
+  ]);
+
+  const reloadedLock = await import('../src/features/protection/lock.ts?reload');
+  await assert.rejects(reloadedLock.requirePasscode(PASSCODE), /30 seconds/);
+  await assert.rejects(reloadedLock.updatePasscode(null, PASSCODE), /30 seconds/);
+  t.mock.timers.tick(29_000);
+  await assert.rejects(reloadedLock.requirePasscode(PASSCODE), /1 second/);
+  t.mock.timers.tick(1_000);
+
+  for (const seconds of [60, 120, 240, 480, 900, 900]) {
+    await assert.rejects(wrong(), new RegExp(`in ${seconds} seconds`));
+    t.mock.timers.tick(seconds * 1000);
+  }
+  assert.equal(await authorizePause(async () => PASSCODE), true);
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    await assert.rejects(wrong(), { message: 'Incorrect passcode.' });
+  }
+  await assert.rejects(wrong(), /30 seconds/);
+});
+
+test('passcode changes and weaker actions share consecutive attempts', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_700_000_000_000 });
+  await updatePasscode(passcodeEntry());
+  await assert.rejects(updatePasscode(passcodeEntry('new focus code'), 'wrong code'), /Incorrect passcode/);
+  await assert.rejects(updatePasscode(null, 'wrong code'), /Incorrect passcode/);
+  await assert.rejects(authorizePause(async () => 'wrong code'), /Incorrect passcode/);
+  await assert.rejects(authorizePause(async () => 'wrong code'), /Incorrect passcode/);
+  await assert.rejects(updatePasscode(null, 'wrong code'), /30 seconds/);
+  await assert.rejects(authorizePause(async () => PASSCODE), /30 seconds/);
 });
 
 test('a stronger change never asks for a passcode', async () => {
@@ -93,6 +133,13 @@ test('a mismatched confirmation leaves settings open', async () => {
   assert.deepEqual(await readLockState(), { kind: 'open' });
 });
 
+test('spaces count toward the passcode length and must be entered again', async () => {
+  const passcode = ' code ';
+  await updatePasscode(passcodeEntry(passcode));
+  await assert.rejects(authorizePause(async () => passcode.trim()), /Incorrect passcode/);
+  assert.equal(await authorizePause(async () => passcode), true);
+});
+
 test('SecureStore gets a freshly salted hash instead of the passcode', async () => {
   await updatePasscode(passcodeEntry());
   const first = await store.getItemAsync(LOCK_KEY);
@@ -104,11 +151,20 @@ test('SecureStore gets a freshly salted hash instead of the passcode', async () 
   assert.notEqual(JSON.parse(first).hash, JSON.parse(second).hash);
 });
 
-test('an unreadable record opens the settings and keeps the usual challenge', async () => {
+test('a SecureStore read error refuses weakening before any challenge', async () => {
   await updatePasscode(passcodeEntry());
   store.setUnreadable(true);
-  assert.deepEqual(await readLockState(), { kind: 'open' });
-  assert.equal(await authorizePause(async ({ kind }) => kind === 'challenge'), true);
+  await assert.rejects(authorizePause(async () => true), /Could not read SecureStore/);
+  await assert.rejects(readLockState(), /Could not read SecureStore/);
+  await assert.rejects(updatePasscode(null, PASSCODE), /Could not read SecureStore/);
+  assert.equal(await authorizeWeakening(false, 'resume protection', () => assert.fail('Unexpected prompt')), true);
+});
+
+test('a malformed stored passcode refuses weakening before any challenge', async () => {
+  await store.setItemAsync(LOCK_KEY, JSON.stringify({ version: 2, salt: 'bad', hash: 'bad' }));
+  await assert.rejects(authorizePause(async () => true), /saved lock could not be read/);
+  await assert.rejects(readLockState(), /saved lock could not be read/);
+  await assert.rejects(updatePasscode(null, PASSCODE), /saved lock could not be read/);
 });
 
 test('an existing version 1 lock blocks a passcode until the time lock ends', async () => {

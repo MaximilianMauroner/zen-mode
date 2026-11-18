@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type Ref } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, View, type TextInputProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useReducedMotion } from 'react-native-reanimated';
@@ -9,37 +9,57 @@ import { DangerButton, SecondaryButton } from './button';
 
 /** A successful challenge only grants a chance to confirm; it never runs the mutation. */
 export function useWeakeningGate() {
-  const [session, setSession] = useState<ChallengeSession | { phase: 'passcode' } | null>(null);
+  const [session, setSession] = useState<ChallengeSession | {
+    phase: 'passcode'; verifyPasscode: (passcode: string) => Promise<void>;
+  } | null>(null);
   const [action, setAction] = useState('');
   const [answer, setAnswer] = useState('');
   const [feedback, setFeedback] = useState('');
-  const resolver = useRef<((answer: boolean | string) => void) | null>(null);
+  const [checking, setChecking] = useState(false);
+  const pending = useRef<{ resolve: (answer: boolean | string) => void; checking: boolean } | null>(null);
 
   const settle = useCallback((result: boolean | string) => {
-    const resolve = resolver.current;
-    resolver.current = null;
+    const request = pending.current;
+    pending.current = null;
     setSession(null);
     setAnswer('');
     setFeedback('');
-    resolve?.(result);
+    setChecking(false);
+    request?.resolve(result);
   }, []);
-  useEffect(() => () => { resolver.current?.(false); resolver.current = null; }, []);
+  useEffect(() => () => { pending.current?.resolve(false); pending.current = null; }, []);
 
-  const request = useCallback<RequestWeakeningPrompt>(({ kind, action: actionLabel }) => {
-    if (resolver.current) return Promise.resolve(false);
-    setAction(actionLabel);
-    setSession(kind === 'passcode' ? { phase: 'passcode' } : startChallengeSession());
+  const request = useCallback<RequestWeakeningPrompt>((prompt) => {
+    if (pending.current) return Promise.resolve(false);
+    setAction(prompt.action);
+    setSession(prompt.kind === 'passcode'
+      ? { phase: 'passcode', verifyPasscode: prompt.verifyPasscode }
+      : startChallengeSession());
     setAnswer('');
     setFeedback('');
-    return new Promise((resolve) => { resolver.current = resolve; });
+    return new Promise((resolve) => { pending.current = { resolve, checking: false }; });
   }, []);
 
   const finish = (confirmed: boolean) => {
     settle(isChallengeConfirmed(session?.phase === 'passcode' ? null : session, confirmed));
   };
-  const submit = () => {
+  const submit = async () => {
     if (session?.phase === 'passcode') {
-      if (answer) settle(answer);
+      const request = pending.current;
+      if (!answer || !request || request.checking) return;
+      request.checking = true;
+      setChecking(true);
+      try {
+        await session.verifyPasscode(answer);
+      } catch (cause) {
+        if (pending.current !== request) return;
+        request.checking = false;
+        setChecking(false);
+        setAnswer('');
+        setFeedback(cause instanceof Error ? cause.message : 'The passcode could not be checked.');
+        return;
+      }
+      if (pending.current === request) settle(answer);
       return;
     }
     if (session?.phase !== 'challenge') return;
@@ -55,26 +75,30 @@ export function useWeakeningGate() {
     setFeedback('');
   };
 
-  return { session, action, answer, feedback, setAnswer, request, submit, alternate, finish };
+  return { session, action, answer, feedback, checking, setAnswer, request, submit, alternate, finish };
 }
 
 type Gate = ReturnType<typeof useWeakeningGate>;
 
 export function PasscodeInput({
   label, ...props
-}: Pick<TextInputProps, 'value' | 'onChangeText' | 'editable' | 'onSubmitEditing'> & { label: string }) {
+}: Pick<TextInputProps, 'value' | 'onChangeText' | 'editable' | 'onSubmitEditing' | 'autoFocus' | 'returnKeyType' | 'submitBehavior'> & {
+  label: string;
+  ref?: Ref<TextInput>;
+}) {
   return (
-    <TextInput
-      {...props}
-      accessibilityLabel={label}
-      placeholder={label}
-      placeholderTextColor={colors.faint}
-      className="min-h-[48px] rounded-2xl border border-line2 bg-night px-4 py-3 text-title text-copy"
-      secureTextEntry
-      autoComplete="off"
-      autoCapitalize="none"
-      autoCorrect={false}
-    />
+    <View className="gap-1">
+      <Text className="text-support font-semibold text-muted">{label}</Text>
+      <TextInput
+        {...props}
+        accessibilityLabel={label}
+        className="min-h-[48px] rounded-2xl border border-line2 bg-night px-4 py-3 text-title text-copy"
+        secureTextEntry
+        autoComplete="off"
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+    </View>
   );
 }
 
@@ -97,8 +121,17 @@ export function WeakeningGateDialog({ gate, embedded = false }: { gate: Gate; em
           <Text className="text-body text-muted">{description}</Text>
           {session.phase === 'passcode' ? (
             <>
-              <PasscodeInput label="Current passcode" value={gate.answer} onChangeText={gate.setAnswer} onSubmitEditing={gate.submit} />
-              <DangerButton title="Continue" disabled={!gate.answer} onPress={gate.submit} />
+              <PasscodeInput
+                label="Current passcode"
+                value={gate.answer}
+                onChangeText={gate.setAnswer}
+                onSubmitEditing={gate.submit}
+                autoFocus
+                returnKeyType="go"
+                submitBehavior="submit"
+              />
+              {gate.feedback ? <Text accessibilityLiveRegion="polite" className="text-support text-danger">{gate.feedback}</Text> : null}
+              <DangerButton title="Continue" disabled={!gate.answer || gate.checking} onPress={gate.submit} />
               <SecondaryButton title="Cancel" onPress={() => gate.finish(false)} />
             </>
           ) : confirming ? (

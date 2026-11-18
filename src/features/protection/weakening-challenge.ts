@@ -1,6 +1,9 @@
 /** Local, bounded challenges used only after the settings lock permits a weaker rule. */
 export type ChallengeKind = 'arithmetic' | 'ordering' | 'attention';
-export type RequestWeakeningPrompt = (prompt: { kind: 'passcode' | 'challenge'; action: string }) => Promise<boolean | string>;
+type WeakeningPrompt =
+  | { kind: 'challenge'; action: string }
+  | { kind: 'passcode'; action: string; verifyPasscode: (passcode: string) => Promise<void> };
+export type RequestWeakeningPrompt = (prompt: WeakeningPrompt) => Promise<boolean | string>;
 export type Challenge = { kind: ChallengeKind; prompt: string; answer: string };
 export type ChallengeSession = {
   step: number;

@@ -4,6 +4,9 @@
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const ATTEMPTS_BEFORE_DELAY = 5;
+const INITIAL_DELAY_MS = 30_000;
+const MAX_DELAY_MS = 15 * 60_000;
 
 /** Cooling-off period between asking to unlock and the lock actually opening. */
 export const UNLOCK_DELAY_MS = DAY_MS;
@@ -17,13 +20,24 @@ type TimeLockRecord = {
   unlockRequestedAt: number | null;
 };
 
-export type PasscodeLockRecord = { version: 2; salt: string; hash: string };
+type PasscodeAttempts = { failures: number; retryAt: number };
+
+export type PasscodeLockRecord = {
+  version: 2;
+  salt: string;
+  hash: string;
+  attempts?: PasscodeAttempts;
+};
 export type LockRecord = TimeLockRecord | PasscodeLockRecord;
 
 export type LockState =
+  /** No settings lock is active. The usual challenge still applies to weaker changes. */
   | { kind: 'open' }
+  /** Weaker changes require the current passcode. There is no expiry. */
   | { kind: 'passcode'; endsAt: null }
+  /** The time lock refuses weaker changes until `endsAt`. */
   | { kind: 'locked'; lockedUntil: number; endsAt: number }
+  /** An unlock was requested. The time lock still holds until `endsAt`. */
   | { kind: 'pending'; lockedUntil: number; requestedAt: number; endsAt: number };
 
 /**
@@ -35,6 +49,7 @@ export function endOf(record: TimeLockRecord): number {
   return Math.max(record.lockedUntil, record.unlockRequestedAt + UNLOCK_DELAY_MS);
 }
 
+/** The state a stored record describes at `now`. An expired time lock reads as open. */
 export function stateOf(record: LockRecord | null, now: number): LockState {
   if (record === null) return { kind: 'open' };
   if (record.version === 2) return { kind: 'passcode', endsAt: null };
@@ -47,13 +62,13 @@ export function stateOf(record: LockRecord | null, now: number): LockState {
     : { kind: 'pending', lockedUntil: record.lockedUntil, requestedAt: record.unlockRequestedAt, endsAt };
 }
 
-/**
- * Reads a stored record, or null when nothing usable is there.
- *
- * A record that fails these checks reads as no lock at all, which opens the
- * settings. That is deliberate: a lock the app cannot understand must not
- * leave the user permanently unable to change their own settings.
- */
+export class UnreadableLockError extends Error {
+  constructor() {
+    super('The saved lock could not be read. Reinstall the app or clear its data to recover.');
+  }
+}
+
+/** A missing key means no lock. A stored value must describe a valid lock. */
 export function parseLockRecord(serialized: string | null): LockRecord | null {
   if (serialized === null) return null;
 
@@ -61,15 +76,27 @@ export function parseLockRecord(serialized: string | null): LockRecord | null {
   try {
     parsed = JSON.parse(serialized);
   } catch {
-    return null;
+    throw new UnreadableLockError();
   }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new UnreadableLockError();
 
   const value = parsed as Record<string, unknown>;
   if (value.version === 2) {
     if (typeof value.salt !== 'string' || !/^[a-f0-9]{32}$/.test(value.salt) ||
-        typeof value.hash !== 'string' || !/^[a-f0-9]{64}$/.test(value.hash)) return null;
-    return { version: 2, salt: value.salt, hash: value.hash };
+        typeof value.hash !== 'string' || !/^[a-f0-9]{64}$/.test(value.hash)) throw new UnreadableLockError();
+    const record: PasscodeLockRecord = { version: 2, salt: value.salt, hash: value.hash };
+    const attempts = value.attempts;
+    if (attempts === undefined) return record;
+    if (typeof attempts !== 'object' || attempts === null || !('failures' in attempts) || !('retryAt' in attempts)) {
+      throw new UnreadableLockError();
+    }
+    const { failures, retryAt } = attempts;
+    if (typeof failures !== 'number' || !Number.isSafeInteger(failures) || failures < 1 ||
+        typeof retryAt !== 'number' || !Number.isSafeInteger(retryAt) || retryAt < 0 ||
+        (failures < ATTEMPTS_BEFORE_DELAY ? retryAt !== 0 : retryAt === 0)) {
+      throw new UnreadableLockError();
+    }
+    return { ...record, attempts: { failures, retryAt } };
   }
   if (
     value.version !== 1 ||
@@ -78,9 +105,16 @@ export function parseLockRecord(serialized: string | null): LockRecord | null {
     (value.unlockRequestedAt !== null &&
       (typeof value.unlockRequestedAt !== 'number' || !Number.isFinite(value.unlockRequestedAt)))
   ) {
-    return null;
+    throw new UnreadableLockError();
   }
   return { version: 1, lockedUntil: value.lockedUntil, unlockRequestedAt: value.unlockRequestedAt ?? null };
+}
+
+export function failedPasscodeAttempt(previous: PasscodeAttempts | undefined, now: number): PasscodeAttempts {
+  const failures = (previous?.failures ?? 0) + 1;
+  if (failures < ATTEMPTS_BEFORE_DELAY) return { failures, retryAt: 0 };
+  const delay = Math.min(INITIAL_DELAY_MS * 2 ** (failures - ATTEMPTS_BEFORE_DELAY), MAX_DELAY_MS);
+  return { failures, retryAt: now + delay };
 }
 
 /**
@@ -110,7 +144,7 @@ export function passcodeUpdateRefusal(state: LockState, needsExistingPasscode: b
 }
 
 export function passcodeEntryRefusal(passcode: string, confirmation: string): string | null {
-  if (passcode.trim().length < 6) return 'Use at least 6 characters.';
+  if (passcode.length < 6) return 'Use at least 6 characters.';
   if (passcode !== confirmation) return 'The passcodes do not match.';
   return null;
 }

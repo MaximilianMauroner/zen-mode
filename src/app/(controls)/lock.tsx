@@ -11,7 +11,9 @@ import {
   LOCK_DAY_OPTIONS,
   passcodeEntryRefusal,
   readLockState,
+  requirePasscode,
   requestUnlock,
+  UnreadableLockError,
   updatePasscode,
   type LockState,
 } from '@/features/protection/lock';
@@ -19,17 +21,21 @@ import { colors } from '@/theme/colors';
 import { Lock } from 'lucide-react-native';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Text, View, type TextInput } from 'react-native';
 
-const LOCK_TITLES: Record<LockState['kind'], string> = {
+type LockDisplay = LockState | { kind: 'unavailable' } | { kind: 'unreadable'; message: string };
+
+const LOCK_TITLES: Record<LockDisplay['kind'], string> = {
   open: 'Settings unlocked',
   locked: 'Settings locked',
   pending: 'Unlock requested',
   passcode: 'Settings locked with a passcode',
+  unavailable: 'Lock unavailable',
+  unreadable: 'Unreadable lock',
 };
 
 export default function LockScreen() {
-  const [lock, setLock] = useState<LockState | null>(null);
+  const [lock, setLock] = useState<LockDisplay | null>(null);
   const [refreshing, setRefreshing] = useState(true);
   const [selectedDays, setSelectedDays] = useState(7);
   const [passcode, setPasscode] = useState('');
@@ -39,6 +45,7 @@ export default function LockScreen() {
   const [now, setNow] = useState(() => Date.now());
   const busyRef = useRef(false);
   const refreshInFlightRef = useRef(false);
+  const confirmationInput = useRef<TextInput>(null);
   const gate = useWeakeningGate();
 
   const refresh = useCallback(async () => {
@@ -48,6 +55,10 @@ export default function LockScreen() {
     setError('');
     try {
       setLock(await readLockState());
+    } catch (cause) {
+      setLock(cause instanceof UnreadableLockError
+        ? { kind: 'unreadable', message: cause.message }
+        : { kind: 'unavailable' });
     } finally {
       setRefreshing(false);
       refreshInFlightRef.current = false;
@@ -123,7 +134,11 @@ export default function LockScreen() {
       }
       let currentPasscode: string | undefined;
       if (hasPasscode) {
-        const answer = await gate.request({ kind: 'passcode', action: entry === null ? 'remove the passcode' : 'change the passcode' });
+        const answer = await gate.request({
+          kind: 'passcode',
+          action: entry === null ? 'remove the passcode' : 'change the passcode',
+          verifyPasscode: requirePasscode,
+        });
         if (typeof answer !== 'string') return;
         currentPasscode = answer;
       }
@@ -140,6 +155,8 @@ export default function LockScreen() {
 
       <Text accessibilityRole="header" className="text-title font-semibold text-copy">{lock ? LOCK_TITLES[lock.kind] : 'Reading lock…'}</Text>
       {lock?.kind === 'open' ? <Text className="text-body text-muted">Choose a time lock or a passcode.</Text> : null}
+      {lock?.kind === 'unavailable' ? <ErrorNote message="The lock could not be read." /> : null}
+      {lock?.kind === 'unreadable' ? <ErrorNote message={lock.message} /> : null}
 
       {timeLock ? (
         <Card emphasis={timeLock.kind === 'locked'}>
@@ -161,7 +178,7 @@ export default function LockScreen() {
         </Card>
       ) : null}
 
-      {!hasPasscode ? (
+      {timeLock || lock?.kind === 'open' ? (
         <View>
           <SectionLabel className="mb-2">{timeLock ? 'Extend' : 'Time lock'}</SectionLabel>
           <Card>
@@ -200,8 +217,16 @@ export default function LockScreen() {
           <SectionLabel className="mb-2">Passcode</SectionLabel>
           <Card className="gap-3">
             <Text className="text-support text-muted">Use at least 6 characters.</Text>
-            <PasscodeInput label={hasPasscode ? 'New passcode' : 'Passcode'} value={passcode} onChangeText={setPasscode} editable={!controlsDisabled} />
-            <PasscodeInput label="Confirm passcode" value={confirmation} onChangeText={setConfirmation} editable={!controlsDisabled} />
+            <PasscodeInput
+              label={hasPasscode ? 'New passcode' : 'Passcode'}
+              value={passcode}
+              onChangeText={setPasscode}
+              editable={!controlsDisabled}
+              onSubmitEditing={() => confirmationInput.current?.focus()}
+              returnKeyType="next"
+              submitBehavior="submit"
+            />
+            <PasscodeInput ref={confirmationInput} label="Confirm passcode" value={confirmation} onChangeText={setConfirmation} editable={!controlsDisabled} />
             <PrimaryButton
               title={hasPasscode ? 'Change passcode' : 'Set passcode'}
               disabled={controlsDisabled || !passcode || !confirmation}

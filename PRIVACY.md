@@ -57,12 +57,14 @@ state also exists in memory while the Accessibility service runs.
 
 ## Optional recordings and reports
 
-Users can start a diagnostic recording for a duration they choose. It records
-up to 800 local events, including guard actions, service status, timing,
-supported app categories, known screen markers, and some rule settings and
-usage state. It does not record screen text, messages, visited addresses, or
-screenshots. The user can stop, review, share, or delete the recording. A new
-recording replaces the previous one.
+Test builds of Zen Mode, such as Google Play internal testing builds, let users
+start a diagnostic recording for a duration they choose. Store builds do not
+offer diagnostic recordings. A recording holds up to 800 local events,
+including guard actions, service status, timing, supported app categories,
+known screen markers, and some rule settings and usage state. It does not
+record screen text, messages, visited addresses, or screenshots. The user can
+stop, review, share, or delete the recording. A new recording replaces the
+previous one.
 
 Users can write a problem report or idea. The report contains:
 
@@ -72,7 +74,8 @@ Users can write a problem report or idea. The report contains:
 - the Zen Mode version and build number, and the operating system name and
   version (for example, Android 15).
 
-For a problem report, the user can choose to attach the diagnostic recording.
+In a test build, the user can choose to attach the diagnostic recording to a
+problem report.
 Zen Mode opens the Android share sheet when the user chooses to share. The user
 chooses the destination. The receiving app or service handles the shared data
 under its own privacy policy.

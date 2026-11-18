@@ -8,7 +8,7 @@ import { SectionLabel } from '@/components/ui/card';
 import { ChoiceCard } from '@/components/ui/choice';
 import { ErrorNote, Screen, ScreenHeader } from '@/components/ui/screen';
 import { checkReport, EMAIL_LIMIT, formatReport, REPORT_LIMIT, type ReportDraft, type ReportKind, type ReportRejection } from '@/features/feedback/reports';
-import { getDiagnostics, shareDiagnostics, type DiagnosticRecording } from '@/features/protection/native';
+import { diagnosticsAvailable, getDiagnostics, shareDiagnostics, type DiagnosticRecording } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
 
 const FIELDS = {
@@ -45,7 +45,7 @@ export default function ReportScreen() {
         if (active) setError('Could not read the diagnostic recording.');
       }
     };
-    if (Platform.OS === 'android') void refresh();
+    if (diagnosticsAvailable) void refresh();
     return () => { active = false; clearTimeout(timer); };
   }, []));
 
@@ -85,7 +85,7 @@ export default function ReportScreen() {
         <Field label={fields.message.label} hint={fields.message.hint} value={draft.message} disabled={sharing} onChange={(message) => edit({ message })} />
         <Field label={fields.details.label} hint={fields.details.hint} value={draft.details} disabled={sharing} onChange={(details) => edit({ details })} />
         <Field label="Email for a reply" hint="Optional" value={draft.contactEmail} disabled={sharing} onChange={(contactEmail) => edit({ contactEmail })} email />
-        {draft.kind === 'bug' && Platform.OS === 'android' ? (
+        {draft.kind === 'bug' && diagnosticsAvailable ? (
           <View className="gap-3">
             <Pressable accessibilityRole="checkbox" accessibilityLabel="Include diagnostic recording" accessibilityState={{ checked: includeRecording && recording.state === 'complete', disabled: sharing || recording.state !== 'complete' }} disabled={sharing || recording.state !== 'complete'} onPress={() => setIncludeRecording(!includeRecording)} className="min-h-[48px] flex-row items-center gap-3">
               <View className={`h-6 w-6 items-center justify-center rounded border ${includeRecording && recording.state === 'complete' ? 'border-accent bg-accent' : 'border-muted'}`}>

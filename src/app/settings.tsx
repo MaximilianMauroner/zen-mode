@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Platform, RefreshControl, Text, View } from 'react-native';
+import { RefreshControl, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 
@@ -12,7 +12,7 @@ import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { authorizeWeakening } from '@/features/protection/authorize-weakening';
 import { actionFailure, IDLE_ACTION, isReading, readValue, RUNNING_ACTION, type ActionState } from '@/features/protection/control-state';
 import { useGuardStatusFocus, useSharedGuardStatus } from '@/features/protection/guard-status-context';
-import { getZenGuardStatus, openAccessibilitySettings, openInstagram, openYouTube, openX, setNativeProtectionEnabled } from '@/features/protection/native';
+import { diagnosticsAvailable, getZenGuardStatus, openAccessibilitySettings, openInstagram, openYouTube, openX, setNativeProtectionEnabled } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
 
 /** System controls stay separate from feed settings and whole-app budgets. */
@@ -91,7 +91,7 @@ export default function SettingsScreen() {
           <Row label="Zen Mode" detail="Version installed on this device" value={Constants.expoConfig?.version ?? 'Unknown'} />
           <Row label="View statistics" disabled={busy} onPress={() => router.navigate('/stats')} />
           <Row label="Privacy" disabled={busy} onPress={() => router.navigate('/privacy')} />
-          {Platform.OS === 'android' ? <Row label="Diagnostic recording" detail="Record and review local guard events" disabled={busy} onPress={() => router.navigate('/diagnostics')} /> : null}
+          {diagnosticsAvailable ? <Row label="Diagnostic recording" detail="Record and review local guard events" disabled={busy} onPress={() => router.navigate('/diagnostics')} /> : null}
           <Row label="Report a problem or idea" disabled={busy} onPress={() => router.navigate('/report')} />
         </RowGroup>
       </View>

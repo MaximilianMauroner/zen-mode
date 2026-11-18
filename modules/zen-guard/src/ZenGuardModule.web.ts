@@ -8,6 +8,7 @@ class ZenGuardModule extends NativeModule<{}> {
       available: false,
       endScreen: 'focus',
       serviceEnabled: false,
+      serviceDisabledAt: null,
       currentConsent: false,
       protectionEnabled: false,
       observationMode: true,
@@ -48,6 +49,7 @@ class ZenGuardModule extends NativeModule<{}> {
   }
 
   async setEndScreen() {}
+  async acknowledgeServiceDisabled() {}
   async startDiagnostics() { throw new Error('Diagnostic recording requires Android.'); }
   async stopDiagnostics() { throw new Error('Diagnostic recording requires Android.'); }
   async clearDiagnostics() { throw new Error('Diagnostic recording requires Android.'); }

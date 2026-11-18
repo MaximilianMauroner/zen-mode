@@ -10,6 +10,7 @@ export type ZenGuardStatus = {
   available: boolean;
   endScreen: EndScreen;
   serviceEnabled: boolean;
+  serviceDisabledAt: number | null;
   currentConsent: boolean;
   protectionEnabled: boolean;
   observationMode: boolean;
@@ -104,6 +105,7 @@ export type EarnRule = InstalledApp & {
 
 declare class ZenGuardModule extends NativeModule<{}> {
   getStatus(): Promise<ZenGuardStatus>;
+  acknowledgeServiceDisabled(disabledAt: number): Promise<void>;
   setEndScreen(value: EndScreen): Promise<void>;
   startDiagnostics(durationSeconds: number): Promise<void>;
   stopDiagnostics(): Promise<void>;

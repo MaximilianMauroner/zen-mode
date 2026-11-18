@@ -5,7 +5,7 @@ import { Clapperboard, Globe2, House, LockKeyhole, Play } from 'lucide-react-nat
 
 import { AdultSiteControlsDrawer } from '@/components/ui/adult-site-controls-drawer';
 import { FeedControlsDrawer, type FeedDrawer } from '@/components/ui/feed-controls-drawer';
-import { PrimaryButton } from '@/components/ui/button';
+import { PrimaryButton, SecondaryButton } from '@/components/ui/button';
 import { GuardNotes } from '@/components/ui/guard-notes';
 import { TopTabs } from 'expo-router/js-top-tabs';
 import { Card, Row, RowGroup } from '@/components/ui/card';
@@ -14,13 +14,13 @@ import { formatRemaining, readLockState, type LockState } from '@/features/prote
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { getFeedStatus, getFeedStatusDetail } from '@/features/protection/feed-status';
 import { getHomeFeedTimeLabel } from '@/features/protection/home-feed-time';
-import { getOverviewAction } from '@/features/protection/overview-actions';
+import { getOverviewAction, getProtectionOffNotice } from '@/features/protection/overview-actions';
 import { getAdultSitePresentation } from '@/features/protection/adult-site-presentation';
 import { actionFailure, IDLE_ACTION, isReading, readValue, RUNNING_ACTION, type ActionState, type ReadState } from '@/features/protection/control-state';
 import { useSharedGuardStatus } from '@/features/protection/guard-status-context';
 import { hasCompletedSetup } from '@/features/protection/setup';
 import { shouldShowCustomizePrompt } from '@/features/protection/setup-policy';
-import { openAccessibilitySettings, openBrowserCheck, openInstagram, openYouTube, setInstagramObservationMode, setNativeProtectionEnabled, setObservationMode } from '@/features/protection/native';
+import { acknowledgeServiceDisabled, openAccessibilitySettings, openBrowserCheck, openInstagram, openYouTube, setInstagramObservationMode, setNativeProtectionEnabled, setObservationMode } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
 
 export default function FeedsScreen() {
@@ -74,6 +74,7 @@ export default function FeedsScreen() {
   const adultSites = getAdultSitePresentation(status, loading);
   const instagramHomeTime = getHomeFeedTimeLabel(status, 'instagram');
   const xHomeTime = getHomeFeedTimeLabel(status, 'x');
+  const offNotice = readValue(setupRead) ? getProtectionOffNotice(status) : null;
 
   const nextAction = (() => {
     switch (getOverviewAction(status, Boolean(readError))) {
@@ -99,6 +100,16 @@ export default function FeedsScreen() {
         <Text className="mt-1 text-support text-muted">Open YouTube, Instagram, X, and Sites below to review their starting values. Protection is paused until you decide to resume it.</Text>
       </Card> : null}
       {status ? <Text accessibilityLiveRegion="polite" className="text-body text-muted">{getFeedStatusDetail(status)}</Text> : null}
+      {offNotice ? (
+        <Card className="gap-2">
+          <Text accessibilityRole="header" className="text-item font-semibold text-copy">Protection was off</Text>
+          <Text accessibilityLiveRegion="polite" className="text-support text-muted">{offNotice.message}</Text>
+          <SecondaryButton title="Dismiss notice" disabled={busy} onPress={() => runAction(async () => {
+            await acknowledgeServiceDisabled(offNotice.disabledAt);
+            await refresh();
+          })} />
+        </Card>
+      ) : null}
       {nextAction ? (
         <View className="gap-2">
           {state === 'setup' && (status?.shortsEnabled && status.observationMode || status?.instagramObservationMode) ? <Text className="text-support text-muted">{status?.observationMode ? status.lastDetectionAt ? 'Shorts detected. Blocking is ready.' : 'Open one Short, then return here. Zen Mode checks the current YouTube screen before limiting scrolling; unknown layouts stay unblocked.' : ((status?.instagramSignalMask ?? 0) & 3) === 3 ? 'Instagram checks passed. Protection is ready.' : 'Open Direct Messages, then one Reel from a message. Return here when done.'}</Text> : null}

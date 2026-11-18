@@ -13,6 +13,12 @@ export type OverviewAction =
   | 'set-up-x'
   | 'check-sites';
 
+export function getProtectionOffNotice(status: ZenGuardStatus | null): { disabledAt: number; message: string } | null {
+  if (!status?.available || !status.serviceDisabledAt) return null;
+  const disabledAt = status.serviceDisabledAt;
+  return { disabledAt, message: `Accessibility access was off at ${new Date(disabledAt).toLocaleString()}.` };
+}
+
 /**
  * Selects the overview's highest-priority action from one native snapshot.
  * X setup includes a feed enabled after initial setup but still awaiting its

@@ -1,6 +1,5 @@
 package com.maxmauroner.zenguard
 
-import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -19,6 +18,7 @@ class ZenGuardModule : Module() {
       val preferences = ZenGuardPreferences(context)
       val adultSites = AdultSiteRuleStore(context)
       val homeFeedStatus = HomeFeedStatusStore(context)
+      val access = AccessibilityAccess.read(context)
       val packageManager = context.packageManager
       val nowElapsedMs = SystemClock.elapsedRealtime()
       val instagramHome = homeFeedStatus.instagram(nowElapsedMs)
@@ -32,7 +32,8 @@ class ZenGuardModule : Module() {
       mapOf(
         "endScreen" to preferences.endScreen.name.lowercase(),
         "available" to true,
-        "serviceEnabled" to isServiceEnabled(context),
+        "serviceEnabled" to access.enabled,
+        "serviceDisabledAt" to access.disabledAt?.toDouble(),
         "currentConsent" to preferences.hasCurrentConsent,
         "protectionEnabled" to (preferences.protectionEnabled && preferences.hasCurrentConsent),
         "observationMode" to preferences.observationMode,
@@ -87,9 +88,13 @@ class ZenGuardModule : Module() {
       ZenGuardPreferences(requireNotNull(appContext.reactContext)).endScreen = choice
     }
 
+    AsyncFunction("acknowledgeServiceDisabled") { disabledAt: Double ->
+      AccessibilityAccess.acknowledge(requireNotNull(appContext.reactContext), disabledAt.toLong())
+    }
+
     AsyncFunction("startDiagnostics") { durationSeconds: Int ->
       val context = requireNotNull(appContext.reactContext)
-      Diagnostics.start(context, isServiceEnabled(context), durationSeconds.toLong() * 1_000L)
+      Diagnostics.start(context, AccessibilityAccess.isEnabled(context), durationSeconds.toLong() * 1_000L)
     }.runOnQueue(Queues.MAIN)
 
     AsyncFunction("stopDiagnostics") {
@@ -421,15 +426,6 @@ class ZenGuardModule : Module() {
     "absent"
   } catch (_: SecurityException) {
     "unknown"
-  }
-
-  private fun isServiceEnabled(context: android.content.Context): Boolean {
-    val expected = ComponentName(context, ZenGuardAccessibilityService::class.java)
-    val enabledServices = Settings.Secure.getString(
-      context.contentResolver,
-      Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-    ).orEmpty()
-    return enabledServices.split(':').any { ComponentName.unflattenFromString(it) == expected }
   }
 
   companion object {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { parse } from '@babel/parser';
-import { getOverviewAction } from '../src/features/protection/overview-actions.ts';
+import { getOverviewAction, getProtectionOffNotice } from '../src/features/protection/overview-actions.ts';
 
 const overviewSource = readFileSync(new URL('../src/app/(controls)/index.tsx', import.meta.url), 'utf8');
 
@@ -35,6 +35,7 @@ function getObjectProperty(object, name) {
 const base = {
   available: true,
   serviceEnabled: true,
+  serviceDisabledAt: null,
   currentConsent: true,
   protectionEnabled: true,
   observationMode: false,
@@ -66,6 +67,17 @@ const base = {
   browserSignalMask: 0,
   appAvailability: { youtube: 'installed', instagram: 'installed', x: 'installed' },
 };
+
+test('home reports an actual off period even if access resumed, and clears it after acknowledgment', () => {
+  assert.equal(getProtectionOffNotice({ ...base, serviceEnabled: false }), null);
+  assert.equal(getProtectionOffNotice({ ...base, protectionEnabled: false }), null);
+
+  const disabledAt = Date.UTC(2026, 10, 18, 12);
+  const message = `Accessibility access was off at ${new Date(disabledAt).toLocaleString()}.`;
+  assert.deepEqual(getProtectionOffNotice({ ...base, serviceEnabled: false, serviceDisabledAt: disabledAt }), { disabledAt, message });
+  assert.deepEqual(getProtectionOffNotice({ ...base, serviceDisabledAt: disabledAt }), { disabledAt, message });
+  assert.equal(getProtectionOffNotice(base), null);
+});
 
 test('the overview is wired to the shared action selector', () => {
   assert.match(overviewSource, /getOverviewAction\(status, Boolean\(readError\)\)/);

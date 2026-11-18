@@ -57,6 +57,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
 
   override fun onServiceConnected() {
     super.onServiceConnected()
+    AccessibilityAccess.read(this)
     runCatching { Diagnostics.service(this, true, "connected") }
     preferences = ZenGuardPreferences(this)
     stats.replaceStore(
@@ -183,6 +184,11 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     youtube.reset()
     stats.clear()
     instagram.pause()
+  }
+
+  override fun onUnbind(intent: Intent?): Boolean {
+    AccessibilityAccess.read(this)
+    return super.onUnbind(intent)
   }
 
   override fun onDestroy() {

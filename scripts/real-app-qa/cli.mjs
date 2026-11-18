@@ -91,6 +91,7 @@ function buildEnvironment(java) {
     PATH: [dirname(process.execPath), env.PATH].join(delimiter),
     CMAKE_BUILD_PARALLEL_LEVEL: '1',
     EXPO_NO_GIT_STATUS: '1',
+    ZEN_MODE_TEST_BUILD: '1',
     CI: '1',
   };
 }

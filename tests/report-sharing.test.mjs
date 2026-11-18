@@ -15,7 +15,7 @@ function find(node, predicate) {
   }
 }
 
-async function report(recording = { state: 'complete', json: '{"events":[]}' }, shareError = false) {
+async function report(recording = { state: 'complete', json: '{"events":[]}' }, shareError = false, testBuild = true) {
   const values = [];
   let focus;
   let cursor = 0;
@@ -38,6 +38,7 @@ async function report(recording = { state: 'complete', json: '{"events":[]}' }, 
     'expo-router': { router: {}, useFocusEffect: (effect) => { focus = effect; } },
     '@/features/feedback/reports': reports,
     '@/features/protection/native': {
+      diagnosticsAvailable: testBuild,
       async getDiagnostics() { return recording; },
       async shareDiagnostics(message) { if (shareError) throw Error('failed'); shares.push({ kind: 'attachment', message }); },
     },
@@ -78,6 +79,16 @@ test('a problem report shares only text until the user checks the recording', as
   assert.equal(view.shares.length, 1);
   assert.equal(view.shares[0].kind, 'text');
   assert.match(view.shares[0].message, /The rule did not run/);
+});
+
+test('a public build offers no recording, even when one is saved', async () => {
+  const view = await report(undefined, false, false);
+  assert.equal(checkbox(view), undefined);
+  assert.equal(view.find((node) => node.props?.title === 'Record or review diagnostics'), undefined);
+  field(view).props.onChange('The rule did not run.');
+  submit(view).props.onPress();
+  await new Promise(setImmediate);
+  assert.deepEqual(view.shares.map((share) => share.kind), ['text']);
 });
 
 test('checking a completed recording attaches it to the problem report', async () => {

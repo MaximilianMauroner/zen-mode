@@ -21,7 +21,6 @@ internal class XOwner(
   private lateinit var preferences: ZenGuardPreferences
   private lateinit var homeFeedStatusStore: HomeFeedStatusStore
   private val policy = XGuardStateMachine()
-  private var homeUsageState = HomeFeedUsageState.PAUSED
   private var storageAvailable = true
   private var lastPublishedRuntime: HomeFeedRuntimeState? = null
   private lateinit var overlay: XBreakOverlay
@@ -38,7 +37,6 @@ internal class XOwner(
     this.homeFeedStatusStore = homeFeedStatusStore
     val storedX = homeFeedStatusStore.x(nowElapsedMs)
     storageAvailable = storedX.storageState == HomeFeedStorageState.AVAILABLE
-    homeUsageState = if (storageAvailable) storedX.usageState else HomeFeedUsageState.UNKNOWN
     policy.restore(
       HomeFeedRuntimeState(
         usedMs = storedX.usedMs,
@@ -78,7 +76,6 @@ internal class XOwner(
 
   fun screenOff(nowElapsedMs: Long) {
     policy.pause(nowElapsedMs, readSettings())
-    if (homeUsageState != HomeFeedUsageState.UNKNOWN) homeUsageState = HomeFeedUsageState.PAUSED
   }
 
   fun destroy(protectionActive: Boolean) {
@@ -94,14 +91,8 @@ internal class XOwner(
   private fun clearEnforcement(preserveHomeLockout: Boolean = false) {
     if (preserveHomeLockout && storageAvailable) {
       policy.pause(SystemClock.elapsedRealtime(), readSettings())
-      homeUsageState = if (policy.requiresFreshHomeObservation()) {
-        HomeFeedUsageState.UNKNOWN
-      } else {
-        HomeFeedUsageState.PAUSED
-      }
     } else {
       policy.reset()
-      homeUsageState = if (storageAvailable) HomeFeedUsageState.PAUSED else HomeFeedUsageState.UNKNOWN
     }
     stats.reset(EnforcementReason.X_HOME)
     stats.reset(EnforcementReason.X_VIDEOS)
@@ -116,18 +107,12 @@ internal class XOwner(
     if (!isScreenInteractive) {
       trace("screen_off")
       policy.pause(nowMs, settings)
-      homeUsageState = if (policy.requiresFreshHomeObservation()) {
-        HomeFeedUsageState.UNKNOWN
-      } else {
-        HomeFeedUsageState.PAUSED
-      }
       publishHomeStatus()
       return
     }
     val activeRoot = service.rootInActiveWindow ?: run {
       trace("root_missing")
       policy.markUnverifiableGap(nowMs, settings)
-      homeUsageState = HomeFeedUsageState.UNKNOWN
       publishHomeStatus()
       return
     }
@@ -136,11 +121,6 @@ internal class XOwner(
       trace("other_app")
       if (overlay.isShowing && service.windows.any { it.root?.packageName?.toString() == X_PACKAGE }) return
       policy.pause(nowMs, settings)
-      homeUsageState = if (policy.requiresFreshHomeObservation()) {
-        HomeFeedUsageState.UNKNOWN
-      } else {
-        HomeFeedUsageState.PAUSED
-      }
       publishHomeStatus()
       return
     }
@@ -169,15 +149,8 @@ internal class XOwner(
         ),
       )
     val action = policy.next(surface, nowMs, settings, advanced)
-    homeUsageState = when {
-      action == XAction.HOME_UNAVAILABLE || surface == XSurface.UNKNOWN -> HomeFeedUsageState.UNKNOWN
-      surface == XSurface.HOME && settings.homeEnabled && !policy.requiresFreshHomeObservation() -> HomeFeedUsageState.ACTIVE
-      policy.requiresFreshHomeObservation() -> HomeFeedUsageState.UNKNOWN
-      else -> HomeFeedUsageState.PAUSED
-    }
     when (action) {
       XAction.HOME_BREAK -> {
-        homeUsageState = HomeFeedUsageState.PAUSED
         val lockoutDeadline = policy.homeRuntimeState(nowMs).blockedUntilElapsedMs
         if (lockoutDeadline != null) {
           overlay.show(preferences.xHomeMinutes, lockoutDeadline) {
@@ -185,10 +158,7 @@ internal class XOwner(
           }
         }
       }
-      XAction.HOME_UNAVAILABLE -> {
-        homeUsageState = HomeFeedUsageState.UNKNOWN
-        overlay.showUnavailable()
-      }
+      XAction.HOME_UNAVAILABLE -> overlay.showUnavailable()
       XAction.LEAVE_VIDEO -> {
         overlay.hide()
         // X's own Back control closes its viewer without docking playback into PiP.
@@ -281,11 +251,10 @@ internal class XOwner(
     if (!::homeFeedStatusStore.isInitialized || !storageAvailable) return
     val nowElapsedMs = SystemClock.elapsedRealtime()
     val runtime = policy.homeRuntimeState(nowElapsedMs)
-    lastPublishedRuntime = runtime.copy(usageState = homeUsageState)
-    if (homeFeedStatusStore.recordX(runtime.copy(usageState = homeUsageState))) return
+    lastPublishedRuntime = runtime
+    if (homeFeedStatusStore.recordX(runtime)) return
 
     storageAvailable = false
-    homeUsageState = HomeFeedUsageState.UNKNOWN
     policy.markStorageUnavailable()
     if (showUnavailableOnFailure && ::overlay.isInitialized) overlay.showUnavailable()
   }

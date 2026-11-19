@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { Window } from 'happy-dom';
 import { RECOMMENDED_DEFAULTS } from '../src/features/protection/recommended-defaults.ts';
@@ -45,6 +47,17 @@ test('Safari loads the Shorts scripts only on the origin supported by the rules'
     }
   }
   assert.equal(tab.style.display, 'none');
+});
+
+test('Expo registers the Safari extension for EAS under the app bundle ID', () => {
+  const cli = fileURLToPath(import.meta.resolve('expo/bin/cli'));
+  const config = JSON.parse(execFileSync(process.execPath, [cli, 'config', '--type', 'prebuild', '--json'], {
+    cwd: new URL('..', import.meta.url),
+    encoding: 'utf8',
+  }));
+
+  const extensions = config.extra.eas.build.experimental.ios.appExtensions;
+  assert.ok(extensions.some(({ bundleIdentifier }) => bundleIdentifier === `${config.ios.bundleIdentifier}.safari-feeds`));
 });
 
 test('YouTube Home hides the Shorts tab and leaves the other tabs and Home content visible', (t) => {

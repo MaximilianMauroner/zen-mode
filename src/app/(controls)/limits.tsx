@@ -143,10 +143,7 @@ export default function AppLimitsScreen() {
   const busyRef = useRef(false);
   const gate = useWeakeningGate();
 
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => { if (!navigation.isFocused()) void refresh(); });
-    return () => cancelAnimationFrame(frame);
-  }, [navigation, refresh]);
+  useEffect(() => { if (!navigation.isFocused()) void refresh(); }, [navigation, refresh]);
 
   const runAction = useCallback((task: () => Promise<void>, fallbackMessage: string) => {
     if (busyRef.current) return;

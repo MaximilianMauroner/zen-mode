@@ -34,6 +34,16 @@ const LOCK_TITLES: Record<LockDisplay['kind'], string> = {
   unreadable: 'Unreadable lock',
 };
 
+async function readLockDisplay(): Promise<LockDisplay> {
+  try {
+    return await readLockState();
+  } catch (cause) {
+    return cause instanceof UnreadableLockError
+      ? { kind: 'unreadable', message: cause.message }
+      : { kind: 'unavailable' };
+  }
+}
+
 export default function LockScreen() {
   const [lock, setLock] = useState<LockDisplay | null>(null);
   const [refreshing, setRefreshing] = useState(true);
@@ -44,32 +54,32 @@ export default function LockScreen() {
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const busyRef = useRef(false);
-  const refreshInFlightRef = useRef(false);
+  const refreshStateRef = useRef<'not-started' | 'reading' | 'finished'>('not-started');
   const confirmationInput = useRef<TextInput>(null);
   const gate = useWeakeningGate();
 
   const refresh = useCallback(async () => {
-    if (refreshInFlightRef.current) return;
-    refreshInFlightRef.current = true;
+    if (refreshStateRef.current === 'reading') return;
+    refreshStateRef.current = 'reading';
     setRefreshing(true);
     setError('');
     try {
-      setLock(await readLockState());
-    } catch (cause) {
-      setLock(cause instanceof UnreadableLockError
-        ? { kind: 'unreadable', message: cause.message }
-        : { kind: 'unavailable' });
+      setLock(await readLockDisplay());
     } finally {
       setRefreshing(false);
-      refreshInFlightRef.current = false;
+      refreshStateRef.current = 'finished';
     }
   }, []);
 
-  // Warm inactive tabs after the first frame without delaying the visible screen.
   useEffect(() => {
-    const frame = requestAnimationFrame(() => { void refresh(); });
-    return () => cancelAnimationFrame(frame);
-  }, [refresh]);
+    let active = true;
+    void readLockDisplay().then((next) => {
+      if (!active || refreshStateRef.current !== 'not-started') return;
+      setLock(next);
+      setRefreshing(false);
+    });
+    return () => { active = false; };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {

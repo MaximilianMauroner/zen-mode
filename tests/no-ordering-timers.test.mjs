@@ -13,7 +13,6 @@ async function timerErrors(code, file = 'src/app/example.tsx') {
   return result.messages.filter((message) => message.ruleId === 'no-restricted-syntax');
 }
 
-// The effect that lock.tsx and limits.tsx used to defer a read to the next frame.
 const FRAME_WARMUP = `
 function Screen({ refresh }) {
   useEffect(() => {
@@ -41,7 +40,14 @@ test('the same read without the frame passes', async () => {
   assert.deepEqual(await timerErrors(DIRECT_WARMUP), []);
 });
 
-for (const call of ['setTimeout(run, 0)', 'requestIdleCallback(run)', 'queueMicrotask(run)', 'window.setTimeout(run, 0)', 'globalThis.requestAnimationFrame(run)']) {
+for (const call of [
+  'setTimeout(run, 0)',
+  'requestIdleCallback(run)',
+  'queueMicrotask(run)',
+  'window.setTimeout(run, 0)',
+  'globalThis.requestAnimationFrame(run)',
+  "globalThis['setTimeout'](run, 0)",
+]) {
   test(`${call} is rejected`, async () => {
     assert.equal((await timerErrors(`${call};`)).length, 1);
   });
@@ -51,7 +57,10 @@ test('clearing a timer and setInterval are allowed', async () => {
   assert.deepEqual(await timerErrors('clearTimeout(timer); setInterval(tick, 60000);'), []);
 });
 
-test('the diagnostic poll and the developer scripts may wait for wall-clock time', async () => {
+test('the diagnostic poll may wait for wall-clock time', async () => {
   assert.deepEqual(await timerErrors('setTimeout(refresh, 1000);', 'src/app/report.tsx'), []);
-  assert.deepEqual(await timerErrors('setTimeout(done, 100);', 'scripts/example.mjs'), []);
+});
+
+test('the TypeScript rule leaves JavaScript tooling alone', async () => {
+  assert.deepEqual(await timerErrors('setTimeout(done, 100);', 'tests/example.mjs'), []);
 });

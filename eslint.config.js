@@ -12,16 +12,15 @@ module.exports = defineConfig([
     ignores: ["dist/*"],
   },
   {
+    files: ['**/*.{ts,tsx}'],
+    // The diagnostic poll waits for wall-clock time.
+    ignores: ['src/app/report.tsx'],
     rules: {
       'no-restricted-syntax': ['error',
         { selector: `CallExpression[callee.name=${ORDERING_TIMERS}]`, message: ORDERING_TIMER_MESSAGE },
-        { selector: `CallExpression[callee.property.name=${ORDERING_TIMERS}]`, message: ORDERING_TIMER_MESSAGE },
+        { selector: `CallExpression[callee.computed=false][callee.property.name=${ORDERING_TIMERS}]`, message: ORDERING_TIMER_MESSAGE },
+        { selector: `CallExpression[callee.computed=true][callee.property.value=${ORDERING_TIMERS}]`, message: ORDERING_TIMER_MESSAGE },
       ],
     },
-  },
-  {
-    // These files wait for wall-clock time. No other work depends on their order.
-    files: ['src/app/report.tsx', 'scripts/**'],
-    rules: { 'no-restricted-syntax': 'off' },
   },
 ]);

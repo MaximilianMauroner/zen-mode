@@ -2,5 +2,7 @@
   "rules": {
     "no-ordering-timers": "eslint.config.js"
   },
-  "opt_out": {}
+  "opt_out": {
+    "restrict-use-effect-to-approved-hooks": "Screens use effects for native subscriptions, setup reads, and cleanup. This app has no shared query hook for those lifecycle operations; moving them into approved files would add wrappers without removing the lifecycle work."
+  }
 }

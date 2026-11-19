@@ -1,0 +1,7 @@
+{
+  "type": "safari",
+  "name": "SafariFeeds",
+  "displayName": "Zen Mode",
+  "deploymentTarget": "16.4",
+  "bundleIdentifier": ".safari-feeds"
+}

@@ -9,6 +9,7 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0D1210",
     "ios": {
+      "bundleIdentifier": "com.lab4code.zenmode",
       "supportsTablet": true,
       "icon": "./assets/images/refuge/icon.png"
     },
@@ -32,6 +33,7 @@
       "favicon": "./assets/images/refuge/icon.png"
     },
     "plugins": [
+      "@bacons/apple-targets",
       "expo-router",
       [
         "expo-splash-screen",

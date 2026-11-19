@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Animated, Image, Pressable, Text, View } from 'react-native';
 import { Link, router, usePathname } from 'expo-router';
-import { Settings } from 'lucide-react-native';
+import Settings from 'lucide-react-native/icons/settings';
 import { type MaterialTopTabNavigationOptions } from 'expo-router/js-top-tabs';
 import { type ParamListBase, type TabNavigationState } from 'expo-router/react-navigation';
 import { readValue } from '@/features/protection/control-state';

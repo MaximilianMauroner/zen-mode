@@ -1,7 +1,11 @@
 import { useCallback, useRef, useState } from 'react';
 import { RefreshControl, Text, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { Clapperboard, Globe2, House, LockKeyhole, Play } from 'lucide-react-native';
+import Clapperboard from 'lucide-react-native/icons/clapperboard';
+import Globe2 from 'lucide-react-native/icons/earth';
+import House from 'lucide-react-native/icons/house';
+import LockKeyhole from 'lucide-react-native/icons/lock-keyhole';
+import Play from 'lucide-react-native/icons/play';
 
 import { AdultSiteControlsDrawer } from '@/components/ui/adult-site-controls-drawer';
 import { FeedControlsDrawer, type FeedDrawer } from '@/components/ui/feed-controls-drawer';

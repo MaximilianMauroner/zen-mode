@@ -1,7 +1,9 @@
 import { type ComponentType, type ReactNode } from 'react';
 import { Pressable, ScrollView, Text, View, type ScrollViewProps } from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
-import { ArrowLeft, X, type LucideProps } from 'lucide-react-native';
+import ArrowLeft from 'lucide-react-native/icons/arrow-left';
+import X from 'lucide-react-native/icons/x';
+import type { LucideProps } from 'lucide-react-native';
 
 import { colors } from '@/theme/colors';
 import { metrics } from '@/theme/metrics';

@@ -18,7 +18,7 @@ import {
   type LockState,
 } from '@/features/protection/lock';
 import { colors } from '@/theme/colors';
-import { Lock } from 'lucide-react-native';
+import Lock from 'lucide-react-native/icons/lock';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Text, View, type TextInput } from 'react-native';

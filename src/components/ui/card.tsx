@@ -1,6 +1,7 @@
 import { Children, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { ChevronRight, type LucideIcon } from 'lucide-react-native';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
+import type { LucideIcon } from 'lucide-react-native';
 import { colors } from '@/theme/colors';
 
 import { StatusPill, type PillTone } from '@/components/ui/pill';

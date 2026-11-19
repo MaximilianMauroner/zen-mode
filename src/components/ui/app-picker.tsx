@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useReducedMotion } from 'react-native-reanimated';
 import type { InstalledApp } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
-import { Plus } from 'lucide-react-native';
+import Plus from 'lucide-react-native/icons/plus';
 import { SheetHeader } from './screen';
 import { SecondaryButton } from './button';
 import { GuardNotes } from './guard-notes';

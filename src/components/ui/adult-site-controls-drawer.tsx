@@ -24,7 +24,7 @@ import {
 import { useSharedGuardStatus } from '@/features/protection/guard-status-context';
 import { colors } from '@/theme/colors';
 import { metrics } from '@/theme/metrics';
-import { X } from 'lucide-react-native';
+import X from 'lucide-react-native/icons/x';
 import { getBrowserReadiness, getSupportedBrowserAvailability, SUPPORTED_BROWSERS } from '@/features/protection/target-availability';
 
 type Props = { visible: boolean; onClose: () => void };

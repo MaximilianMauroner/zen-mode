@@ -8,7 +8,8 @@ import { acceptSetupConsent, finishAndroidSetup, markSetupComplete, readSetupPro
 import { KIDS_DAILY_CAP_MINUTES, RECOMMENDED_DEFAULTS_SUMMARY, type GuidedSetupMode } from '@/features/protection/recommended-defaults';
 import { openAccessibilitySettings } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
-import { Check, Eye } from 'lucide-react-native';
+import Check from 'lucide-react-native/icons/check';
+import Eye from 'lucide-react-native/icons/eye';
 import { openURL } from 'expo-linking';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';

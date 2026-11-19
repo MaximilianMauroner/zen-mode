@@ -33,7 +33,7 @@ import {
 import { router, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
-import { ChevronRight } from 'lucide-react-native';
+import ChevronRight from 'lucide-react-native/icons/chevron-right';
 import { colors } from '@/theme/colors';
 import { getAppRuleChangeAction, getConfiguredAppPresentation } from '@/features/protection/app-rule-presentation';
 import { DEFAULT_TIMED_VISIT, getAppLimitsPlatformState } from '@/features/protection/app-limits-state';

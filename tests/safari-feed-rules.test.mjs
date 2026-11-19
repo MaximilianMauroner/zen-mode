@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { Window } from 'happy-dom';
 import { RECOMMENDED_DEFAULTS } from '../src/features/protection/recommended-defaults.ts';
 
-const source = readFileSync(new URL('../targets/safari-feeds/assets/feed-rules.js', import.meta.url), 'utf8');
+const assets = new URL('../targets/safari-feeds/assets/', import.meta.url);
+const source = readFileSync(new URL('feed-rules.js', assets), 'utf8');
 const contentScript = {};
 runInNewContext(source, contentScript);
 const { installZenModeFeedRules } = contentScript;
@@ -21,6 +24,41 @@ function loadPage(t, fixture, url) {
   window.document.write(html);
   return window;
 }
+
+test('Safari loads the Shorts scripts only on the origin supported by the rules', (t) => {
+  const manifest = JSON.parse(readFileSync(new URL('manifest.json', assets), 'utf8'));
+  const matches = [];
+
+  for (const url of [homeUrl, 'https://www.youtube.com/', 'https://youtube.com/', 'http://m.youtube.com/', 'https://example.org/']) {
+    const { document } = loadPage(t, 'youtube-home', url);
+    const tab = document.querySelector('.pivot-shorts').parentElement;
+    t.after(installZenModeFeedRules(document, settings));
+    if (tab.style.display === 'none') matches.push(`${new URL(url).origin}/*`);
+  }
+
+  assert.deepEqual(manifest.content_scripts.flatMap((entry) => entry.matches), matches);
+
+  const { document } = loadPage(t, 'youtube-home', homeUrl);
+  const tab = document.querySelector('.pivot-shorts').parentElement;
+  const context = { document };
+  for (const entry of manifest.content_scripts) {
+    for (const filename of entry.js) {
+      runInNewContext(readFileSync(new URL(filename, assets), 'utf8'), context);
+    }
+  }
+  assert.equal(tab.style.display, 'none');
+});
+
+test('Expo registers the Safari extension for EAS under the app bundle ID', () => {
+  const cli = fileURLToPath(import.meta.resolve('expo/bin/cli'));
+  const config = JSON.parse(execFileSync(process.execPath, [cli, 'config', '--type', 'prebuild', '--json'], {
+    cwd: new URL('..', import.meta.url),
+    encoding: 'utf8',
+  }));
+
+  const extensions = config.extra.eas.build.experimental.ios.appExtensions;
+  assert.ok(extensions.some(({ bundleIdentifier }) => bundleIdentifier === `${config.ios.bundleIdentifier}.safari-feeds`));
+});
 
 test('YouTube Home hides the Shorts tab and leaves the other tabs and Home content visible', (t) => {
   const window = loadPage(t, 'youtube-home', homeUrl);

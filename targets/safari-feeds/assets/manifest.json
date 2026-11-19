@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Zen Mode",
+  "description": "Hide YouTube Shorts on supported mobile YouTube pages.",
+  "version": "1.0",
+  "content_scripts": [
+    {
+      "matches": ["https://m.youtube.com/*"],
+      "js": ["feed-rules.js", "content.js"]
+    }
+  ]
+}

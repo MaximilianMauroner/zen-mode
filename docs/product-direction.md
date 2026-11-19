@@ -16,6 +16,10 @@ Zen Mode serves two users with the same features:
 Zen Mode must work on Android phones and tablets, iPhone, and iPad. YouTube, X,
 and Instagram come first.
 
+On 19 November 2026, Max chose `com.lab4code.zenmode` as the iOS bundle ID to
+match the Android application ID. Max chose `group.com.lab4code.zenmode` as
+the App Group.
+
 ## Limits
 
 Each visit to a guarded app starts with a stop time that the user picks. A

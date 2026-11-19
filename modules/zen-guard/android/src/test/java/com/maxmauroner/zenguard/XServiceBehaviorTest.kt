@@ -66,6 +66,10 @@ class XServiceBehaviorTest {
       }
     })
     shadowOf(context.getSystemService(PowerManager::class.java)).setIsInteractive(true)
+    connectService()
+  }
+
+  private fun connectService() {
     controller = Robolectric.buildService(ZenGuardAccessibilityService::class.java).create()
     ZenGuardAccessibilityService::class.java.getDeclaredMethod("onServiceConnected").apply {
       isAccessible = true
@@ -166,6 +170,28 @@ class XServiceBehaviorTest {
     shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20))
     assertEquals(1, overlayViews().size)
     assertEquals(1L, homeStops())
+  }
+
+  @Test fun `an unknown lockout stays unknown when a post is observed`() {
+    controller.destroy()
+    HomeFeedStatusStore(context).recordX(
+      HomeFeedRuntimeState(
+        usedMs = 0L,
+        blockedUntilElapsedMs = null,
+        usageState = HomeFeedUsageState.UNKNOWN,
+        lockoutState = HomeFeedLockoutState.UNKNOWN,
+        capturedAtElapsedMs = SystemClock.elapsedRealtime(),
+      ),
+    )
+    ZenGuardPreferences(context).recordXSignal(ZenGuardPreferences.X_HOME_SIGNAL)
+    connectService()
+
+    showRoot(node(X, "PostDetail"))
+    deliver(X)
+    advanceSeconds(5)
+
+    assertEquals(HomeFeedLockoutState.UNKNOWN, storedHome().lockoutState)
+    assertEquals(HomeFeedUsageState.UNKNOWN, storedHome().usageState)
   }
 
   @Test fun `an X event cannot enforce a Home signature in a foreign root`() {

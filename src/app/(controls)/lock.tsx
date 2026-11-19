@@ -54,28 +54,27 @@ export default function LockScreen() {
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const busyRef = useRef(false);
-  const refreshInFlightRef = useRef(false);
+  const refreshStateRef = useRef<'not-started' | 'reading' | 'finished'>('not-started');
   const confirmationInput = useRef<TextInput>(null);
   const gate = useWeakeningGate();
 
   const refresh = useCallback(async () => {
-    if (refreshInFlightRef.current) return;
-    refreshInFlightRef.current = true;
+    if (refreshStateRef.current === 'reading') return;
+    refreshStateRef.current = 'reading';
     setRefreshing(true);
     setError('');
     try {
       setLock(await readLockDisplay());
     } finally {
       setRefreshing(false);
-      refreshInFlightRef.current = false;
+      refreshStateRef.current = 'finished';
     }
   }, []);
 
-  // Warm inactive tabs. A read that is already running delivers its own result.
   useEffect(() => {
     let active = true;
     void readLockDisplay().then((next) => {
-      if (!active || refreshInFlightRef.current) return;
+      if (!active || refreshStateRef.current !== 'not-started') return;
       setLock(next);
       setRefreshing(false);
     });

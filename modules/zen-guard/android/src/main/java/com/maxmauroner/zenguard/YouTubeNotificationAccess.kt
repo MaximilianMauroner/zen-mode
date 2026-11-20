@@ -38,13 +38,30 @@ internal class YouTubeNotificationAccess : NotificationListenerService() {
   }
 }
 
-internal sealed interface YouTubeVideoIdentity {
-  data class MediaId(val value: String) : YouTubeVideoIdentity
-  data class Metadata(val title: String, val creator: String?, val durationMs: Long) : YouTubeVideoIdentity {
-    fun differsFrom(previous: Metadata): Boolean =
-      title != previous.title ||
-        (creator != null && previous.creator != null && creator != previous.creator) ||
-        (durationMs > 0 && previous.durationMs > 0 && durationMs != previous.durationMs)
+internal data class YouTubeVideoIdentity(
+  val mediaId: String?,
+  val title: String?,
+  val creator: String?,
+  val durationMs: Long,
+) {
+  fun differsFrom(previous: YouTubeVideoIdentity): Boolean {
+    if (mediaId != null && previous.mediaId != null) return mediaId != previous.mediaId
+    if (title == null || previous.title == null) return false
+    return title != previous.title ||
+      (creator != null && previous.creator != null && creator != previous.creator) ||
+      (durationMs > 0 && previous.durationMs > 0 && durationMs != previous.durationMs)
+  }
+
+  fun withDetailsFrom(observed: YouTubeVideoIdentity): YouTubeVideoIdentity {
+    val matchesId = mediaId != null && mediaId == observed.mediaId
+    val matchesTitle = title != null && title == observed.title
+    if (!matchesId && !matchesTitle) return this
+    return YouTubeVideoIdentity(
+      mediaId ?: observed.mediaId,
+      title ?: observed.title,
+      creator ?: observed.creator,
+      if (durationMs > 0) durationMs else observed.durationMs,
+    )
   }
 
   companion object {
@@ -52,11 +69,13 @@ internal sealed interface YouTubeVideoIdentity {
       // YouTube reports the selected video's metadata during preroll. Its ad state cannot seek.
       if (state?.state != PlaybackState.STATE_PLAYING || (state.actions and PlaybackState.ACTION_SEEK_TO) == 0L) return null
       if (metadata == null) return null
-      metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)?.takeIf(String::isNotBlank)?.let { return MediaId(it) }
-      val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)?.takeIf(String::isNotBlank) ?: return null
+      val mediaId = metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)?.takeIf(String::isNotBlank)
+      val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)?.takeIf(String::isNotBlank)
+        ?: metadata.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE)?.takeIf(String::isNotBlank)
+      if (mediaId == null && title == null) return null
       val creator = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)?.takeIf(String::isNotBlank)
       val duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION)
-      return Metadata(title, creator, duration)
+      return YouTubeVideoIdentity(mediaId, title, creator, duration)
     }
   }
 }

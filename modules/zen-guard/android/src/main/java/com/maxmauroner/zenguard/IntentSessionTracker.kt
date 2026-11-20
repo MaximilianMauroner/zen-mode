@@ -47,9 +47,11 @@ internal class IntentSessionTracker {
         sessions[packageName] = session.copy(visit = Visit.Watching(video))
         false
       }
-      is Visit.Watching -> when (visit.video) {
-        is YouTubeVideoIdentity.MediaId -> video is YouTubeVideoIdentity.MediaId && video != visit.video
-        is YouTubeVideoIdentity.Metadata -> video is YouTubeVideoIdentity.Metadata && video.differsFrom(visit.video)
+      is Visit.Watching -> {
+        if (video.differsFrom(visit.video)) return true
+        val enriched = visit.video.withDetailsFrom(video)
+        if (enriched != visit.video) sessions[packageName] = session.copy(visit = Visit.Watching(enriched))
+        false
       }
     }
   }

@@ -514,10 +514,11 @@ class AppRuleTimerServiceTest {
     val media = Shadow.newInstanceOf(MediaController::class.java)
     val playback = shadowOf(media).apply { setPackageName(YOUTUBE) }
     shadowOf(context.getSystemService(MediaSessionManager::class.java)).addController(media)
-    fun play(title: String, seekable: Boolean = true, hasDetails: Boolean = true) {
+    fun play(title: String, seekable: Boolean = true, mediaId: String? = null) {
       val metadata = MediaMetadata.Builder()
-        .putString(MediaMetadata.METADATA_KEY_TITLE, title)
-      if (hasDetails) {
+        .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, title)
+      if (mediaId != null) {
+        metadata.putString(MediaMetadata.METADATA_KEY_MEDIA_ID, mediaId)
         metadata.putString(MediaMetadata.METADATA_KEY_ARTIST, "Creator")
         metadata.putLong(MediaMetadata.METADATA_KEY_DURATION, 40_000L)
       }
@@ -533,7 +534,7 @@ class AppRuleTimerServiceTest {
     showOverlayWindow(YOUTUBE)
     views().filterIsInstance<Button>().single { it.text == "Watch 1 video" }.performClick()
 
-    play("First video", hasDetails = false)
+    play("First video")
     showContentAppWindow(regularVideo())
     contentEvent(YOUTUBE)
     play("Second video", seekable = false)
@@ -545,13 +546,13 @@ class AppRuleTimerServiceTest {
 
     showAppWindows(OTHER_APP)
     windowEvent(OTHER_APP)
-    play("First video")
+    play("First video", mediaId = "first")
     showContentAppWindow(regularVideo())
     windowEvent(YOUTUBE)
     contentEvent(YOUTUBE)
     assertNull(overlay().requestedPackage())
 
-    play("Second video")
+    play("First video", mediaId = "second")
     advance(Duration.ofSeconds(1))
     assertEquals(AppRuleOverlayMode.COOLDOWN, overlay().mode)
     assertTrue(IntentAppStore(context).cooldownRemainingMs(YOUTUBE, wallNow()) > 0)

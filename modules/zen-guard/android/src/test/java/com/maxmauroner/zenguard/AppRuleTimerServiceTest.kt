@@ -514,12 +514,14 @@ class AppRuleTimerServiceTest {
     val media = Shadow.newInstanceOf(MediaController::class.java)
     val playback = shadowOf(media).apply { setPackageName(YOUTUBE) }
     shadowOf(context.getSystemService(MediaSessionManager::class.java)).addController(media)
-    fun play(title: String, seekable: Boolean = true) {
-      playback.setMetadata(MediaMetadata.Builder()
+    fun play(title: String, seekable: Boolean = true, hasDetails: Boolean = true) {
+      val metadata = MediaMetadata.Builder()
         .putString(MediaMetadata.METADATA_KEY_TITLE, title)
-        .putString(MediaMetadata.METADATA_KEY_ARTIST, "Creator")
-        .putLong(MediaMetadata.METADATA_KEY_DURATION, 40_000L)
-        .build())
+      if (hasDetails) {
+        metadata.putString(MediaMetadata.METADATA_KEY_ARTIST, "Creator")
+        metadata.putLong(MediaMetadata.METADATA_KEY_DURATION, 40_000L)
+      }
+      playback.setMetadata(metadata.build())
       playback.setPlaybackState(PlaybackState.Builder()
         .setState(PlaybackState.STATE_PLAYING, 0L, 1f)
         .setActions(if (seekable) PlaybackState.ACTION_SEEK_TO else 0L)
@@ -531,7 +533,7 @@ class AppRuleTimerServiceTest {
     showOverlayWindow(YOUTUBE)
     views().filterIsInstance<Button>().single { it.text == "Watch 1 video" }.performClick()
 
-    play("First video")
+    play("First video", hasDetails = false)
     showContentAppWindow(regularVideo())
     contentEvent(YOUTUBE)
     play("Second video", seekable = false)

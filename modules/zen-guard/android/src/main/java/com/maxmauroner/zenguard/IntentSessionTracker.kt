@@ -49,7 +49,7 @@ internal class IntentSessionTracker {
       }
       is Visit.Watching -> when (visit.video) {
         is YouTubeVideoIdentity.MediaId -> video is YouTubeVideoIdentity.MediaId && video != visit.video
-        is YouTubeVideoIdentity.Metadata -> video is YouTubeVideoIdentity.Metadata && video != visit.video
+        is YouTubeVideoIdentity.Metadata -> video is YouTubeVideoIdentity.Metadata && video.differsFrom(visit.video)
       }
     }
   }

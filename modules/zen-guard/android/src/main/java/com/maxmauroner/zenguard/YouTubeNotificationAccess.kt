@@ -40,7 +40,12 @@ internal class YouTubeNotificationAccess : NotificationListenerService() {
 
 internal sealed interface YouTubeVideoIdentity {
   data class MediaId(val value: String) : YouTubeVideoIdentity
-  data class Metadata(val title: String, val creator: String, val durationMs: Long) : YouTubeVideoIdentity
+  data class Metadata(val title: String, val creator: String?, val durationMs: Long) : YouTubeVideoIdentity {
+    fun differsFrom(previous: Metadata): Boolean =
+      title != previous.title ||
+        (creator != null && previous.creator != null && creator != previous.creator) ||
+        (durationMs > 0 && previous.durationMs > 0 && durationMs != previous.durationMs)
+  }
 
   companion object {
     fun fromPlayback(metadata: MediaMetadata?, state: PlaybackState?): YouTubeVideoIdentity? {
@@ -49,9 +54,9 @@ internal sealed interface YouTubeVideoIdentity {
       if (metadata == null) return null
       metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)?.takeIf(String::isNotBlank)?.let { return MediaId(it) }
       val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)?.takeIf(String::isNotBlank) ?: return null
-      val creator = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)?.takeIf(String::isNotBlank) ?: return null
+      val creator = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)?.takeIf(String::isNotBlank)
       val duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION)
-      return if (duration > 0) Metadata(title, creator, duration) else null
+      return Metadata(title, creator, duration)
     }
   }
 }

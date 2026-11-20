@@ -33,7 +33,8 @@ async function phase(command, options = {}) {
     console: { log() {}, error: (error) => errors.push(error) },
     spawnSync(program, args, opts) {
       commands.push({ program, args: Array.from(args), env: opts.env ?? { ...env } });
-      if (program === 'pnpm' && ((options.failChecks && args[0] === 'test') || (options.failInstall && args[0] === 'install'))) return { status: 1, stderr: 'private failing detail' };
+      const checks = options.local ? args[0] === 'run' && args[1] === 'verify:app' : args[0] === 'test';
+      if (program === 'pnpm' && ((options.failChecks && checks) || (options.failInstall && args[0] === 'install'))) return { status: 1, stderr: 'private failing detail' };
       if (program === 'python3' && args[0].endsWith('nightly-ledger.py')) {
         if (options.failReserve && args[2] === 'reserve' || options.failFinish && args[2] === 'finish') return { status: 1 };
         return { status: 0, stdout: JSON.stringify(options.skipRelease ? { build: false } : record) };
@@ -252,7 +253,7 @@ test('local runner retains manual builds and narrows child authentication', asyn
   const result = await phase('run', { local: true });
   assert.equal(result.errors.length, 0);
   const checks = result.commands.filter(({ program }) => program === 'pnpm');
-  assert.ok(checks.length > 0);
+  assert.deepEqual(checks.map(({ args }) => args), [['install', '--frozen-lockfile'], ['run', 'verify:app']]);
   for (const child of checks) assert.ok(!child.env.EXPO_TOKEN && !child.env.GITHUB_TOKEN && !child.env.PLAY_SERVICE_ACCOUNT_KEY_PATH);
   for (const child of result.commands.filter(({ program }) => program === 'eas')) {
     assert.equal(child.env.EXPO_TOKEN, 'fixture-expo');
@@ -264,6 +265,13 @@ test('local runner retains manual builds and narrows child authentication', asyn
   assert.equal(uploader.env.EXPO_TOKEN, undefined);
   assert.equal(uploader.env.GITHUB_TOKEN, undefined);
   assert.equal(ledgerCommands(result).at(-1).args[2], 'finish');
+});
+
+test('a failed local app check stops the release before reservation', async () => {
+  const result = await phase('run', { local: true, failChecks: true });
+  assert.equal(ledgerCommands(result).length, 0);
+  assert.equal(result.commands.some(({ program }) => program === 'eas'), false);
+  assert.equal(result.errors.length, 1);
 });
 
 test('local ENOSPC still finalizes confirmed reservation and cleans the worktree', async () => {

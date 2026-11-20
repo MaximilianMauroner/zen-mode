@@ -31,20 +31,14 @@ internal object YouTubeSurfaceDetector {
     return YouTubeSurface.UNKNOWN
   }
 
-  fun regularVideoTitle(root: AccessibilityNodeInfo): String? {
-    val nodes = visibleNodes(root) ?: return null
+  fun showsRegularPlayer(root: AccessibilityNodeInfo): Boolean {
+    if (root.packageName?.toString() != YOUTUBE_PACKAGE) return false
+    val nodes = visibleNodes(root) ?: return false
     val signals = nodes.map(::signal)
     val prefix = "$YOUTUBE_PACKAGE:id/"
-    if (ShortsDetector.detect(signals).isShortsViewer ||
-      signals.none { it.viewId == prefix + "watch_player" } ||
-      signals.any { it.viewId.removePrefix(prefix) in adIds }
-    ) return null
-
-    val titles = signals.filter { it.viewId == prefix + "video_title" }
-      .map { it.text.ifBlank { it.description }.trim() }
-      .filter(String::isNotEmpty)
-      .distinct()
-    return titles.singleOrNull()
+    return !ShortsDetector.detect(signals).isShortsViewer &&
+      signals.any { it.viewId == prefix + "watch_player" } &&
+      signals.none { it.viewId.removePrefix(prefix) in adIds }
   }
 
   fun inspect(root: AccessibilityNodeInfo): YouTubeScreen {

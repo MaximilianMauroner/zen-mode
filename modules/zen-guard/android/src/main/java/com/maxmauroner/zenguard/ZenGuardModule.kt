@@ -42,6 +42,7 @@ class ZenGuardModule : Module() {
         "youtubeHomeEnabled" to preferences.youtubeHomeEnabled,
         "youtubeHomeObserved" to preferences.youtubeHomeObserved,
         "youtubeHomeDetectionSupported" to true,
+        "youtubeNotificationAccessGranted" to YouTubeNotificationAccess.isGranted(context),
         "xHomeEnabled" to preferences.xHomeEnabled,
         "xVideosEnabled" to preferences.xVideosEnabled,
         "xHomeMinutes" to preferences.xHomeMinutes,
@@ -298,6 +299,11 @@ class ZenGuardModule : Module() {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       }
       context.startActivity(intent)
+    }
+
+    AsyncFunction("openYouTubeNotificationSettings") {
+      val context = requireNotNull(appContext.reactContext)
+      context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     AsyncFunction("openYouTube") {

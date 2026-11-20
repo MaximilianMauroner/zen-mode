@@ -13,7 +13,7 @@ import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { authorizeWeakening } from '@/features/protection/authorize-weakening';
 import { actionFailure, IDLE_ACTION, isReading, readValue, RUNNING_ACTION, type ActionState } from '@/features/protection/control-state';
 import { useGuardStatusFocus, useSharedGuardStatus } from '@/features/protection/guard-status-context';
-import { diagnosticsAvailable, getZenGuardStatus, openAccessibilitySettings, openInstagram, openYouTube, openX, setNativeProtectionEnabled, setEndScreen } from '@/features/protection/native';
+import { diagnosticsAvailable, getZenGuardStatus, openAccessibilitySettings, openInstagram, openYouTube, openYouTubeNotificationSettings, openX, setNativeProtectionEnabled, setEndScreen } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
 
 /** System controls stay separate from feed settings and whole-app budgets. */
@@ -59,6 +59,7 @@ export default function SettingsScreen() {
       <ScreenHeader title="Settings" onBack={() => router.back()} backDisabled={busy} />
       <RowGroup>
         <Row label="Android access" detail="Needed to apply your rules. Tap to open Android settings." statusLabel={statusKnown ? status?.serviceEnabled ? 'Granted' : 'Needed' : loading ? 'Checking' : 'Unavailable'} tone={statusKnown && status?.serviceEnabled ? 'accent' : 'neutral'} disabled={disabled} onPress={() => runAction(openAccessibilitySettings)} />
+        {status?.available ? <Row label="YouTube Notification access" detail="Optional for Watch 1 video. Android can share all notifications with Zen Mode. Zen Mode reads only YouTube playback information on this device and never saves or sends it." statusLabel={status.youtubeNotificationAccessGranted ? 'Granted' : 'Off'} tone={status.youtubeNotificationAccessGranted ? 'accent' : 'neutral'} disabled={disabled} onPress={() => runAction(openYouTubeNotificationSettings)} /> : null}
         <Row label="Protection" detail={!statusKnown ? 'The current status could not be read.' : !status?.serviceEnabled ? 'Rules cannot run without Android access.' : status.protectionEnabled ? 'Applies configured rules. Feed status is shown below.' : 'Rules are saved but are not being applied.'} statusLabel={protectionLabel} tone={protectionLabel === 'Running' ? 'accent' : 'neutral'} />
       </RowGroup>
       {statusKnown && !status?.serviceEnabled ? (

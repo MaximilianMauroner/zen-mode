@@ -11,7 +11,7 @@ internal class IntentSessionTracker {
   private sealed interface Visit {
     data object Timed : Visit
     data object AwaitingVideo : Visit
-    data class Watching(val title: String) : Visit
+    data class Watching(val video: YouTubeVideoIdentity) : Visit
   }
 
   private data class Session(val expiresAt: Long, val visit: Visit)
@@ -39,15 +39,18 @@ internal class IntentSessionTracker {
   fun isWatchingOneVideo(packageName: String, nowElapsedMs: Long): Boolean =
     isActive(packageName, nowElapsedMs) && sessions[packageName]?.visit != Visit.Timed
 
-  fun startsSecondVideo(packageName: String, title: String): Boolean {
+  fun startsSecondVideo(packageName: String, video: YouTubeVideoIdentity): Boolean {
     val session = sessions[packageName] ?: return false
     return when (val visit = session.visit) {
       Visit.Timed -> false
       Visit.AwaitingVideo -> {
-        sessions[packageName] = session.copy(visit = Visit.Watching(title))
+        sessions[packageName] = session.copy(visit = Visit.Watching(video))
         false
       }
-      is Visit.Watching -> visit.title != title
+      is Visit.Watching -> when (visit.video) {
+        is YouTubeVideoIdentity.MediaId -> video is YouTubeVideoIdentity.MediaId && video != visit.video
+        is YouTubeVideoIdentity.Metadata -> video is YouTubeVideoIdentity.Metadata && video != visit.video
+      }
     }
   }
 

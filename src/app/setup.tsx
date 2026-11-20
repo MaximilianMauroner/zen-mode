@@ -6,7 +6,7 @@ import { PasscodeInput } from '@/components/ui/weakening-gate';
 import { LOCK_DAY_OPTIONS, passcodeEntryRefusal, readLockState } from '@/features/protection/lock';
 import { acceptSetupConsent, finishAndroidSetup, markSetupComplete, readSetupProgress, type SetupLock, type SetupPlan } from '@/features/protection/setup';
 import { KIDS_DAILY_CAP_MINUTES, RECOMMENDED_DEFAULTS_SUMMARY, type GuidedSetupMode } from '@/features/protection/recommended-defaults';
-import { openAccessibilitySettings } from '@/features/protection/native';
+import { openAccessibilitySettings, openYouTubeNotificationSettings } from '@/features/protection/native';
 import { colors } from '@/theme/colors';
 import { Check, Eye } from 'lucide-react-native';
 import { openURL } from 'expo-linking';
@@ -296,6 +296,13 @@ export default function SetupScreen() {
         {!requested && plan.mode !== 'restore' ? <SecondaryButton title="Back" disabled={saving} onPress={back} /> : null}
         <SecondaryButton title="Privacy" disabled={saving} onPress={() => router.navigate('/privacy')} />
       </View>
+      {!requested && (plan.mode === 'kids' || plan.mode === 'focus') ? (
+        <Card className="gap-3">
+          <Text accessibilityRole="header" className="text-item font-semibold text-copy">Watch 1 video on YouTube</Text>
+          <Text className="text-body text-muted">This is optional. Android Notification access can expose all notifications to Zen Mode. Zen Mode uses it only to identify the video playing in YouTube. It processes playback information on this device and never saves or sends it.</Text>
+          <SecondaryButton title="Open Notification access" disabled={saving} onPress={() => run(openYouTubeNotificationSettings, 'Could not open Android Notification access.')} />
+        </Card>
+      ) : null}
     </Screen>
   );
 }

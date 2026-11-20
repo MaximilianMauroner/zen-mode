@@ -41,6 +41,7 @@ const nativeUrl = moduleUrl(`
   export async function hasCurrentNativeConsent() { return status.currentConsent; }
   export async function acceptCurrentNativeConsent() { status.currentConsent = true; calls.push('consent'); }
   export async function openAccessibilitySettings() { calls.push('open settings'); }
+  export async function openYouTubeNotificationSettings() { calls.push('open notification access'); }
   export async function setNativeProtectionEnabled(enabled) { status.protectionEnabled = enabled; }
   export async function setEndScreen(mode) { status.endScreen = mode; }
   export async function getAppLimits() {
@@ -208,6 +209,23 @@ async function mountSetup() {
 
 const recommendedRules = { youtube: [true, false], x: [true, true, 5], instagram: [30, 5, 5, true], adultSites: true };
 const timedVisit = { sessionMinutes: 5, cooldownMinutes: 5 };
+
+test('guided setup can open optional YouTube Notification access before Android Accessibility', async () => {
+  const view = await setup();
+  await view.chooseMode('Focus');
+  await view.press('Time lock');
+  await view.press('Continue');
+
+  await view.press('Open Notification access');
+  assert.deepEqual(native.calls, ['open notification access']);
+  assert.equal(await setupActions.hasCompletedSetup(), false);
+  assert.equal((await lock.readLockState()).kind, 'open');
+
+  view.consent();
+  await view.press('Continue to Android access');
+  assert.deepEqual(native.calls, ['open notification access', 'consent', 'open settings']);
+  assert.equal(view.props('Open Notification access'), undefined);
+});
 
 test('Kids setup confirms a passcode, waits for access, and caps only installed apps before Family Link', async () => {
   const view = await setup({ appAvailability: { youtube: 'installed', instagram: 'installed', x: 'absent' } });
@@ -491,6 +509,7 @@ test('Kids on web can finish setup and reach Home without Android access or Fami
   assert.equal(view.destination, '/');
   assert.equal(await setupActions.hasCompletedSetup(), true);
   assert.equal(view.props('Open Google Family Link'), undefined);
+  assert.equal(view.props('Open Notification access'), undefined);
   assert.deepEqual(native.calls, []);
   assert.deepEqual(native.status.visits, {});
   assert.equal((await lock.readLockState()).kind, 'open');

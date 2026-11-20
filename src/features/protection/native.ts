@@ -18,6 +18,7 @@ export const getZenGuardStatus = () => ZenGuardModule.getStatus();
 export const acknowledgeServiceDisabled = (disabledThrough: number) => ZenGuardModule.acknowledgeServiceDisabled(disabledThrough);
 export const getEnforcementStats = () => ZenGuardModule.getEnforcementStats();
 export const openAccessibilitySettings = () => ZenGuardModule.openAccessibilitySettings();
+export const openYouTubeNotificationSettings = () => ZenGuardModule.openYouTubeNotificationSettings();
 export const openYouTube = () => ZenGuardModule.openYouTube();
 export const openInstagram = () => ZenGuardModule.openInstagram();
 export const hasCurrentNativeConsent = () => ZenGuardModule.hasCurrentConsent();

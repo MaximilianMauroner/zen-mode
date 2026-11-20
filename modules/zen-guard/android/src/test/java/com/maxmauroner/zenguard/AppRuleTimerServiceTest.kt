@@ -1,11 +1,18 @@
 package com.maxmauroner.zenguard
 
 import android.animation.ValueAnimator
+import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.ApplicationInfo
 import android.content.pm.ResolveInfo
+import android.graphics.Rect
+import android.media.MediaMetadata
+import android.media.session.MediaController
+import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
@@ -493,29 +500,57 @@ class AppRuleTimerServiceTest {
     assertFalse(texts().contains(initial))
   }
 
-  @Test fun `watch one video ends on a different regular video after returning to YouTube`() {
+  @Test fun `watch one video needs optional notification access`() {
+    IntentAppStore(context).setIntent(YOUTUBE, 5, 5)
+    openApp(YOUTUBE)
+    assertFalse(texts().contains("Watch 1 video"))
+    assertTrue(texts().any { it.startsWith("1 min · until") })
+  }
+
+  @Test fun `watch one video ends on changed playback without an accessibility title or new window event`() {
+    shadowOf(context.getSystemService(NotificationManager::class.java)).setNotificationListenerAccessGranted(
+      ComponentName(context, YouTubeNotificationAccess::class.java), true,
+    )
+    val media = Shadow.newInstanceOf(MediaController::class.java)
+    val playback = shadowOf(media).apply { setPackageName(YOUTUBE) }
+    shadowOf(context.getSystemService(MediaSessionManager::class.java)).addController(media)
+    fun play(title: String, seekable: Boolean = true) {
+      playback.setMetadata(MediaMetadata.Builder()
+        .putString(MediaMetadata.METADATA_KEY_TITLE, title)
+        .putString(MediaMetadata.METADATA_KEY_ARTIST, "Creator")
+        .putLong(MediaMetadata.METADATA_KEY_DURATION, 40_000L)
+        .build())
+      playback.setPlaybackState(PlaybackState.Builder()
+        .setState(PlaybackState.STATE_PLAYING, 0L, 1f)
+        .setActions(if (seekable) PlaybackState.ACTION_SEEK_TO else 0L)
+        .build())
+    }
+
     IntentAppStore(context).setIntent(YOUTUBE, 5, 5)
     openApp(YOUTUBE)
     showOverlayWindow(YOUTUBE)
     views().filterIsInstance<Button>().single { it.text == "Watch 1 video" }.performClick()
 
-    showContentAppWindow(regularVideo("First video"))
+    play("First video")
+    showContentAppWindow(regularVideo())
     contentEvent(YOUTUBE)
-    showContentAppWindow(regularVideo("Ad", ad = true))
-    contentEvent(YOUTUBE)
+    play("Second video", seekable = false)
+    advance(Duration.ofSeconds(1))
+    assertNull(overlay().requestedPackage())
     showContentAppWindow(node(YOUTUBE))
     contentEvent(YOUTUBE)
     assertNull(overlay().requestedPackage())
 
     showAppWindows(OTHER_APP)
     windowEvent(OTHER_APP)
-    showContentAppWindow(regularVideo("First video"))
+    play("First video")
+    showContentAppWindow(regularVideo())
     windowEvent(YOUTUBE)
     contentEvent(YOUTUBE)
     assertNull(overlay().requestedPackage())
 
-    showContentAppWindow(regularVideo("Second video"))
-    contentEvent(YOUTUBE)
+    play("Second video")
+    advance(Duration.ofSeconds(1))
     assertEquals(AppRuleOverlayMode.COOLDOWN, overlay().mode)
     assertTrue(IntentAppStore(context).cooldownRemainingMs(YOUTUBE, wallNow()) > 0)
   }
@@ -733,6 +768,37 @@ class AppRuleTimerServiceTest {
     assertTrue(siteBoundaryShowing())
     assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
     assertTrue(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(CHROME, SystemClock.elapsedRealtime()))
+  }
+
+  @Test fun `Start opens a timed visit with the Pixel taskbar under the chooser`() {
+    IntentAppStore(context).setIntent(APP, 1, 1)
+    openApp(APP)
+    val start = views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }
+    val screen = Rect(0, 0, 2560, 1600)
+    val cardRoot = node(context.packageName)
+    val card = window(AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY, cardRoot).also {
+      shadowOf(it).setActive(true)
+      shadowOf(it).setBoundsInScreen(screen)
+    }
+    val taskbar = window(AccessibilityWindowInfo.TYPE_SYSTEM, node("com.google.android.apps.nexuslauncher"))
+    shadowOf(controller.get()).apply {
+      setRootInActiveWindow(cardRoot)
+      setWindows(listOf(card, taskbar))
+    }
+
+    start.performClick()
+    assertEquals(AppRuleOverlayMode.ASK, overlay().mode)
+
+    shadowOf(taskbar).setBoundsInScreen(screen)
+    shadowOf(controller.get()).setWindows(listOf(card, taskbar))
+    start.performClick()
+    assertFalse(overlay().isShowing())
+
+    showAppWindows(APP)
+    windowEvent(APP)
+    assertFalse(overlay().isShowing())
+    advance(Duration.ofSeconds(61))
+    assertEquals(AppRuleOverlayMode.COOLDOWN, overlay().mode)
   }
 
   @Test fun `a queued Start while screen-off keeps the question and does not grant a visit`() {
@@ -1513,14 +1579,9 @@ class AppRuleTimerServiceTest {
     return root to home
   }
 
-  private fun regularVideo(title: String, ad: Boolean = false): AccessibilityNodeInfo {
+  private fun regularVideo(): AccessibilityNodeInfo {
     val root = node(YOUTUBE)
     shadowOf(root).addChild(node(YOUTUBE).apply { viewIdResourceName = "$YOUTUBE:id/watch_player" })
-    shadowOf(root).addChild(node(YOUTUBE).apply {
-      viewIdResourceName = "$YOUTUBE:id/video_title"
-      text = title
-    })
-    if (ad) shadowOf(root).addChild(node(YOUTUBE).apply { viewIdResourceName = "$YOUTUBE:id/ad_badge" })
     return root
   }
 

@@ -17,6 +17,7 @@ class ZenGuardModule extends NativeModule<{}> {
       youtubeHomeEnabled: false,
       youtubeHomeObserved: false,
       youtubeHomeDetectionSupported: false,
+      youtubeNotificationAccessGranted: false,
       xHomeEnabled: true,
       xVideosEnabled: true,
       xHomeMinutes: 5,
@@ -62,6 +63,7 @@ class ZenGuardModule extends NativeModule<{}> {
   }
 
   async openAccessibilitySettings() {}
+  async openYouTubeNotificationSettings() {}
   async openYouTube() {}
   async openInstagram() {}
   async openX() {}

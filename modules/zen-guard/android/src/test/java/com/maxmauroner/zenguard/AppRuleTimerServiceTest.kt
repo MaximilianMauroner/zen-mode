@@ -1,11 +1,18 @@
 package com.maxmauroner.zenguard
 
 import android.animation.ValueAnimator
+import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.ApplicationInfo
 import android.content.pm.ResolveInfo
+import android.graphics.Rect
+import android.media.MediaMetadata
+import android.media.session.MediaController
+import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
@@ -480,6 +487,77 @@ class AppRuleTimerServiceTest {
     assertTrue(texts().any { it.startsWith("1 min · until") })
   }
 
+  @Test fun `stop times advance while the foreground window cannot be read`() {
+    IntentAppStore(context).setIntent(APP, 5, 0)
+    openApp(APP)
+    shadowOf(controller.get()).apply { setRootInActiveWindow(null); setWindows(emptyList()) }
+    val initial = texts().first { it.startsWith("1 min · until") }
+
+    advance(Duration.ofSeconds(6))
+
+    val end = android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(wallNow() + 60_000L))
+    assertTrue(texts().contains("1 min · until $end"))
+    assertFalse(texts().contains(initial))
+  }
+
+  @Test fun `watch one video needs optional notification access`() {
+    IntentAppStore(context).setIntent(YOUTUBE, 5, 5)
+    openApp(YOUTUBE)
+    assertFalse(texts().contains("Watch 1 video"))
+    assertTrue(texts().any { it.startsWith("1 min · until") })
+  }
+
+  @Test fun `watch one video ends on changed playback without an accessibility title or new window event`() {
+    shadowOf(context.getSystemService(NotificationManager::class.java)).setNotificationListenerAccessGranted(
+      ComponentName(context, YouTubeNotificationAccess::class.java), true,
+    )
+    val media = Shadow.newInstanceOf(MediaController::class.java)
+    val playback = shadowOf(media).apply { setPackageName(YOUTUBE) }
+    shadowOf(context.getSystemService(MediaSessionManager::class.java)).addController(media)
+    fun play(title: String, seekable: Boolean = true, mediaId: String? = null) {
+      val metadata = MediaMetadata.Builder()
+        .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, title)
+      if (mediaId != null) {
+        metadata.putString(MediaMetadata.METADATA_KEY_MEDIA_ID, mediaId)
+        metadata.putString(MediaMetadata.METADATA_KEY_ARTIST, "Creator")
+        metadata.putLong(MediaMetadata.METADATA_KEY_DURATION, 40_000L)
+      }
+      playback.setMetadata(metadata.build())
+      playback.setPlaybackState(PlaybackState.Builder()
+        .setState(PlaybackState.STATE_PLAYING, 0L, 1f)
+        .setActions(if (seekable) PlaybackState.ACTION_SEEK_TO else 0L)
+        .build())
+    }
+
+    IntentAppStore(context).setIntent(YOUTUBE, 5, 5)
+    openApp(YOUTUBE)
+    showOverlayWindow(YOUTUBE)
+    views().filterIsInstance<Button>().single { it.text == "Watch 1 video" }.performClick()
+
+    play("First video")
+    showContentAppWindow(regularVideo())
+    contentEvent(YOUTUBE)
+    play("Second video", seekable = false)
+    advance(Duration.ofSeconds(1))
+    assertNull(overlay().requestedPackage())
+    showContentAppWindow(node(YOUTUBE))
+    contentEvent(YOUTUBE)
+    assertNull(overlay().requestedPackage())
+
+    showAppWindows(OTHER_APP)
+    windowEvent(OTHER_APP)
+    play("First video", mediaId = "first")
+    showContentAppWindow(regularVideo())
+    windowEvent(YOUTUBE)
+    contentEvent(YOUTUBE)
+    assertNull(overlay().requestedPackage())
+
+    play("First video", mediaId = "second")
+    advance(Duration.ofSeconds(1))
+    assertEquals(AppRuleOverlayMode.COOLDOWN, overlay().mode)
+    assertTrue(IntentAppStore(context).cooldownRemainingMs(YOUTUBE, wallNow()) > 0)
+  }
+
   @Test fun `a daily cap shortens the offered visits and the granted visit`() {
     AppLimitStore(context).apply { setLimit(APP, 30); addUsage(APP, 25 * 60_000L, wallNow()) }
     IntentAppStore(context).setIntent(APP, 60, 0)
@@ -693,6 +771,44 @@ class AppRuleTimerServiceTest {
     assertTrue(siteBoundaryShowing())
     assertEquals(1L, count(EnforcementReason.BLOCKED_SITE))
     assertTrue(wholeApp().privateField<IntentSessionTracker>("intentSessions").isActive(CHROME, SystemClock.elapsedRealtime()))
+  }
+
+  @Test fun `Start opens a timed visit with the Pixel taskbar under the chooser`() {
+    IntentAppStore(context).setIntent(APP, 1, 1)
+    AppLimitStore(context).setLimit(APP, 60)
+    openApp(APP)
+    val start = views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }
+    val screen = Rect(0, 0, 2560, 1600)
+    val cardRoot = node(context.packageName)
+    val card = window(AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY, cardRoot).also {
+      shadowOf(it).setActive(true)
+      shadowOf(it).setBoundsInScreen(screen)
+    }
+    val taskbar = window(AccessibilityWindowInfo.TYPE_SYSTEM, node("com.google.android.apps.nexuslauncher"))
+    shadowOf(controller.get()).apply {
+      setRootInActiveWindow(cardRoot)
+      setWindows(listOf(card, taskbar))
+    }
+
+    start.performClick()
+    assertEquals(AppRuleOverlayMode.ASK, overlay().mode)
+
+    shadowOf(taskbar).setBoundsInScreen(screen)
+    shadowOf(controller.get()).setWindows(listOf(card, taskbar))
+    start.performClick()
+    assertFalse(overlay().isShowing())
+
+    shadowOf(controller.get()).apply {
+      setRootInActiveWindow(taskbar.root)
+      setWindows(listOf(taskbar))
+    }
+    contentEvent("com.google.android.apps.nexuslauncher")
+    showAppWindows(APP)
+    contentEvent(APP)
+    assertFalse(overlay().isShowing())
+    advance(Duration.ofSeconds(61))
+    assertEquals(AppRuleOverlayMode.COOLDOWN, overlay().mode)
+    assertTrue(AppLimitStore(context).usageToday(wallNow()).getOrDefault(APP, 0L) >= 50_000L)
   }
 
   @Test fun `a queued Start while screen-off keeps the question and does not grant a visit`() {
@@ -1204,7 +1320,7 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofMillis(20))
     showOverlayWindow(APP)
     assertTrue(texts().toString(), texts().contains("Available again in 0:10"))
-    assertFalse(texts().any { it.contains("opens again when the downtime ends") })
+    assertFalse(texts().any { it.contains("will be available after the break") })
     advance(Duration.ofSeconds(11))
     assertEquals(AppRuleOverlayMode.ASK, overlay().mode)
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
@@ -1471,6 +1587,12 @@ class AppRuleTimerServiceTest {
     shadowOf(root).addChild(page)
     shadowOf(root).addChild(tabs)
     return root to home
+  }
+
+  private fun regularVideo(): AccessibilityNodeInfo {
+    val root = node(YOUTUBE)
+    shadowOf(root).addChild(node(YOUTUBE).apply { viewIdResourceName = "$YOUTUBE:id/watch_player" })
+    return root
   }
 
   private fun contentEvent(packageName: String) {

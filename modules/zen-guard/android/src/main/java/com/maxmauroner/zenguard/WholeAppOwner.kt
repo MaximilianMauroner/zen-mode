@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -35,9 +36,19 @@ internal class WholeAppOwner(
       DeadlineDecision.Complete
     }
   }
+  private val youtubePlaybackCheck by lazy {
+    DeadlineTask(Handler(Looper.getMainLooper())) {
+      if (!intentSessions.isWatchingOneVideo(YOUTUBE_PACKAGE, SystemClock.elapsedRealtime()) || observeYouTubeVisit()) {
+        DeadlineDecision.Complete
+      } else {
+        DeadlineDecision.RetryAfter(YOUTUBE_PLAYBACK_CHECK_MS)
+      }
+    }
+  }
   private val usageTracker = AppUsageTracker()
   private val usageHandler by lazy { Handler(Looper.getMainLooper()) }
   private var currentForegroundPackage: String? = null
+  private var taskbarVisitAwaitingForeground: String? = null
   private var closingPackage: String? = null
   private var timedEndPackage: String? = null
 
@@ -49,6 +60,7 @@ internal class WholeAppOwner(
   private val usageTicker = object : Runnable {
     override fun run() {
       if (canEnforce()) {
+        confirmTaskbarVisitForeground()
         usageTracker.tick(SystemClock.elapsedRealtime())?.let(::bankUsage)
         enforceAppLimits(currentForegroundPackage)
         enforceIntentSession()
@@ -89,6 +101,7 @@ internal class WholeAppOwner(
    * event types while the same app stays on screen.
    */
   fun trackForegroundApp(event: AccessibilityEvent): Boolean {
+    confirmTaskbarVisitForeground()
     if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return false
 
     var packageName = event.packageName?.toString() ?: return false
@@ -169,7 +182,7 @@ internal class WholeAppOwner(
     val details = buildList {
       if (dailyAt != null) add(service.getString(R.string.zen_guard_app_limit_detail, appLabel))
       if (rollingAt != null) add(service.getString(R.string.zen_guard_rolling_limit_detail, appLabel))
-      if (cooldownMs > 0L) add(service.getString(R.string.zen_guard_intent_cooldown_detail, appLabel))
+      if (wallNow + cooldownMs > budgetAt) add(service.getString(R.string.zen_guard_intent_cooldown_detail, appLabel))
     }
     if (dailyAt != null && showAlternativeEndScreen(packageName, appLabel, EnforcementReason.APP_LIMIT)) return true
     prepareAppRuleOverlay(packageName, AppRuleOverlayMode.LIMIT)
@@ -298,7 +311,7 @@ internal class WholeAppOwner(
   private fun scheduleAppRuleRefresh() {
     if (appRuleOverlay.requestedPackage() == null) {
       appCardRefresh.cancel()
-    } else {
+    } else if (!appCardRefresh.isPending) {
       appCardRefresh.scheduleAt(SystemClock.elapsedRealtime() + APP_RULE_REFRESH_MS)
     }
   }
@@ -306,6 +319,7 @@ internal class WholeAppOwner(
   private fun refreshAppRuleOverlay(): DeadlineDecision {
     if (!canEnforce()) return DeadlineDecision.Cancel
     val blockedPackage = appRuleOverlay.requestedPackage() ?: return DeadlineDecision.Complete
+    appRuleOverlay.showEndTimes(appRuleWallClock())
     val foreground = foregroundAppPackage() ?: return DeadlineDecision.RetryAfter(APP_RULE_REFRESH_MS)
     if (foreground != blockedPackage) {
       currentForegroundPackage = foreground
@@ -377,6 +391,9 @@ internal class WholeAppOwner(
         onStart = { minutes -> grantIntentSession(packageName, minutes) },
         onLeave = ::leaveAppRule,
         onAttached = onAttached,
+        onWatchOneVideo = if (packageName == YOUTUBE_PACKAGE && YouTubeNotificationAccess.isGranted(service)) {
+          { grantIntentSession(packageName, choices.last(), watchOneVideo = true) }
+        } else null,
       )
     }
     scheduleAppRuleRefresh()
@@ -390,17 +407,78 @@ internal class WholeAppOwner(
     }
   }
 
-  private fun grantIntentSession(packageName: String, minutes: Int) {
-    if (!canEnforce()) return
-    if (foregroundAppPackage() != packageName || enforceAppLimits(packageName)) return
+  private fun grantIntentSession(packageName: String, minutes: Int, watchOneVideo: Boolean = false) {
+    if (!canEnforce() || !isScreenInteractive) return
+    if (watchOneVideo && !YouTubeNotificationAccess.isGranted(service)) return
+    if (appRuleOverlay.requestedPackage() != packageName || appRuleOverlay.mode != AppRuleOverlayMode.ASK) return
+    val windows = service.windows
+    val appWindow = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+    if (appWindow == null) {
+      if (currentForegroundPackage != packageName || !taskbarOccludesApp(windows)) return
+    } else if (appWindow.root?.packageName?.toString() != packageName) {
+      return
+    }
+    if (enforceAppLimits(packageName)) return
     val wallNow = appRuleWallClock()
     if (intentStore.cooldownRemainingMs(packageName, wallNow) > 0L) return
     val rule = intentStore.intents()[packageName] ?: return
     val longest = visitChoices(rule.sessionMinutes, appLimits.minutesLeftToday(packageName, wallNow)).lastOrNull() ?: return
-    if (!releaseAppRuleOverlay(packageName)) return
-    intentSessions.grant(packageName, minOf(minutes, longest), SystemClock.elapsedRealtime())
-    usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())
+    if (appWindow == null) {
+      if (!canEnforce() || !isScreenInteractive) return
+      closeAppRuleOverlay()
+    } else if (!releaseAppRuleOverlay(packageName)) {
+      return
+    }
+    intentSessions.grant(packageName, minOf(minutes, longest), SystemClock.elapsedRealtime(), watchOneVideo)
+    if (appWindow == null) {
+      taskbarVisitAwaitingForeground = packageName
+    } else {
+      usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())
+    }
     scheduleIntentDeadline(packageName)
+    if (watchOneVideo && !observeYouTubeVisit()) {
+      youtubePlaybackCheck.scheduleAt(SystemClock.elapsedRealtime() + YOUTUBE_PLAYBACK_CHECK_MS)
+    }
+  }
+
+  private fun taskbarOccludesApp(windows: List<AccessibilityWindowInfo>): Boolean {
+    if (!appRuleOverlay.isShowing() || service.rootInActiveWindow?.packageName?.toString() != service.packageName) return false
+    val chooser = windows.firstOrNull {
+      it.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY && it.isActive &&
+        it.root?.packageName?.toString() == service.packageName
+    } ?: return false
+    val screenBounds = Rect().also(chooser::getBoundsInScreen)
+    if (screenBounds.isEmpty) return false
+    // First-run Taskbar can hide the app from Accessibility until the user dismisses it.
+    return windows.any {
+      it.type == AccessibilityWindowInfo.TYPE_SYSTEM &&
+        it.root?.packageName?.toString() == PIXEL_LAUNCHER &&
+        Rect().also(it::getBoundsInScreen) == screenBounds
+    }
+  }
+
+  private fun confirmTaskbarVisitForeground() {
+    val pending = taskbarVisitAwaitingForeground ?: return
+    if (!isScreenInteractive) return
+    val foreground = service.windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+      ?.root?.packageName?.toString() ?: return
+    taskbarVisitAwaitingForeground = null
+    if (foreground != pending) return
+    val now = SystemClock.elapsedRealtime()
+    if (!intentSessions.isActive(pending, now)) return
+    currentForegroundPackage = pending
+    usageTracker.onForeground(pending, now)?.let(::bankUsage)
+  }
+
+  fun observeYouTubeVisit(): Boolean {
+    if (!intentSessions.isWatchingOneVideo(YOUTUBE_PACKAGE, SystemClock.elapsedRealtime())) return false
+    if (!canEnforce() || foregroundAppPackage() != YOUTUBE_PACKAGE) return false
+    val root = service.rootInActiveWindow ?: return false
+    if (!YouTubeSurfaceDetector.showsRegularPlayer(root)) return false
+    val video = YouTubeNotificationAccess.playingVideo(service) ?: return false
+    if (!intentSessions.startsSecondVideo(YOUTUBE_PACKAGE, video)) return false
+    finishIntentSession(YOUTUBE_PACKAGE)
+    return true
   }
 
   private fun scheduleIntentDeadline(packageName: String) {
@@ -415,6 +493,7 @@ internal class WholeAppOwner(
     closeAppRuleOverlay(preserveStats)
     if (!canEnforce()) return
     usageTracker.reset()
+    taskbarVisitAwaitingForeground = null
     if (!preserveStats) currentForegroundPackage = null
     service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
   }
@@ -428,7 +507,13 @@ internal class WholeAppOwner(
       scheduleIntentDeadline(packageName)
       return
     }
+    finishIntentSession(packageName)
+  }
+
+  private fun finishIntentSession(packageName: String) {
     if (!intentSessions.end(packageName)) return
+    if (packageName == YOUTUBE_PACKAGE) youtubePlaybackCheck.cancel()
+    visitDeadline.cancel()
     intentStore.recordSessionEnd(packageName, appRuleWallClock())
     stats.reset(EnforcementReason.TIMED_VISIT)
     bankPendingUsage()
@@ -451,6 +536,7 @@ internal class WholeAppOwner(
 
   fun enterSettings() {
     usageTracker.reset()
+    taskbarVisitAwaitingForeground = null
     currentForegroundPackage = null
     closingPackage = null
     closeAppRuleOverlay()
@@ -458,15 +544,18 @@ internal class WholeAppOwner(
 
   fun disable() {
     usageTracker.reset()
+    taskbarVisitAwaitingForeground = null
     currentForegroundPackage = null
     closingPackage = null
     intentSessions.reset()
+    youtubePlaybackCheck.cancel()
     visitDeadline.cancel()
     closeAppRuleOverlay()
   }
 
   fun cancelVisitDeadline() {
     visitDeadline.cancel()
+    youtubePlaybackCheck.cancel()
   }
 
   fun stopUsageAndCloseCard() {
@@ -478,6 +567,9 @@ internal class WholeAppOwner(
     get() = service.getSystemService(PowerManager::class.java)?.isInteractive == true
 
   private companion object {
+    const val PIXEL_LAUNCHER = "com.google.android.apps.nexuslauncher"
+    const val YOUTUBE_PACKAGE = "com.google.android.youtube"
+    const val YOUTUBE_PLAYBACK_CHECK_MS = 1_000L
     const val USAGE_TICK_MS = 15_000L
     const val APP_RULE_REFRESH_MS = 1_000L
   }

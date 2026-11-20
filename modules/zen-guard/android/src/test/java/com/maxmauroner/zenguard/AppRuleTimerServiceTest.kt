@@ -795,6 +795,11 @@ class AppRuleTimerServiceTest {
     start.performClick()
     assertFalse(overlay().isShowing())
 
+    shadowOf(controller.get()).apply {
+      setRootInActiveWindow(taskbar.root)
+      setWindows(listOf(taskbar))
+    }
+    contentEvent("com.google.android.apps.nexuslauncher")
     showAppWindows(APP)
     contentEvent(APP)
     assertFalse(overlay().isShowing())

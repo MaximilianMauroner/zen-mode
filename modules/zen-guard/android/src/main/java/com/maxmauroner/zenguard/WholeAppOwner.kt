@@ -460,7 +460,8 @@ internal class WholeAppOwner(
   private fun confirmTaskbarVisitForeground() {
     val pending = taskbarVisitAwaitingForeground ?: return
     if (!isScreenInteractive) return
-    val foreground = foregroundAppPackage() ?: return
+    val foreground = service.windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+      ?.root?.packageName?.toString() ?: return
     taskbarVisitAwaitingForeground = null
     if (foreground != pending) return
     val now = SystemClock.elapsedRealtime()

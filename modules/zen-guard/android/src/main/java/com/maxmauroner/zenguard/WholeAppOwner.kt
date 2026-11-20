@@ -169,7 +169,7 @@ internal class WholeAppOwner(
     val details = buildList {
       if (dailyAt != null) add(service.getString(R.string.zen_guard_app_limit_detail, appLabel))
       if (rollingAt != null) add(service.getString(R.string.zen_guard_rolling_limit_detail, appLabel))
-      if (cooldownMs > 0L) add(service.getString(R.string.zen_guard_intent_cooldown_detail, appLabel))
+      if (wallNow + cooldownMs > budgetAt) add(service.getString(R.string.zen_guard_intent_cooldown_detail, appLabel))
     }
     if (dailyAt != null && showAlternativeEndScreen(packageName, appLabel, EnforcementReason.APP_LIMIT)) return true
     prepareAppRuleOverlay(packageName, AppRuleOverlayMode.LIMIT)
@@ -298,7 +298,7 @@ internal class WholeAppOwner(
   private fun scheduleAppRuleRefresh() {
     if (appRuleOverlay.requestedPackage() == null) {
       appCardRefresh.cancel()
-    } else {
+    } else if (!appCardRefresh.isPending) {
       appCardRefresh.scheduleAt(SystemClock.elapsedRealtime() + APP_RULE_REFRESH_MS)
     }
   }
@@ -306,6 +306,7 @@ internal class WholeAppOwner(
   private fun refreshAppRuleOverlay(): DeadlineDecision {
     if (!canEnforce()) return DeadlineDecision.Cancel
     val blockedPackage = appRuleOverlay.requestedPackage() ?: return DeadlineDecision.Complete
+    appRuleOverlay.showEndTimes(appRuleWallClock())
     val foreground = foregroundAppPackage() ?: return DeadlineDecision.RetryAfter(APP_RULE_REFRESH_MS)
     if (foreground != blockedPackage) {
       currentForegroundPackage = foreground
@@ -377,6 +378,9 @@ internal class WholeAppOwner(
         onStart = { minutes -> grantIntentSession(packageName, minutes) },
         onLeave = ::leaveAppRule,
         onAttached = onAttached,
+        onWatchOneVideo = if (packageName == YOUTUBE_PACKAGE) {
+          { grantIntentSession(packageName, choices.last(), watchOneVideo = true) }
+        } else null,
       )
     }
     scheduleAppRuleRefresh()
@@ -390,7 +394,7 @@ internal class WholeAppOwner(
     }
   }
 
-  private fun grantIntentSession(packageName: String, minutes: Int) {
+  private fun grantIntentSession(packageName: String, minutes: Int, watchOneVideo: Boolean = false) {
     if (!canEnforce()) return
     if (foregroundAppPackage() != packageName || enforceAppLimits(packageName)) return
     val wallNow = appRuleWallClock()
@@ -398,9 +402,20 @@ internal class WholeAppOwner(
     val rule = intentStore.intents()[packageName] ?: return
     val longest = visitChoices(rule.sessionMinutes, appLimits.minutesLeftToday(packageName, wallNow)).lastOrNull() ?: return
     if (!releaseAppRuleOverlay(packageName)) return
-    intentSessions.grant(packageName, minOf(minutes, longest), SystemClock.elapsedRealtime())
+    intentSessions.grant(packageName, minOf(minutes, longest), SystemClock.elapsedRealtime(), watchOneVideo)
     usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())
     scheduleIntentDeadline(packageName)
+    if (watchOneVideo) observeYouTubeVisit()
+  }
+
+  fun observeYouTubeVisit(): Boolean {
+    if (!intentSessions.isWatchingOneVideo(YOUTUBE_PACKAGE, SystemClock.elapsedRealtime())) return false
+    if (!canEnforce() || foregroundAppPackage() != YOUTUBE_PACKAGE) return false
+    val root = service.rootInActiveWindow ?: return false
+    val title = YouTubeSurfaceDetector.regularVideoTitle(root) ?: return false
+    if (!intentSessions.startsSecondVideo(YOUTUBE_PACKAGE, title)) return false
+    finishIntentSession(YOUTUBE_PACKAGE)
+    return true
   }
 
   private fun scheduleIntentDeadline(packageName: String) {
@@ -428,7 +443,12 @@ internal class WholeAppOwner(
       scheduleIntentDeadline(packageName)
       return
     }
+    finishIntentSession(packageName)
+  }
+
+  private fun finishIntentSession(packageName: String) {
     if (!intentSessions.end(packageName)) return
+    visitDeadline.cancel()
     intentStore.recordSessionEnd(packageName, appRuleWallClock())
     stats.reset(EnforcementReason.TIMED_VISIT)
     bankPendingUsage()
@@ -478,6 +498,7 @@ internal class WholeAppOwner(
     get() = service.getSystemService(PowerManager::class.java)?.isInteractive == true
 
   private companion object {
+    const val YOUTUBE_PACKAGE = "com.google.android.youtube"
     const val USAGE_TICK_MS = 15_000L
     const val APP_RULE_REFRESH_MS = 1_000L
   }

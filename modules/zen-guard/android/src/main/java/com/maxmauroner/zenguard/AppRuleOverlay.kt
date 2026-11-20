@@ -34,7 +34,6 @@ internal class AppRuleOverlay(
     private set
   private var titleView: TextView? = null
   private var descriptionView: TextView? = null
-  private var stateView: TextView? = null
   private var availabilityView: TextView? = null
   private var startButtons: List<Pair<Int, Button>> = emptyList()
   private var capLeftMs: Long? = null
@@ -45,7 +44,6 @@ internal class AppRuleOverlay(
 
   fun updateCountdown(remainingMs: Long) {
     val clock = formatAvailabilityCountdown(remainingMs)
-    stateView?.text = clock
     availabilityView?.text = service.getString(R.string.zen_guard_available_again_in, clock)
   }
 
@@ -62,6 +60,7 @@ internal class AppRuleOverlay(
     onStart: (Int) -> Unit,
     onLeave: () -> Unit,
     onAttached: () -> Unit,
+    onWatchOneVideo: (() -> Unit)? = null,
   ) {
     require(choices.isNotEmpty()) { "The ask card needs at least one visit length." }
     show(
@@ -76,6 +75,7 @@ internal class AppRuleOverlay(
       nowWallMs = nowWallMs,
       capLeftMs = capLeftMs,
       onChoose = onStart,
+      onWatchOneVideo = onWatchOneVideo,
     )
   }
 
@@ -227,6 +227,7 @@ internal class AppRuleOverlay(
     nowWallMs: Long = 0L,
     capLeftMs: Long? = null,
     onChoose: (Int) -> Unit = {},
+    onWatchOneVideo: (() -> Unit)? = null,
   ) {
     val cooldown = mode == AppRuleOverlayMode.COOLDOWN || mode == AppRuleOverlayMode.LIMIT
     val isEarn = mode == AppRuleOverlayMode.EARN
@@ -250,13 +251,10 @@ internal class AppRuleOverlay(
     val accent = service.getColor(R.color.zen_accent)
     val copy = service.getColor(R.color.zen_copy)
     val muted = service.getColor(R.color.zen_muted)
-    val faint = service.getColor(R.color.zen_faint)
     val night = service.getColor(R.color.zen_night)
-    val panel2 = service.getColor(R.color.zen_panel2)
-    val line2 = service.getColor(R.color.zen_line2)
 
-    val container = LinearLayout(service).apply {
-      orientation = LinearLayout.VERTICAL
+    val container = ScrollView(service).apply {
+      isFillViewport = true
       setBackgroundColor(night)
       setPadding(dp(24), dp(16), dp(24), dp(16))
       setOnApplyWindowInsetsListener { v, insets ->
@@ -268,63 +266,18 @@ internal class AppRuleOverlay(
         insets
       }
     }
-
-    val top = LinearLayout(service).apply {
-      orientation = LinearLayout.HORIZONTAL
-      gravity = Gravity.CENTER_VERTICAL
-    }
-    val tagContainer = LinearLayout(service).apply {
-      orientation = LinearLayout.HORIZONTAL
-      gravity = Gravity.CENTER_VERTICAL
-    }
-    val dot = View(service).apply {
-      background = roundedBackground(accent, accent, dp(3).toFloat())
-    }
-    tagContainer.addView(dot, fixedSize(dp(6)))
-    val topLabel = styledText("  " + service.getString(if (isLimit) R.string.zen_guard_app_limits_eyebrow else R.string.zen_guard_intent_eyebrow), 11f, muted, bold = true).apply {
-      letterSpacing = 0.12f
-    }
-    tagContainer.addView(topLabel, wrapContent())
-    top.addView(tagContainer, weightedWrap(weight = 1f))
-
-    val state = styledText(
-      when {
-        cooldown -> formatAvailabilityCountdown(cooldownRemainingMs)
-        isEarn -> service.getString(R.string.zen_guard_earn_state)
-        else -> service.getString(R.string.zen_guard_intent_state_ask, choices.last())
-      },
-      11f,
-      if (cooldown) muted else accent,
-      bold = true,
-    ).apply {
-      letterSpacing = 0.08f
-      gravity = Gravity.CENTER
-      setPadding(dp(12), dp(5), dp(12), dp(5))
-      background = roundedBackground(panel2, line2, dp(20).toFloat())
-    }
-    if (cooldown) stateView = state
-    top.addView(state, wrapContent())
-    container.addView(top, matchWrap())
-
-    val scroll = ScrollView(service).apply {
-      isFillViewport = true
-      isVerticalScrollBarEnabled = false
-      overScrollMode = View.OVER_SCROLL_NEVER
-    }
-    container.addView(scroll, weightedHeight())
+    val content = LinearLayout(service).apply { orientation = LinearLayout.VERTICAL }
+    container.addView(content, FrameLayout.LayoutParams(
+      FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+    ))
 
     val centerBody = LinearLayout(service).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER_HORIZONTAL
     }
-    scroll.addView(
-      centerBody,
-      FrameLayout.LayoutParams(
-        FrameLayout.LayoutParams.MATCH_PARENT,
-        FrameLayout.LayoutParams.WRAP_CONTENT,
-        Gravity.CENTER_VERTICAL,
-      ),
-    )
+    content.addView(centerBody, LinearLayout.LayoutParams(
+      LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
+    ))
 
     val mark = ZenStillMarkView(service)
     val markWrapper = LinearLayout(service).apply {
@@ -333,17 +286,6 @@ internal class AppRuleOverlay(
     }
     markWrapper.addView(mark, wrapContent())
     centerBody.addView(markWrapper, matchWrap(topMargin = dp(12)))
-
-    val eyebrow = styledText(
-      if (isEarn) service.getString(R.string.zen_guard_earn_eyebrow) else if (isLimit) service.getString(R.string.zen_guard_app_limits_eyebrow) else if (cooldown) service.getString(R.string.zen_guard_intent_eyebrow_cooldown) else service.getString(R.string.zen_guard_intent_eyebrow),
-      11f,
-      accent,
-      bold = true,
-    ).apply {
-      letterSpacing = 0.14f
-      gravity = Gravity.CENTER_HORIZONTAL
-    }
-    centerBody.addView(eyebrow, matchWrap(topMargin = dp(12)))
 
     val title = styledTitle(
       if (isLimit) limitTitle else if (cooldown) service.getString(R.string.zen_guard_intent_cooldown_title) else service.getString(R.string.zen_guard_intent_title),
@@ -355,11 +297,13 @@ internal class AppRuleOverlay(
     titleView = title
     centerBody.addView(title, matchWrap(topMargin = dp(8)))
 
-    val description = styledText(
-      if (isLimit) limitDetail else if (cooldown) service.getString(R.string.zen_guard_intent_cooldown_detail, appLabel) else service.getString(R.string.zen_guard_intent_detail, appLabel),
-      15f,
-      muted,
-    ).apply {
+    val detail = when {
+      isLimit -> limitDetail
+      cooldown -> service.getString(R.string.zen_guard_intent_cooldown_detail, appLabel)
+      onWatchOneVideo != null -> service.getString(R.string.zen_guard_intent_watch_detail)
+      else -> service.getString(R.string.zen_guard_intent_detail, appLabel)
+    }
+    val description = styledText(detail, 15f, muted).apply {
       setLineSpacing(0f, 1.4f)
       gravity = Gravity.CENTER_HORIZONTAL
       textAlignment = View.TEXT_ALIGNMENT_CENTER
@@ -393,6 +337,11 @@ internal class AppRuleOverlay(
         minutes to start
       }
       showEndTimes(nowWallMs)
+      if (onWatchOneVideo != null) {
+        val watch = actionButton(service.getString(R.string.zen_guard_intent_watch_one), primary = false)
+        watch.setOnClickListener { onWatchOneVideo() }
+        actions.addView(watch, matchWrap(topMargin = dp(10)))
+      }
     }
 
     val leave = actionButton(
@@ -403,17 +352,7 @@ internal class AppRuleOverlay(
     }
     actions.addView(leave, matchWrap(topMargin = if (cooldown) 0 else dp(10)))
 
-    val footerNote = styledText(
-      service.getString(R.string.zen_guard_quiet_boundary),
-      11f,
-      faint,
-    ).apply {
-      gravity = Gravity.CENTER
-      setPadding(0, dp(12), 0, dp(4))
-    }
-    actions.addView(footerNote, matchWrap())
-
-    container.addView(actions, matchWrap())
+    content.addView(actions, matchWrap())
 
     val params = WindowManager.LayoutParams(
       WindowManager.LayoutParams.MATCH_PARENT,
@@ -432,7 +371,7 @@ internal class AppRuleOverlay(
   }
 
   /** The card stays open while the clock moves, so each Start names the end time it would give now. */
-  private fun showEndTimes(nowWallMs: Long) {
+  fun showEndTimes(nowWallMs: Long) {
     val timeFormat = DateFormat.getTimeFormat(service)
     startButtons.forEach { (minutes, button) ->
       val visitMs = minOf(minutes * 60_000L, capLeftMs ?: Long.MAX_VALUE)
@@ -449,7 +388,6 @@ internal class AppRuleOverlay(
     mode = null
     titleView = null
     descriptionView = null
-    stateView = null
     availabilityView = null
     startButtons = emptyList()
     capLeftMs = null
@@ -525,14 +463,6 @@ internal class AppRuleOverlay(
   private fun wrapContent() = LinearLayout.LayoutParams(
     LinearLayout.LayoutParams.WRAP_CONTENT,
     LinearLayout.LayoutParams.WRAP_CONTENT,
-  )
-
-  private fun fixedSize(size: Int) = LinearLayout.LayoutParams(size, size)
-
-  private fun weightedWrap(weight: Float) = LinearLayout.LayoutParams(
-    0,
-    LinearLayout.LayoutParams.WRAP_CONTENT,
-    weight,
   )
 
   private fun weightedHeight() = LinearLayout.LayoutParams(

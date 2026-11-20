@@ -480,6 +480,46 @@ class AppRuleTimerServiceTest {
     assertTrue(texts().any { it.startsWith("1 min · until") })
   }
 
+  @Test fun `stop times advance while the foreground window cannot be read`() {
+    IntentAppStore(context).setIntent(APP, 5, 0)
+    openApp(APP)
+    shadowOf(controller.get()).apply { setRootInActiveWindow(null); setWindows(emptyList()) }
+    val initial = texts().first { it.startsWith("1 min · until") }
+
+    advance(Duration.ofSeconds(6))
+
+    val end = android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(wallNow() + 60_000L))
+    assertTrue(texts().contains("1 min · until $end"))
+    assertFalse(texts().contains(initial))
+  }
+
+  @Test fun `watch one video ends on a different regular video after returning to YouTube`() {
+    IntentAppStore(context).setIntent(YOUTUBE, 5, 5)
+    openApp(YOUTUBE)
+    showOverlayWindow(YOUTUBE)
+    views().filterIsInstance<Button>().single { it.text == "Watch 1 video" }.performClick()
+
+    showContentAppWindow(regularVideo("First video"))
+    contentEvent(YOUTUBE)
+    showContentAppWindow(regularVideo("Ad", ad = true))
+    contentEvent(YOUTUBE)
+    showContentAppWindow(node(YOUTUBE))
+    contentEvent(YOUTUBE)
+    assertNull(overlay().requestedPackage())
+
+    showAppWindows(OTHER_APP)
+    windowEvent(OTHER_APP)
+    showContentAppWindow(regularVideo("First video"))
+    windowEvent(YOUTUBE)
+    contentEvent(YOUTUBE)
+    assertNull(overlay().requestedPackage())
+
+    showContentAppWindow(regularVideo("Second video"))
+    contentEvent(YOUTUBE)
+    assertEquals(AppRuleOverlayMode.COOLDOWN, overlay().mode)
+    assertTrue(IntentAppStore(context).cooldownRemainingMs(YOUTUBE, wallNow()) > 0)
+  }
+
   @Test fun `a daily cap shortens the offered visits and the granted visit`() {
     AppLimitStore(context).apply { setLimit(APP, 30); addUsage(APP, 25 * 60_000L, wallNow()) }
     IntentAppStore(context).setIntent(APP, 60, 0)
@@ -1204,7 +1244,7 @@ class AppRuleTimerServiceTest {
     advance(Duration.ofMillis(20))
     showOverlayWindow(APP)
     assertTrue(texts().toString(), texts().contains("Available again in 0:10"))
-    assertFalse(texts().any { it.contains("opens again when the downtime ends") })
+    assertFalse(texts().any { it.contains("will be available after the break") })
     advance(Duration.ofSeconds(11))
     assertEquals(AppRuleOverlayMode.ASK, overlay().mode)
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.isEmpty())
@@ -1471,6 +1511,17 @@ class AppRuleTimerServiceTest {
     shadowOf(root).addChild(page)
     shadowOf(root).addChild(tabs)
     return root to home
+  }
+
+  private fun regularVideo(title: String, ad: Boolean = false): AccessibilityNodeInfo {
+    val root = node(YOUTUBE)
+    shadowOf(root).addChild(node(YOUTUBE).apply { viewIdResourceName = "$YOUTUBE:id/watch_player" })
+    shadowOf(root).addChild(node(YOUTUBE).apply {
+      viewIdResourceName = "$YOUTUBE:id/video_title"
+      text = title
+    })
+    if (ad) shadowOf(root).addChild(node(YOUTUBE).apply { viewIdResourceName = "$YOUTUBE:id/ad_badge" })
+    return root
   }
 
   private fun contentEvent(packageName: String) {

@@ -182,7 +182,7 @@ class ZenGuardAccessibilityService : AccessibilityService() {
     when (eventPackage) {
       YOUTUBE_PACKAGE -> {
         instagram.pause(InstagramPause.DEPARTED)
-        youtube.observe(event)
+        if (!wholeApp.observeYouTubeVisit()) youtube.observe(event)
       }
       INSTAGRAM_PACKAGE -> instagram.observe(event)
       X_PACKAGE -> {

@@ -14,6 +14,7 @@ internal object YouTubeSurfaceDetector {
     "search_suggestions", "channel_header", "channel_page", "channel_profile",
     "notification_panel", "notification_list", "history_list", "playlist_panel", "comment_thread",
   )
+  private val adIds = setOf("ad_badge", "ad_info_button", "skip_ad_button", "ad_progress_text", "player_ad_label")
   private val navigationLabels = setOf("home", "shorts", "subs", "subscriptions", "you", "library")
   private val preservedSelectedLabels = setOf(
     "subs", "subscriptions", "you", "library", "history", "notifications", "search", "channel",
@@ -28,6 +29,22 @@ internal object YouTubeSurfaceDetector {
       return YouTubeSurface.OTHER
     }
     return YouTubeSurface.UNKNOWN
+  }
+
+  fun regularVideoTitle(root: AccessibilityNodeInfo): String? {
+    val nodes = visibleNodes(root) ?: return null
+    val signals = nodes.map(::signal)
+    val prefix = "$YOUTUBE_PACKAGE:id/"
+    if (ShortsDetector.detect(signals).isShortsViewer ||
+      signals.none { it.viewId == prefix + "watch_player" } ||
+      signals.any { it.viewId.removePrefix(prefix) in adIds }
+    ) return null
+
+    val titles = signals.filter { it.viewId == prefix + "video_title" }
+      .map { it.text.ifBlank { it.description }.trim() }
+      .filter(String::isNotEmpty)
+      .distinct()
+    return titles.singleOrNull()
   }
 
   fun inspect(root: AccessibilityNodeInfo): YouTubeScreen {

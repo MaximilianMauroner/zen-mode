@@ -48,6 +48,7 @@ internal class WholeAppOwner(
   private val usageTracker = AppUsageTracker()
   private val usageHandler by lazy { Handler(Looper.getMainLooper()) }
   private var currentForegroundPackage: String? = null
+  private var taskbarVisitAwaitingForeground: String? = null
   private var closingPackage: String? = null
   private var timedEndPackage: String? = null
 
@@ -59,6 +60,7 @@ internal class WholeAppOwner(
   private val usageTicker = object : Runnable {
     override fun run() {
       if (canEnforce()) {
+        confirmTaskbarVisitForeground()
         usageTracker.tick(SystemClock.elapsedRealtime())?.let(::bankUsage)
         enforceAppLimits(currentForegroundPackage)
         enforceIntentSession()
@@ -99,6 +101,7 @@ internal class WholeAppOwner(
    * event types while the same app stays on screen.
    */
   fun trackForegroundApp(event: AccessibilityEvent): Boolean {
+    confirmTaskbarVisitForeground()
     if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return false
 
     var packageName = event.packageName?.toString() ?: return false
@@ -427,7 +430,11 @@ internal class WholeAppOwner(
       return
     }
     intentSessions.grant(packageName, minOf(minutes, longest), SystemClock.elapsedRealtime(), watchOneVideo)
-    if (appWindow != null) usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())
+    if (appWindow == null) {
+      taskbarVisitAwaitingForeground = packageName
+    } else {
+      usageTracker.onForeground(packageName, SystemClock.elapsedRealtime())
+    }
     scheduleIntentDeadline(packageName)
     if (watchOneVideo && !observeYouTubeVisit()) {
       youtubePlaybackCheck.scheduleAt(SystemClock.elapsedRealtime() + YOUTUBE_PLAYBACK_CHECK_MS)
@@ -448,6 +455,18 @@ internal class WholeAppOwner(
         it.root?.packageName?.toString() == PIXEL_LAUNCHER &&
         Rect().also(it::getBoundsInScreen) == screenBounds
     }
+  }
+
+  private fun confirmTaskbarVisitForeground() {
+    val pending = taskbarVisitAwaitingForeground ?: return
+    if (!isScreenInteractive) return
+    val foreground = foregroundAppPackage() ?: return
+    taskbarVisitAwaitingForeground = null
+    if (foreground != pending) return
+    val now = SystemClock.elapsedRealtime()
+    if (!intentSessions.isActive(pending, now)) return
+    currentForegroundPackage = pending
+    usageTracker.onForeground(pending, now)?.let(::bankUsage)
   }
 
   fun observeYouTubeVisit(): Boolean {
@@ -473,6 +492,7 @@ internal class WholeAppOwner(
     closeAppRuleOverlay(preserveStats)
     if (!canEnforce()) return
     usageTracker.reset()
+    taskbarVisitAwaitingForeground = null
     if (!preserveStats) currentForegroundPackage = null
     service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
   }
@@ -515,6 +535,7 @@ internal class WholeAppOwner(
 
   fun enterSettings() {
     usageTracker.reset()
+    taskbarVisitAwaitingForeground = null
     currentForegroundPackage = null
     closingPackage = null
     closeAppRuleOverlay()
@@ -522,6 +543,7 @@ internal class WholeAppOwner(
 
   fun disable() {
     usageTracker.reset()
+    taskbarVisitAwaitingForeground = null
     currentForegroundPackage = null
     closingPackage = null
     intentSessions.reset()

@@ -772,6 +772,7 @@ class AppRuleTimerServiceTest {
 
   @Test fun `Start opens a timed visit with the Pixel taskbar under the chooser`() {
     IntentAppStore(context).setIntent(APP, 1, 1)
+    AppLimitStore(context).setLimit(APP, 60)
     openApp(APP)
     val start = views().filterIsInstance<Button>().single { it.text.startsWith("1 min · until") }
     val screen = Rect(0, 0, 2560, 1600)
@@ -795,10 +796,11 @@ class AppRuleTimerServiceTest {
     assertFalse(overlay().isShowing())
 
     showAppWindows(APP)
-    windowEvent(APP)
+    contentEvent(APP)
     assertFalse(overlay().isShowing())
     advance(Duration.ofSeconds(61))
     assertEquals(AppRuleOverlayMode.COOLDOWN, overlay().mode)
+    assertTrue(AppLimitStore(context).usageToday(wallNow()).getOrDefault(APP, 0L) >= 50_000L)
   }
 
   @Test fun `a queued Start while screen-off keeps the question and does not grant a visit`() {

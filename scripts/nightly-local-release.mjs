@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, closeSync, copyFileSync, existsSync, openSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, copyFileSync, openSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -120,21 +120,8 @@ async function buildRelease() {
     run('git', ['worktree', 'add', '--detach', sourceRoot, sha]);
     worktreeAdded = true;
     checkResources();
-    if (existsSync(join(sourceRoot, 'bun.lock'))) {
-      run('bun', ['install', '--frozen-lockfile'], sourceRoot);
-      run('bun', ['run', 'test:run'], sourceRoot);
-      run('bun', ['run', 'test:nightly'], sourceRoot);
-      run('bun', ['run', 'lint'], sourceRoot);
-      run('bun', ['run', 'typecheck'], sourceRoot);
-      run('bun', ['run', 'verify:android-release-config'], sourceRoot);
-    } else {
-      run('pnpm', ['install', '--frozen-lockfile'], sourceRoot);
-      run('pnpm', ['test'], sourceRoot);
-      run('pnpm', ['run', 'test:nightly'], sourceRoot);
-      run('pnpm', ['run', 'lint'], sourceRoot);
-      run('pnpm', ['exec', 'tsc', '--noEmit'], sourceRoot);
-      run('pnpm', ['exec', 'expo', 'export', '--platform', 'web', '--max-workers', '2'], sourceRoot);
-    }
+    run('pnpm', ['install', '--frozen-lockfile'], sourceRoot);
+    run('pnpm', ['run', 'verify:app'], sourceRoot);
     assertProfiles(sourceRoot);
     preflightRelease(sourceRoot, localChildEnvironment(process.env, 'checks'));
     assertNotCancelled();

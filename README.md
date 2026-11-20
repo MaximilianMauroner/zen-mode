@@ -107,8 +107,8 @@ the verified App Bundle workflow.
 
 ## Internal testing releases
 
-Use `pnpm run release:internal` (Zen Mode) or `bun run release:internal`
-(Moodinator) for a changed, committed `origin/main`. The shared release ledger
+Run `pnpm run release:internal` for a changed, committed `origin/main` in the
+Zen Mode or Moodinator checkout. The shared release ledger
 reserves the next patch version and Android version code, builds locally,
 and submits to Google Play Internal testing. Run `release:status` to see
 the latest attempt. See [nightly releases](docs/nightly.md) for setup and

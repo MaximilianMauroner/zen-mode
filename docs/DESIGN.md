@@ -106,8 +106,8 @@ weight here, check the overlays for the same change.
 
 ## Problem reports
 
-Problem and idea reports use the phone's share sheet. In a test build, a
-person can review a diagnostic recording and choose whether to include it with
-a problem report. Store builds do not offer diagnostic recordings.
+Send report submits problems and ideas to the Lab4Code inbox. In a test build,
+a person can review a diagnostic recording and share it with a problem report
+through the Android share sheet. Store builds do not offer diagnostic recordings.
 
 Reason: people should control what they share. Zen Mode has no analytics.

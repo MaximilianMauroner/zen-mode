@@ -49,6 +49,7 @@ import org.robolectric.annotation.RealObject
 import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowAccessibilityNodeInfo
 import org.robolectric.shadows.ShadowWindowManagerImpl
+import org.robolectric.util.ReflectionHelpers
 
 /** Exercise the actual service with its own overlay above the guarded app. */
 @RunWith(RobolectricTestRunner::class)
@@ -182,6 +183,55 @@ class AppRuleTimerServiceTest {
     assertTrue(texts().contains("Time's up.\nGo play."))
     views().filterIsInstance<Button>().single().performClick()
     assertNull(overlay().requestedPackage())
+    assertTrue(shadowOf(controller.get()).globalActionsPerformed.contains(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME))
+  }
+
+  @Implements(MediaController.TransportControls::class)
+  class PlaybackControlsShadow {
+    val commands = mutableListOf<String>()
+
+    @Implementation
+    protected fun pause() {
+      commands.add("pause")
+    }
+
+    @Implementation
+    protected fun stop() {
+      commands.add("stop")
+    }
+  }
+
+  @Test
+  @Config(shadows = [PlaybackControlsShadow::class])
+  fun `leaving a limit card controls only playing sessions from the exited app`() {
+    shadowOf(context.getSystemService(NotificationManager::class.java)).setNotificationListenerAccessGranted(
+      ComponentName(context, YouTubeNotificationAccess::class.java), true,
+    )
+    val manager = shadowOf(context.getSystemService(MediaSessionManager::class.java))
+    fun session(packageName: String, state: Int, actions: Long): PlaybackControlsShadow {
+      val media = Shadow.newInstanceOf(MediaController::class.java)
+      val controls = Shadow.newInstanceOf(MediaController.TransportControls::class.java)
+      ReflectionHelpers.setField(media, "mTransportControls", controls)
+      shadowOf(media).setPackageName(packageName)
+      shadowOf(media).setPlaybackState(PlaybackState.Builder().setState(state, 0L, 1f).setActions(actions).build())
+      manager.addController(media)
+      return Shadow.extract(controls)
+    }
+
+    val playing = session(APP, PlaybackState.STATE_PLAYING, PlaybackState.ACTION_PAUSE)
+    val stopOnly = session(APP, PlaybackState.STATE_PLAYING, PlaybackState.ACTION_STOP)
+    val paused = session(APP, PlaybackState.STATE_PAUSED, PlaybackState.ACTION_PAUSE)
+    val unrelated = session(OTHER_APP, PlaybackState.STATE_PLAYING, PlaybackState.ACTION_PAUSE)
+    AppLimitStore(context).apply { setLimit(APP, 1); addUsage(APP, 60_000L, wallNow()) }
+    openApp(APP)
+
+    assertTrue(playing.commands.isEmpty())
+    views().filterIsInstance<Button>().single().performClick()
+
+    assertEquals(listOf("pause"), playing.commands)
+    assertEquals(listOf("stop"), stopOnly.commands)
+    assertTrue(paused.commands.isEmpty())
+    assertTrue(unrelated.commands.isEmpty())
     assertTrue(shadowOf(controller.get()).globalActionsPerformed.contains(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME))
   }
 

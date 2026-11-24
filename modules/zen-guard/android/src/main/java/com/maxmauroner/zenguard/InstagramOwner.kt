@@ -61,7 +61,7 @@ internal class InstagramOwner(
       leave = { reason ->
         policy.leaveBlockedSurface()
         when (reason) {
-          InstagramBlockReason.HOME_LIMIT -> service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+          InstagramBlockReason.HOME_LIMIT -> service.exitEnforcedApp(INSTAGRAM_PACKAGE)
           InstagramBlockReason.EXPLORE,
           InstagramBlockReason.REELS_ENTRY,
           InstagramBlockReason.REELS_SWIPE,

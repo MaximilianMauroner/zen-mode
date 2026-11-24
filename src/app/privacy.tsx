@@ -27,7 +27,7 @@ export default function PrivacyScreen() {
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">What the guard uses</Text>
         <Text className="text-body text-muted">Zen Mode uses Android accessibility to recognize screens in YouTube, Instagram, and X. When website blocking is on, it reads current addresses from known browser address bars, not page content. It checks the foreground app to apply whole-app limits. The app picker lists launchable apps installed on this device.</Text>
         <Text className="text-body text-muted">Browser addresses, screen text, and the full installed-app list are not saved by Zen Mode or sent to a server. The guard does not record typing or take screenshots.</Text>
-        <Text className="text-body text-muted">Watch 1 video uses optional Android Notification access. Android can share all notifications with Zen Mode. Zen Mode uses this access only for YouTube playback information, which it processes on this device and never saves or sends. You can revoke this access in Android settings.</Text>
+        <Text className="text-body text-muted">Optional Android Notification access supports Watch 1 video and can pause or stop playback when Zen Mode exits an app. Android can share all notifications with Zen Mode. Zen Mode processes media session information on this device and never saves or sends it. You can revoke this access in Android settings.</Text>
       </View>
       <View className="gap-3">
         <Text accessibilityRole="header" className="text-title font-semibold text-copy">Data on this device</Text>

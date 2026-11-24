@@ -299,7 +299,7 @@ export default function SetupScreen() {
       {!requested && (plan.mode === 'kids' || plan.mode === 'focus') ? (
         <Card className="gap-3">
           <Text accessibilityRole="header" className="text-item font-semibold text-copy">Watch 1 video on YouTube</Text>
-          <Text className="text-body text-muted">This is optional. Android Notification access can expose all notifications to Zen Mode. Zen Mode uses it only to identify the video playing in YouTube. It processes playback information on this device and never saves or sends it.</Text>
+          <Text className="text-body text-muted">Optional Android Notification access supports Watch 1 video and can pause or stop playback when Zen Mode exits an app. Android can share all notifications with Zen Mode. Zen Mode processes media session information on this device and never saves or sends it.</Text>
           <SecondaryButton title="Open Notification access" disabled={saving} onPress={() => run(openYouTubeNotificationSettings, 'Could not open Android Notification access.')} />
         </Card>
       ) : null}

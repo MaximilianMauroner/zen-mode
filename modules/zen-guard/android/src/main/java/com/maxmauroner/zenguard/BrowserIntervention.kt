@@ -97,7 +97,7 @@ internal class BrowserIntervention(
   private fun home(session: Session) {
     if (active !== session) return
     end()
-    if (canEnforce()) service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+    if (canEnforce()) service.exitEnforcedApp(session.browserPackage)
   }
 
   private fun browserRoot(browserPackage: String): AccessibilityNodeInfo? =

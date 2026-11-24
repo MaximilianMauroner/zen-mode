@@ -212,7 +212,7 @@ internal class WholeAppOwner(
         pauseAppRuleUsage()
         stats.record(reason, EnforcementStatsOutcome.SUCCESS, packageName)
         closingPackage = packageName
-        leaveAppRule(preserveStats = true)
+        leaveAppRule(packageName, preserveStats = true)
         true
       }
       EndScreen.KIDS -> {
@@ -259,6 +259,7 @@ internal class WholeAppOwner(
   }
 
   private fun openHabit(habitPackage: String) {
+    val packageName = appRuleOverlay.requestedPackage()
     val launch = service.packageManager.getLaunchIntentForPackage(habitPackage)
     if (launch == null || !canEnforce()) return leaveAppRule()
     closeAppRuleOverlay()
@@ -266,8 +267,9 @@ internal class WholeAppOwner(
     currentForegroundPackage = null
     try {
       service.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      if (packageName != null) YouTubeNotificationAccess.pausePlayback(service, packageName)
     } catch (_: ActivityNotFoundException) {
-      leaveAppRule()
+      leaveAppRule(packageName)
     }
   }
 
@@ -487,15 +489,15 @@ internal class WholeAppOwner(
     if (remaining > 0L) visitDeadline.scheduleAt(nowElapsedMs + remaining) else visitDeadline.cancel()
   }
 
-  private fun leaveAppRule() = leaveAppRule(preserveStats = false)
+  private fun leaveAppRule() = leaveAppRule(appRuleOverlay.requestedPackage())
 
-  private fun leaveAppRule(preserveStats: Boolean) {
+  private fun leaveAppRule(packageName: String?, preserveStats: Boolean = false) {
     closeAppRuleOverlay(preserveStats)
     if (!canEnforce()) return
     usageTracker.reset()
     taskbarVisitAwaitingForeground = null
     if (!preserveStats) currentForegroundPackage = null
-    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+    service.exitEnforcedApp(packageName)
   }
 
   private fun enforceIntentSession() {

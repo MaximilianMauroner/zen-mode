@@ -58,7 +58,7 @@ internal class XOwner(
           policy.leaveBlockedSurface()
           overlay.hide()
           stats.reset(EnforcementReason.X_HOME)
-          service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+          service.exitEnforcedApp(X_PACKAGE)
         }
       },
       onExpired = {

@@ -1,9 +1,11 @@
 package com.maxmauroner.zenguard
 
+import android.accessibilityservice.AccessibilityService
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.media.MediaMetadata
+import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Build
@@ -19,23 +21,44 @@ internal class YouTubeNotificationAccess : NotificationListenerService() {
     }
 
     fun playingVideo(context: Context): YouTubeVideoIdentity? {
-      if (!isGranted(context)) return null
-      val sessions = try {
-        context.getSystemService(MediaSessionManager::class.java)?.getActiveSessions(component(context)) ?: return null
-      } catch (_: SecurityException) {
-        return null
-      }
-      return sessions.asSequence()
+      return activeSessions(context).asSequence()
         .filter { it.packageName == YOUTUBE_PACKAGE }
         .mapNotNull { YouTubeVideoIdentity.fromPlayback(it.metadata, it.playbackState) }
         .toList()
         .singleOrNull()
     }
 
+    fun pausePlayback(context: Context, packageName: String) {
+      for (session in activeSessions(context)) {
+        if (session.packageName != packageName) continue
+        val state = session.playbackState ?: continue
+        if (state.state != PlaybackState.STATE_PLAYING) continue
+        if (state.actions and (PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE) != 0L) {
+          session.transportControls.pause()
+        } else if (state.actions and PlaybackState.ACTION_STOP != 0L) {
+          session.transportControls.stop()
+        }
+      }
+    }
+
+    private fun activeSessions(context: Context): List<MediaController> {
+      if (!isGranted(context)) return emptyList()
+      return try {
+        context.getSystemService(MediaSessionManager::class.java)?.getActiveSessions(component(context)).orEmpty()
+      } catch (_: SecurityException) {
+        emptyList()
+      }
+    }
+
     private fun component(context: Context) = ComponentName(context, YouTubeNotificationAccess::class.java)
 
     private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
   }
+}
+
+internal fun AccessibilityService.exitEnforcedApp(packageName: String?) {
+  if (packageName != null) YouTubeNotificationAccess.pausePlayback(this, packageName)
+  performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
 }
 
 internal data class YouTubeVideoIdentity(

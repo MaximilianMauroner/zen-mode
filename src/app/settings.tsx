@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { RefreshControl, Text, View } from 'react-native';
+import { Platform, RefreshControl, Text, View } from 'react-native';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 
@@ -9,6 +9,7 @@ import { Row, RowGroup } from '@/components/ui/card';
 import { GuardNotes } from '@/components/ui/guard-notes';
 import { Screen, ScreenHeader } from '@/components/ui/screen';
 import { useWeakeningGate, WeakeningGateDialog } from '@/components/ui/weakening-gate';
+import { sendReport } from '@/features/feedback/reports';
 import { getFeedPresentation } from '@/features/protection/feed-presentation';
 import { authorizeWeakening } from '@/features/protection/authorize-weakening';
 import { actionFailure, IDLE_ACTION, isReading, readValue, RUNNING_ACTION, type ActionState } from '@/features/protection/control-state';
@@ -107,7 +108,7 @@ export default function SettingsScreen() {
           <Row label="View statistics" disabled={busy} onPress={() => router.navigate('/stats')} />
           <Row label="Privacy" disabled={busy} onPress={() => router.navigate('/privacy')} />
           {diagnosticsAvailable ? <Row label="Diagnostic recording" detail="Record and review local guard events" disabled={busy} onPress={() => router.navigate('/diagnostics')} /> : null}
-          <Row label="Report a problem or idea" disabled={busy} onPress={() => router.navigate('/report')} />
+          {(diagnosticsAvailable || (Platform.OS === 'android' && sendReport)) ? <Row label="Report a problem or idea" disabled={busy} onPress={() => router.navigate('/report')} /> : null}
         </RowGroup>
       </View>
       <View className="gap-3">

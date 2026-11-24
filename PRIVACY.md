@@ -74,16 +74,14 @@ Users can write a problem report or idea. The report contains:
 - the Zen Mode version and build number, and the operating system name and
   version (for example, Android 15).
 
-In a test build, the user can choose to attach the diagnostic recording to a
-problem report.
-Zen Mode opens the Android share sheet when the user chooses to share. The user
-chooses the destination. The receiving app or service handles the shared data
-under its own privacy policy.
+Release builds send reports to the Lab4Code reports inbox at
+tools.mauroner.net when the user taps Send report. Lab4Code uses those reports to
+fix problems, consider ideas, and reply when an email is given. Requests to
+delete a report can be sent to support@lab4code.com.
 
-Earlier app versions can send reports to the Lab4Code reports inbox at
-tools.mauroner.net. Lab4Code uses those reports to fix problems, consider ideas,
-and reply when an email is given. Requests to delete a report can be sent to
-support@lab4code.com.
+In a test build, the user can also share a problem report with a diagnostic
+recording. The user chooses the destination in the Android share sheet. The
+receiving app or service handles the shared data under its own privacy policy.
 
 ## Use and sharing
 
